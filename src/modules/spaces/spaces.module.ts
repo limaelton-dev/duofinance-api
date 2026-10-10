@@ -36,6 +36,7 @@ import { SpaceAccessService } from './application/services/space-access.service.
 import { TypeOrmSpaceAccessQueries } from './infrastructure/typeorm/queries/typeorm-space-access-queries.js';
 import { TypeOrmSpaceFinancialContext } from './infrastructure/typeorm/queries/typeorm-space-financial-context.js';
 import { SPACE_FINANCIAL_CONTEXT_PORT } from './application/ports/public/space-financial-context.port.js';
+import { FinancialEntryContextController } from './http/controllers/financial-entry-context.controller.js';
 @Module({
     imports: [
         DatabaseModule,
@@ -48,7 +49,11 @@ import { SPACE_FINANCIAL_CONTEXT_PORT } from './application/ports/public/space-f
         ]),
     ],
 
-    controllers: [SpacesController, InvitationsController],
+    controllers: [
+        SpacesController,
+        InvitationsController,
+        FinancialEntryContextController,
+    ],
 
     providers: [
         {

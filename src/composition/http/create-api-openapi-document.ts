@@ -13,7 +13,7 @@ export function createApiOpenApiDocument(isProduction: boolean): OpenAPIObject {
         info: {
             ...auth.info,
             title: 'Prospera Mais API',
-            version: '0.4.0',
+            version: '0.5.0',
         },
         tags: [
             ...(auth.tags ?? []),

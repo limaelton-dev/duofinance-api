@@ -14,6 +14,12 @@ import { TypeOrmDefaultSettlementRuleRepository } from './infrastructure/typeorm
 import { TypeOrmFinancesCommandReceipts } from './infrastructure/typeorm/repositories/typeorm-finances-command-receipts.js';
 import { sharedExpenseEntities } from './infrastructure/typeorm/entities/shared-expense.orm-entity.js';
 import { RecordSharedCashExpenseHandler } from './application/handlers/record-shared-cash-expense.handler.js';
+import { SharedCashExpenseController } from './http/controllers/shared-cash-expense.controller.js';
+import {
+    GetSharedCashExpenseOptionsQuery,
+    GetFinancialCommitmentQuery,
+} from './application/queries/shared-cash-expense.queries.js';
+import { RecordSharedCashExpensePipe } from './http/dto/record-shared-cash-expense.dto.js';
 import {
     TypeOrmFinancialCommitmentRepository,
     TypeOrmInterMemberObligationRepository,
@@ -38,8 +44,11 @@ import {
             FinancesCommandReceiptOrmEntity,
         ]),
     ],
-    controllers: [DefaultSettlementRuleController],
+    controllers: [DefaultSettlementRuleController, SharedCashExpenseController],
     providers: [
+        GetSharedCashExpenseOptionsQuery,
+        GetFinancialCommitmentQuery,
+        RecordSharedCashExpensePipe,
         RecordSharedCashExpenseHandler,
         {
             provide: FINANCIAL_COMMITMENT_REPOSITORY,

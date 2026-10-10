@@ -26,7 +26,7 @@ export function configureApp(app: INestApplication): void {
     app.enableCors({
         origin: config.getOrThrow<string>('WEB_ORIGIN'),
         credentials: true,
-        exposedHeaders: ['Retry-After'],
+        exposedHeaders: ['Retry-After', 'Location'],
     });
 
     app.use(csrf.protection);

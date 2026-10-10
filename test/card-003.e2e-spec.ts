@@ -780,7 +780,7 @@ describe('CARD-003 — contrato HTTP com PostgreSQL', () => {
                 .expect(429);
             expect(response.body.code).toBe('TOO_MANY_REQUESTS');
             expect(Number(response.get('Retry-After'))).toBeGreaterThan(0);
-            expect(response.get('Access-Control-Expose-Headers')).toBe(
+            expect(response.get('Access-Control-Expose-Headers')).toContain(
                 'Retry-After',
             );
             noSecrets(response, unknownToken);
@@ -964,8 +964,8 @@ describe('CARD-003 — contrato HTTP com PostgreSQL', () => {
             .get('/v2/openapi.json')
             .expect(200);
         const document = response.body;
-        expect(document.info.version).toBe('0.4.0');
-        expect(Object.keys(document.paths)).toHaveLength(12);
+        expect(document.info.version).toBe('0.5.0');
+        expect(Object.keys(document.paths)).toHaveLength(16);
         for (const endpoint of endpoints) {
             const operation =
                 document.paths['/v2/invitations/' + endpoint].post;

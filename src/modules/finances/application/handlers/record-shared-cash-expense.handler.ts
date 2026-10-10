@@ -73,6 +73,37 @@ export class RecordSharedCashExpenseHandler {
                     throw new FinancesError('EXPENSE_OPTIONS_CHANGED');
                 const now = this.clock.now().toISOString(),
                     today = this.clock.today();
+                if (civilDate(c.factDate) > today)
+                    throw new FinancesError('VALIDATION_ERROR', ['factDate']);
+                if (
+                    !context.members.some(
+                        (m) => m.memberId === c.expectedPayerMemberId,
+                    )
+                )
+                    throw new FinancesError('VALIDATION_ERROR', [
+                        'expectedPayerMemberId',
+                    ]);
+                if (
+                    !context.members.some(
+                        (m) => m.memberId === c.disbursement.payerMemberId,
+                    )
+                )
+                    throw new FinancesError('VALIDATION_ERROR', [
+                        'disbursement.payerMemberId',
+                    ]);
+                if (
+                    c.responsibilitySplit.shares.length !==
+                        context.members.length ||
+                    c.responsibilitySplit.shares.some(
+                        (s) =>
+                            !context.members.some(
+                                (m) => m.memberId === s.memberId,
+                            ),
+                    )
+                )
+                    throw new FinancesError('VALIDATION_ERROR', [
+                        'responsibilitySplit.shares',
+                    ]);
                 const split = ResponsibilitySplit.create(
                     c.amountInCents,
                     context.members.map((m) => m.memberId),
@@ -83,7 +114,9 @@ export class RecordSharedCashExpenseHandler {
                     c.disbursement.payerMemberId,
                 );
                 if (!difference && c.settlement.mode !== 'NONE')
-                    throw new FinancesError('VALIDATION_ERROR');
+                    throw new FinancesError('VALIDATION_ERROR', [
+                        'settlement.mode',
+                    ]);
                 const rule = await this.rules.find(c.spaceId.value);
                 const suggestedTargetDate =
                     rule?.rule.suggestTargetDate(today) ?? null;
@@ -102,7 +135,9 @@ export class RecordSharedCashExpenseHandler {
                         );
                     } else if (c.settlement.mode === 'DATE') {
                         if (civilDate(c.settlement.targetDate) < today)
-                            throw new FinancesError('VALIDATION_ERROR');
+                            throw new FinancesError('VALIDATION_ERROR', [
+                                'settlement.targetDate',
+                            ]);
                         cycle = await this.cycles.lockForDate(
                             c.spaceId.value,
                             c.settlement.targetDate,

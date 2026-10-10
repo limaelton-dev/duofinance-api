@@ -8,9 +8,8 @@ export type FinancesErrorCode =
     | 'SETTLEMENT_CYCLE_NOT_FOUND'
     | 'FINANCIAL_COMMITMENT_NOT_FOUND';
 const messages: Record<FinancesErrorCode, string> = {
-    VALIDATION_ERROR: 'Informe uma regra e uma data válidas.',
-    SHARED_SPACE_REQUIRED:
-        'A regra de acerto se aplica somente a espaços compartilhados.',
+    VALIDATION_ERROR: 'Verifique os dados informados.',
+    SHARED_SPACE_REQUIRED: 'Esta ação requer um espaço compartilhado.',
     CONCURRENT_MODIFICATION:
         'A regra foi alterada. Atualize os dados e confirme novamente.',
     IDEMPOTENCY_KEY_REUSED: 'Esta chave já foi usada para outra solicitação.',
@@ -21,7 +20,10 @@ const messages: Record<FinancesErrorCode, string> = {
     FINANCIAL_COMMITMENT_NOT_FOUND: 'Despesa não encontrada.',
 };
 export class FinancesError extends Error {
-    constructor(public readonly code: FinancesErrorCode) {
+    constructor(
+        public readonly code: FinancesErrorCode,
+        public readonly fields: readonly string[] = [],
+    ) {
         super(messages[code]);
     }
 }

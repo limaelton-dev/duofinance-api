@@ -131,6 +131,7 @@ describe('CARD-003 — persistência e migration', () => {
             expect(applied.map((item) => item.name)).toEqual([
                 'Card003InvitationResponses1791585518092',
                 'ConfigureDefaultSettlementRule1791590400000',
+                'RecordSharedCashExpense1791655785713',
             ]);
             expect(await receipts.find(command)).not.toBeNull();
             expect((await repository.findById(legacy.space.id))?.version).toBe(

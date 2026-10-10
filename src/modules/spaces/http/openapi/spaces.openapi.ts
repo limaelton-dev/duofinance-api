@@ -190,6 +190,7 @@ export const spacesOpenApi: Pick<
 > = {
     tags: [{ name: 'Spaces', description: 'Espaços e emissão de convites' }],
     paths: {
+        ...financialEntryContextOpenApi.paths,
         '/v2/spaces': {
             get: {
                 ...readOperation(
@@ -265,6 +266,7 @@ export const spacesOpenApi: Pick<
             },
         },
         schemas: {
+            ...financialEntryContextOpenApi.components?.schemas,
             SpacesCreateRequest: object({
                 name: {
                     type: 'string',
@@ -372,3 +374,4 @@ export const spacesOpenApi: Pick<
         },
     },
 };
+import { financialEntryContextOpenApi } from './financial-entry-context.openapi.js';

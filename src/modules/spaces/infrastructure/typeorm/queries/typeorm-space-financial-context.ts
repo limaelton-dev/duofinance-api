@@ -29,7 +29,7 @@ export class TypeOrmSpaceFinancialContext implements SpaceFinancialContextPort {
         const rows = await this.manager
             .get()
             .query(
-                `SELECT s.id AS "spaceId", s.type, s.status, s.version, m.id AS "actorMemberId" FROM spaces s LEFT JOIN space_members m ON m.space_id=s.id AND m.person_id=$1 AND m.status='ACTIVE' WHERE s.id=$2 AND ((s.type='PERSONAL' AND s.personal_owner_person_id=$1) OR (s.type='SHARED' AND m.id IS NOT NULL)) ${lock ? 'FOR SHARE OF s' : ''}`,
+                `SELECT s.id AS "spaceId", s.type, s.status, s.version, m.id AS "actorMemberId" ${!lock ? `, (SELECT jsonb_agg(jsonb_build_object('memberId', member.id, 'personId', member.person_id, 'displayName', p.display_name) ORDER BY member.id) FROM space_members member JOIN persons p ON p.id=member.person_id WHERE member.space_id=s.id AND member.status='ACTIVE') AS members` : ''} FROM spaces s LEFT JOIN space_members m ON m.space_id=s.id AND m.person_id=$1 AND m.status='ACTIVE' WHERE s.id=$2 AND ((s.type='PERSONAL' AND s.personal_owner_person_id=$1) OR (s.type='SHARED' AND m.id IS NOT NULL)) ${lock ? 'FOR SHARE OF s' : ''}`,
                 [actorId.value, spaceId.value],
             );
         const row = rows[0];
@@ -38,6 +38,7 @@ export class TypeOrmSpaceFinancialContext implements SpaceFinancialContextPort {
             throw new SpacesDomainError('SHARED_SPACE_REQUIRED');
         if (lock && row.status !== 'ACTIVE')
             throw new SpacesDomainError('SPACE_NOT_ACTIVE');
+        if (!lock) return row;
         const members = await this.manager
             .get()
             .query(

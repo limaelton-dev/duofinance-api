@@ -3,7 +3,23 @@ import { FinancesError } from '../../domain/errors/finances.error.js';
 export const mapFinancesError: HttpErrorMapper = (error) =>
     error instanceof FinancesError
         ? {
-              status: error.code === 'VALIDATION_ERROR' ? 400 : 409,
-              body: { code: error.code, message: error.message, details: {} },
+              status:
+                  error.code === 'VALIDATION_ERROR'
+                      ? 400
+                      : error.code.endsWith('_NOT_FOUND')
+                        ? 404
+                        : 409,
+              body: {
+                  code: error.code,
+                  message: error.message,
+                  details: error.fields.length
+                      ? {
+                            fields: error.fields.map((field) => ({
+                                field,
+                                messages: ['Verifique este campo.'],
+                            })),
+                        }
+                      : {},
+              },
           }
         : null;
