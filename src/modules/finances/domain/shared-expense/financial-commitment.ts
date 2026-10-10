@@ -1,4 +1,5 @@
 import type { SettlementRuleSnapshot } from '../settlement-rule/settlement-rule.js';
+import { SettlementRule } from '../settlement-rule/settlement-rule.js';
 import { ResponsibilitySplit } from './responsibility-split.js';
 import { civilDate } from './settlement-cycle.js';
 import { invalidExpense } from './validation.js';
@@ -34,6 +35,22 @@ export class FinancialCommitment {
         disbursement: Disbursement,
         today: string,
     ) {
+        if (
+            initialVersion.version !== 1 ||
+            !Number.isSafeInteger(initialVersion.settlementRuleSourceVersion) ||
+            initialVersion.settlementRuleSourceVersion < 0 ||
+            (initialVersion.settlementRuleSnapshot === null) !==
+                (initialVersion.settlementRuleSourceVersion === 0) ||
+            !Number.isFinite(Date.parse(registeredAt)) ||
+            disbursement.registeredAt !== registeredAt
+        )
+            invalidExpense();
+        if (initialVersion.settlementRuleSnapshot)
+            SettlementRule.from(initialVersion.settlementRuleSnapshot);
+        if (initialVersion.suggestedTargetDate !== null) {
+            civilDate(initialVersion.suggestedTargetDate);
+            if (!initialVersion.settlementRuleSnapshot) invalidExpense();
+        }
         if (
             !description.trim() ||
             description !== description.trim() ||

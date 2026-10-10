@@ -53,12 +53,31 @@ export interface SharedCashExpenseView {
         creditorMemberId: string;
         originalAmountInCents: number;
         remainingAmountInCents: number;
-        status: 'OPEN';
+        status: string;
         cycleId: string | null;
     };
-    settlementCycle: null | { id: string; targetDate: string; status: 'OPEN' };
+    settlementCycle: null | {
+        id: string;
+        targetDate: string;
+        status: 'OPEN' | 'FINALIZED';
+    };
 }
-export interface SharedCashExpenseResult extends SharedCashExpenseView {
+export type InitialSharedCashExpenseView = Omit<
+    SharedCashExpenseView,
+    'obligation' | 'settlementCycle'
+> & {
+    obligation:
+        | null
+        | (NonNullable<SharedCashExpenseView['obligation']> & {
+              status: 'OPEN';
+          });
+    settlementCycle:
+        | null
+        | (NonNullable<SharedCashExpenseView['settlementCycle']> & {
+              status: 'OPEN';
+          });
+};
+export interface SharedCashExpenseResult extends InitialSharedCashExpenseView {
     replayed: boolean;
 }
 export interface SharedCashExpenseOptions extends SpaceFinancialContext {
@@ -75,7 +94,7 @@ export function expenseView(
     commitment: FinancialCommitment,
     obligation: InterMemberObligation | null,
     cycle: SettlementCycle | null,
-): SharedCashExpenseView {
+): InitialSharedCashExpenseView {
     const version = commitment.initialVersion;
     return {
         spaceId: commitment.spaceId,

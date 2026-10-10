@@ -6,11 +6,19 @@ import {
     SettlementCycle,
     FinancialCommitment,
     InterMemberObligation,
+    civilDate,
 } from './shared-expense.js';
 
 const a = '00000000-0000-4000-8000-000000000001';
 const b = '00000000-0000-4000-8000-000000000002';
 describe('Shared cash expense invariants', () => {
+    it('validates civil date boundaries without generating a suggestion', () => {
+        expect(civilDate('9999-12-31')).toBe('9999-12-31');
+        expect(civilDate('0001-01-01')).toBe('0001-01-01');
+        expect(civilDate('2028-02-29')).toBe('2028-02-29');
+        expect(() => civilDate('0000-01-01')).toThrow();
+        expect(() => civilDate('2026-02-29')).toThrow();
+    });
     const create = (factDate = '2026-10-09', expected = a, paid = 50000) => {
         const snapshot = { kind: 'MONTHLY_DAY' as const, dayOfMonth: 31 };
         const version = {

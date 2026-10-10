@@ -1,4 +1,6 @@
 const messages = {
+    SHARED_SPACE_REQUIRED:
+        'Esta ação se aplica somente a espaços compartilhados.',
     VALIDATION_ERROR: 'Informe um nome válido para o espaço.',
     SPACE_NOT_FOUND: 'Espaço não encontrado.',
     SPACE_NOT_ACTIVE: 'O espaço não está ativo.',

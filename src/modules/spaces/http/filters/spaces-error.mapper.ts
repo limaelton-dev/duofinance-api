@@ -8,6 +8,7 @@ import {
 } from '../../domain/errors/spaces-domain.error.js';
 
 const domainStatuses: Record<SpacesDomainErrorCode, number> = {
+    SHARED_SPACE_REQUIRED: 409,
     VALIDATION_ERROR: 400,
     SPACE_NOT_FOUND: 404,
     SPACE_NOT_ACTIVE: 409,

@@ -12,11 +12,27 @@ import { DefaultSettlementRuleChangeOrmEntity } from './infrastructure/typeorm/e
 import { FinancesCommandReceiptOrmEntity } from './infrastructure/typeorm/entities/finances-command-receipt.orm-entity.js';
 import { TypeOrmDefaultSettlementRuleRepository } from './infrastructure/typeorm/repositories/typeorm-default-settlement-rule.repository.js';
 import { TypeOrmFinancesCommandReceipts } from './infrastructure/typeorm/repositories/typeorm-finances-command-receipts.js';
+import { sharedExpenseEntities } from './infrastructure/typeorm/entities/shared-expense.orm-entity.js';
+import { RecordSharedCashExpenseHandler } from './application/handlers/record-shared-cash-expense.handler.js';
+import {
+    TypeOrmFinancialCommitmentRepository,
+    TypeOrmInterMemberObligationRepository,
+    TypeOrmSettlementCycleRepository,
+    TypeOrmExpenseCommandReceipts,
+} from './infrastructure/typeorm/repositories/typeorm-shared-expense.repositories.js';
+import {
+    FINANCIAL_COMMITMENT_REPOSITORY,
+    INTER_MEMBER_OBLIGATION_REPOSITORY,
+    SETTLEMENT_CYCLE_REPOSITORY,
+    EXPENSE_COMMAND_RECEIPTS,
+    FINANCES_CLOCK,
+} from './application/ports/private/shared-expense.repositories.js';
 @Module({
     imports: [
         DatabaseModule,
         SpacesModule,
         TypeOrmModule.forFeature([
+            ...sharedExpenseEntities,
             DefaultSettlementRuleOrmEntity,
             DefaultSettlementRuleChangeOrmEntity,
             FinancesCommandReceiptOrmEntity,
@@ -24,6 +40,36 @@ import { TypeOrmFinancesCommandReceipts } from './infrastructure/typeorm/reposit
     ],
     controllers: [DefaultSettlementRuleController],
     providers: [
+        RecordSharedCashExpenseHandler,
+        {
+            provide: FINANCIAL_COMMITMENT_REPOSITORY,
+            useClass: TypeOrmFinancialCommitmentRepository,
+        },
+        {
+            provide: INTER_MEMBER_OBLIGATION_REPOSITORY,
+            useClass: TypeOrmInterMemberObligationRepository,
+        },
+        {
+            provide: SETTLEMENT_CYCLE_REPOSITORY,
+            useClass: TypeOrmSettlementCycleRepository,
+        },
+        {
+            provide: EXPENSE_COMMAND_RECEIPTS,
+            useClass: TypeOrmExpenseCommandReceipts,
+        },
+        {
+            provide: FINANCES_CLOCK,
+            useValue: {
+                now: () => new Date(),
+                today: () =>
+                    new Intl.DateTimeFormat('en-CA', {
+                        timeZone: 'America/Sao_Paulo',
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                    }).format(new Date()),
+            },
+        },
         ConfigureDefaultSettlementRuleHandler,
         GetDefaultSettlementRuleQuery,
         {
