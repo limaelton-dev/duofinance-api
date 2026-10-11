@@ -1,4 +1,8 @@
 import { Module } from '@nestjs/common';
+import { GetInterMemberPositionQuery } from './application/queries/inter-member-position.query.js';
+import { INTER_MEMBER_POSITION_READER } from './application/ports/private/inter-member-position-reader.js';
+import { TypeOrmInterMemberPositionReader } from './infrastructure/typeorm/queries/typeorm-inter-member-position-reader.js';
+import { InterMemberPositionController } from './http/controllers/inter-member-position.controller.js';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DatabaseModule } from '../../shared/technical/database/database.module.js';
 import { SpacesModule } from '../spaces/spaces.module.js';
@@ -44,8 +48,17 @@ import {
             FinancesCommandReceiptOrmEntity,
         ]),
     ],
-    controllers: [DefaultSettlementRuleController, SharedCashExpenseController],
+    controllers: [
+        DefaultSettlementRuleController,
+        SharedCashExpenseController,
+        InterMemberPositionController,
+    ],
     providers: [
+        GetInterMemberPositionQuery,
+        {
+            provide: INTER_MEMBER_POSITION_READER,
+            useClass: TypeOrmInterMemberPositionReader,
+        },
         GetSharedCashExpenseOptionsQuery,
         GetFinancialCommitmentQuery,
         RecordSharedCashExpensePipe,

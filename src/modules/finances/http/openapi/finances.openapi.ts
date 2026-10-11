@@ -5,6 +5,7 @@ import type {
     ReferenceObject,
 } from '@nestjs/swagger';
 import { sharedCashExpenseOpenApi } from './shared-cash-expense.openapi.js';
+import { interMemberPositionOpenApi } from './inter-member-position.openapi.js';
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
 const object = (
     properties: Record<string, SchemaObject | ReferenceObject>,
@@ -77,6 +78,7 @@ export const financesOpenApi: Pick<
     ],
     paths: {
         ...sharedCashExpenseOpenApi.paths,
+        ...interMemberPositionOpenApi.paths,
         '/v2/spaces/{spaceId}/default-settlement-rule': {
             get: {
                 operationId: 'getDefaultSettlementRule',
@@ -181,6 +183,7 @@ export const financesOpenApi: Pick<
     components: {
         schemas: {
             ...sharedCashExpenseOpenApi.components?.schemas,
+            ...interMemberPositionOpenApi.components?.schemas,
             SettlementRule: rule,
             DefaultSettlementRuleResponse: view,
             ConfigureDefaultSettlementRuleRequest: object({
