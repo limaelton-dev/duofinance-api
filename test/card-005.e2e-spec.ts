@@ -202,7 +202,7 @@ describe('CARD-005 — contrato HTTP e persistência PostgreSQL', () => {
             rule: input(20).rule,
         });
     });
-    it('A03/A04/A12/A13: histórico rastreável, snapshot preservado e nenhuma tabela financeira futura', async () => {
+    it('A03/A04/A12/A13: histórico rastreável, snapshot preservado e nenhum fato financeiro criado', async () => {
         const a = await browser('Criador');
         const id = await shared(a);
         const beforeSpaces = await db.query('SELECT * FROM spaces ORDER BY id');
@@ -241,9 +241,11 @@ describe('CARD-005 — contrato HTTP e persistência PostgreSQL', () => {
         expect(saved.receipts).toHaveLength(2);
         expect(
             await db.query(
-                "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename ~ '(commitment|obligation|settlement_cycle|transfer)'",
+                'SELECT (SELECT count(*) FROM financial_commitments)::int AS commitments, (SELECT count(*) FROM financial_disbursements)::int AS disbursements, (SELECT count(*) FROM inter_member_obligations)::int AS obligations, (SELECT count(*) FROM settlement_cycles)::int AS cycles',
             ),
-        ).toEqual([]);
+        ).toEqual([
+            { commitments: 0, disbursements: 0, obligations: 0, cycles: 0 },
+        ]);
     });
     it('A03/A10/A11: no-op não duplica histórico; versão obsoleta conflita; replay devolve versão histórica', async () => {
         const a = await browser('Criador');
@@ -682,6 +684,19 @@ describe('CARD-005 — contrato HTTP e persistência PostgreSQL', () => {
         const source = new DataSource({ ...migrationDataSource.options });
         await source.initialize();
         try {
+            // Retirar as duas migrations posteriores para testar o down/up do CARD-005.
+            expect(
+                (
+                    await source.query(
+                        'SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 2',
+                    )
+                ).map((m: { name: string }) => m.name),
+            ).toEqual([
+                'OptionalExpectedPayer1791728636456',
+                'RecordSharedCashExpense1791655785713',
+            ]);
+            await source.undoLastMigration();
+            await source.undoLastMigration();
             const latest = (
                 await source.query(
                     'SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 1',
@@ -699,6 +714,8 @@ describe('CARD-005 — contrato HTTP e persistência PostgreSQL', () => {
             const applied = await source.runMigrations();
             expect(applied.map((m) => m.name)).toEqual([
                 'ConfigureDefaultSettlementRule1791590400000',
+                'RecordSharedCashExpense1791655785713',
+                'OptionalExpectedPayer1791728636456',
             ]);
         } finally {
             await source.destroy();

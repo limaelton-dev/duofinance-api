@@ -120,6 +120,8 @@ describe('CARD-002 — persistência PostgreSQL', () => {
             expect.stringMatching(/^Card002SharedSpaces\d+$/),
             expect.stringMatching(/^Card003InvitationResponses\d+$/),
             'ConfigureDefaultSettlementRule1791590400000',
+            'RecordSharedCashExpense1791655785713',
+            'OptionalExpectedPayer1791728636456',
         ]);
 
         const context = new TransactionContext();

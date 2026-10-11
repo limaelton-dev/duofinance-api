@@ -1,5 +1,10 @@
 # CARD-005 — contrato de entrada para o CARD-006
 
+> **Estado atualizado em 10/10/2026:** CARD-005 integrado na API [PR #6](https://github.com/limaelton-dev/prospera_mais_api/pull/6), merge `28da1bb5956dc174cb0173af31bffcba33893517`, e na Web [PR #5](https://github.com/limaelton-dev/prospera-mais-web/pull/5), merge `c99d7b9ef6047efbfa8041b94fb42696595fe74b`. CI dos HEADs finais [API `242edba`](https://github.com/limaelton-dev/prospera_mais_api/actions/runs/38070324414) e [Web `d633429`](https://github.com/limaelton-dev/prospera-mais-web/actions/runs/38070787596) concluída com sucesso. A integração API antecedeu a Web. Os gates remotos anteriormente pendentes estão comprovados; a fundação da Wave 0 está disponível para o CARD-006/Wave 1. Os textos abaixo sobre manter commits locais/integração pendente preservam o estado da execução anterior e foram supersedidos por estes fatos posteriores. Esta preparação apenas verificou os merges, sem realizar nova integração, executar testes ou atualizar Trello/deploy. [Contexto atual](C:/Projs/ProsperaMais/Docs/Acompanhamentos/CONTEXTO-E-DECISOES.md).
+
+---
+
+
 Execução: 10/10/2026. ConfigureDefaultSettlementRule / UC-FIN-040, último card da Wave 0. Consumo em despesa, compromisso, pendência ou ciclo real pertence à Wave 1; não foi antecipado neste card.
 
 - [Refinamento e critérios](https://drive.google.com/file/d/1E4WlCITOI5hxsYnhC7LU8rVdAk_N0ChR/view).
@@ -70,7 +75,7 @@ API implementada em `69c0c04689a548b6ceb74269f219f48db11fab1e`; 297 unitários (
 
 Playwright aprovou 76 testes em lotes separados para respeitar limites de autenticação: 20 do CARD-005/clientes financeiros (17 jornadas + 3 testes de dados), 22 do CARD-001/002/clientes, 11 do CARD-003 e 23 do CARD-004/contexto. São 20 novos e 56 regressões, sem somar tentativas intermediárias. A cobertura inclui duas pessoas, criador sozinho, ausência, alteração, validação/cancelamento, desktop/mobile/teclado, leitura CLOSING/CLOSED, revogação real, isolamento A→B→A, logout/login da mesma pessoa, replay seguido de GET atual, falhas CSRF/429/rede/5xx, lock/retry explícito e conflito com nova confirmação.
 
-Revisão visual local aprovada em 10/10/2026 sobre os artefatos finais, com conta sintética e compartilhado de teste, API/Web nas portas 3101/3100 e PostgreSQL descartável 55432. Conferidos link com acentos, ausência, dia 0 com erro e foco, gravação de 31, persistência após refresh e cancelamento de edição sem alteração. Desktop e formulário mobile 390×844 permaneceram legíveis e sem rolagem horizontal. Evidências visuais locais sem convites/segredos: `C:/Projs/ProsperaMais/CARD-005-INTERFACE.jpg` e `C:/Projs/ProsperaMais/CARD-005-INTERFACE-MOBILE.jpg`.
+Revisão visual local aprovada em 10/10/2026 sobre os artefatos finais, com conta sintética e compartilhado de teste, API/Web nas portas 3101/3100 e PostgreSQL descartável 55432. Conferidos link com acentos, ausência, dia 0 com erro e foco, gravação de 31, persistência após refresh e cancelamento de edição sem alteração. Desktop e formulário mobile 390×844 permaneceram legíveis e sem rolagem horizontal. Evidências visuais locais sem convites/segredos: `C:/Projs/ProsperaMais/Docs/Acompanhamentos/Wave-0-Fundacao/CARD-005/Evidencias/CARD-005-INTERFACE.jpg` e `C:/Projs/ProsperaMais/Docs/Acompanhamentos/Wave-0-Fundacao/CARD-005/Evidencias/CARD-005-INTERFACE-MOBILE.jpg`.
 
 As evidências e o estado da publicação estão no acompanhamento. A01–A19 estão aprovados no escopo atual; A20 tem jornada/regressões/revisão/handoff local aprovados. PRs, CI nos HEADs finais, SHAs de integração e sincronização de main não foram executados: Elton escolheu manter somente os commits locais em 10/10/2026. A entrega local está concluída; a Wave 0 ainda não está encerrada tecnicamente no remoto.
 

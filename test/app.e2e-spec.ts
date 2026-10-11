@@ -426,6 +426,8 @@ describe('CARD-001 — PostgreSQL e HTTP', () => {
             expect.stringMatching(/^Card002SharedSpaces\d+$/),
             expect.stringMatching(/^Card003InvitationResponses\d+$/),
             'ConfigureDefaultSettlementRule1791590400000',
+            'RecordSharedCashExpense1791655785713',
+            'OptionalExpectedPayer1791728636456',
         ]);
         expect(await counts()).toEqual([0, 0, 0, 0]);
 
@@ -810,7 +812,7 @@ describe('CARD-001 — PostgreSQL e HTTP', () => {
             .expect(200);
 
         expect(response.body.openapi).toBe('3.1.0');
-        expect(Object.keys(response.body.paths)).toHaveLength(12);
+        expect(Object.keys(response.body.paths)).toHaveLength(16);
 
         const paths = response.body.paths as Record<
             string,
@@ -835,7 +837,7 @@ describe('CARD-001 — PostgreSQL e HTTP', () => {
             0,
         );
 
-        expect(operations).toBe(14);
+        expect(operations).toBe(18);
         expect(paths['/v2/spaces']).toHaveProperty('get');
         expect(paths['/v2/spaces']).toHaveProperty('post');
 
