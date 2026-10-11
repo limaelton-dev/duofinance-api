@@ -1,4 +1,12 @@
 import { Module } from '@nestjs/common';
+import {
+    GetSettlementCycleQuery,
+    GetSettlementCyclesQuery,
+} from './application/queries/settlement-cycle.queries.js';
+import { SETTLEMENT_CYCLE_READER } from './application/ports/private/settlement-cycle-reader.js';
+import { SETTLEMENT_CYCLE_QUERY_PORT } from './application/ports/public/settlement-cycle-query.port.js';
+import { TypeOrmSettlementCycleReader } from './infrastructure/typeorm/queries/typeorm-settlement-cycle-reader.js';
+import { SettlementCycleController } from './http/controllers/settlement-cycle.controller.js';
 import { GetInterMemberPositionQuery } from './application/queries/inter-member-position.query.js';
 import { INTER_MEMBER_POSITION_READER } from './application/ports/private/inter-member-position-reader.js';
 import { TypeOrmInterMemberPositionReader } from './infrastructure/typeorm/queries/typeorm-inter-member-position-reader.js';
@@ -49,11 +57,22 @@ import {
         ]),
     ],
     controllers: [
+        SettlementCycleController,
         DefaultSettlementRuleController,
         SharedCashExpenseController,
         InterMemberPositionController,
     ],
     providers: [
+        GetSettlementCyclesQuery,
+        GetSettlementCycleQuery,
+        {
+            provide: SETTLEMENT_CYCLE_READER,
+            useClass: TypeOrmSettlementCycleReader,
+        },
+        {
+            provide: SETTLEMENT_CYCLE_QUERY_PORT,
+            useExisting: GetSettlementCyclesQuery,
+        },
         GetInterMemberPositionQuery,
         {
             provide: INTER_MEMBER_POSITION_READER,
@@ -103,5 +122,6 @@ import {
             useClass: TypeOrmFinancesCommandReceipts,
         },
     ],
+    exports: [SETTLEMENT_CYCLE_QUERY_PORT],
 })
 export class FinancesModule {}
