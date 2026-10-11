@@ -19,7 +19,11 @@ describe('Shared cash expense invariants', () => {
         expect(() => civilDate('0000-01-01')).toThrow();
         expect(() => civilDate('2026-02-29')).toThrow();
     });
-    const create = (factDate = '2026-10-09', expected = a, paid = 50000) => {
+    const create = (
+        factDate = '2026-10-09',
+        expected: string | null = a,
+        paid = 50000,
+    ) => {
         const snapshot = { kind: 'MONTHLY_DAY' as const, dayOfMonth: 31 };
         const version = {
             version: 1 as const,
@@ -67,6 +71,11 @@ describe('Shared cash expense invariants', () => {
         expect(commitment.createdByPersonId).toBe('author');
         expect(commitment.initialVersion.factDate).toBe('2026-10-09');
         expect(Object.isFrozen(snapshot)).toBe(false);
+    });
+    it('preserves no expected payer without changing the disbursement', () => {
+        const { commitment } = create('2026-10-09', null);
+        expect(commitment.initialVersion.expectedPayerMemberId).toBeNull();
+        expect(commitment.disbursement.payerMemberId).toBe(b);
     });
     it('rejects future/impossible dates, foreign planned payer and partial payments', () => {
         expect(() => create('2026-10-11')).toThrow();

@@ -684,7 +684,18 @@ describe('CARD-005 — contrato HTTP e persistência PostgreSQL', () => {
         const source = new DataSource({ ...migrationDataSource.options });
         await source.initialize();
         try {
-            // Retirar somente a migration posterior para testar o down/up do CARD-005.
+            // Retirar as duas migrations posteriores para testar o down/up do CARD-005.
+            expect(
+                (
+                    await source.query(
+                        'SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 2',
+                    )
+                ).map((m: { name: string }) => m.name),
+            ).toEqual([
+                'OptionalExpectedPayer1791728636456',
+                'RecordSharedCashExpense1791655785713',
+            ]);
+            await source.undoLastMigration();
             await source.undoLastMigration();
             const latest = (
                 await source.query(
@@ -704,6 +715,7 @@ describe('CARD-005 — contrato HTTP e persistência PostgreSQL', () => {
             expect(applied.map((m) => m.name)).toEqual([
                 'ConfigureDefaultSettlementRule1791590400000',
                 'RecordSharedCashExpense1791655785713',
+                'OptionalExpectedPayer1791728636456',
             ]);
         } finally {
             await source.destroy();

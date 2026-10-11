@@ -15,7 +15,7 @@ export interface RecordSharedCashExpenseInput {
     amountInCents: number;
     factDate: string;
     responsibilitySplit: SplitInput;
-    expectedPayerMemberId: string;
+    expectedPayerMemberId: string | null;
     disbursement: { payerMemberId: string; method: 'PIX' | 'DEBIT' | 'CASH' };
     settlement: SettlementSelection;
 }
@@ -36,7 +36,7 @@ export interface SharedCashExpenseView {
         factDate: string;
         registeredAt: string;
         createdByPersonId: string;
-        expectedPayerMemberId: string;
+        expectedPayerMemberId: string | null;
         responsibilitySplit: SplitInput & {
             calculatedShares: { memberId: string; amountInCents: number }[];
         };

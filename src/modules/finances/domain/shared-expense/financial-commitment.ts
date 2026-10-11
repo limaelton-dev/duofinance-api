@@ -6,7 +6,7 @@ import { invalidExpense } from './validation.js';
 export interface CommitmentVersion {
     readonly version: 1;
     readonly split: ResponsibilitySplit;
-    readonly expectedPayerMemberId: string;
+    readonly expectedPayerMemberId: string | null;
     readonly factDate: string;
     readonly settlementRuleSnapshot: SettlementRuleSnapshot | null;
     readonly settlementRuleSourceVersion: number;
@@ -56,9 +56,10 @@ export class FinancialCommitment {
             description !== description.trim() ||
             description.length > 160 ||
             civilDate(initialVersion.factDate) > civilDate(today) ||
-            !initialVersion.split.shares.some(
-                (s) => s.memberId === initialVersion.expectedPayerMemberId,
-            ) ||
+            (initialVersion.expectedPayerMemberId !== null &&
+                !initialVersion.split.shares.some(
+                    (s) => s.memberId === initialVersion.expectedPayerMemberId,
+                )) ||
             !initialVersion.split.shares.some(
                 (s) => s.memberId === disbursement.payerMemberId,
             ) ||

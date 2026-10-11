@@ -83,8 +83,8 @@ export class FinancialCommitmentVersionOrmEntity {
         transformer: safeBigInt,
     })
     amountInCents!: number;
-    @Column({ name: 'expected_payer_member_id', type: 'uuid' })
-    expectedPayerMemberId!: string;
+    @Column({ name: 'expected_payer_member_id', type: 'uuid', nullable: true })
+    expectedPayerMemberId!: string | null;
     @Column({ name: 'fact_date', type: 'date' }) factDate!: string;
     @Column({ name: 'split_mode', type: 'varchar', length: 16 })
     splitMode!: string;

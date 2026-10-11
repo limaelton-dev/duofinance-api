@@ -76,6 +76,7 @@ export class RecordSharedCashExpenseHandler {
                 if (civilDate(c.factDate) > today)
                     throw new FinancesError('VALIDATION_ERROR', ['factDate']);
                 if (
+                    c.expectedPayerMemberId !== null &&
                     !context.members.some(
                         (m) => m.memberId === c.expectedPayerMemberId,
                     )

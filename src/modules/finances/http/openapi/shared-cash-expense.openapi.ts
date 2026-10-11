@@ -123,7 +123,7 @@ const commitment = object({
     factDate: date,
     registeredAt: instant,
     createdByPersonId: uuid,
-    expectedPayerMemberId: uuid,
+    expectedPayerMemberId: nullable(uuid),
     responsibilitySplit: {
         oneOf: [
             object({ ...amounts.properties, calculatedShares }),
@@ -169,13 +169,16 @@ const input = object({
     amountInCents: positive,
     factDate: date,
     responsibilitySplit: split,
-    expectedPayerMemberId: uuid,
+    expectedPayerMemberId: nullable(uuid),
     disbursement: object({
         payerMemberId: uuid,
         method: { type: 'string', enum: ['PIX', 'DEBIT', 'CASH'] },
     }),
     settlement: selection,
 });
+input.required = input.required!.filter(
+    (field) => field !== 'expectedPayerMemberId',
+);
 const options = object({
     ...financialContextSchema.properties,
     referenceDate: date,

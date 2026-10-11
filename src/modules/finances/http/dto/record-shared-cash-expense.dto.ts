@@ -65,7 +65,10 @@ export const expenseInputSchema = z
         }),
         factDate: date,
         responsibilitySplit: split,
-        expectedPayerMemberId: uuid,
+        expectedPayerMemberId: uuid
+            .nullable()
+            .optional()
+            .transform((value) => value ?? null),
         disbursement: z
             .object({
                 payerMemberId: uuid,

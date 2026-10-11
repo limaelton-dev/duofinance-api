@@ -427,6 +427,7 @@ describe('CARD-001 — PostgreSQL e HTTP', () => {
             expect.stringMatching(/^Card003InvitationResponses\d+$/),
             'ConfigureDefaultSettlementRule1791590400000',
             'RecordSharedCashExpense1791655785713',
+            'OptionalExpectedPayer1791728636456',
         ]);
         expect(await counts()).toEqual([0, 0, 0, 0]);
 

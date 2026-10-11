@@ -54,7 +54,7 @@ export function expenseCommandHash(c: RecordSharedCashExpenseCommand): Buffer {
                 c.factDate,
                 c.responsibilitySplit.mode,
                 shares,
-                c.expectedPayerMemberId.toLowerCase(),
+                c.expectedPayerMemberId?.toLowerCase() ?? null,
                 c.disbursement.payerMemberId.toLowerCase(),
                 c.disbursement.method,
                 selection,

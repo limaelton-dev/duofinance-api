@@ -168,6 +168,45 @@ describe('CARD-006 HTTP contract and financial traceability', () => {
                 `SELECT (SELECT count(*) FROM financial_commitments)::int AS commitments,(SELECT count(*) FROM inter_member_obligations)::int AS obligations,(SELECT count(*) FROM settlement_cycles)::int AS cycles,(SELECT count(*) FROM default_settlement_rules)::int AS rules`,
             )
         )[0];
+    it.each(['omitted', 'null'])(
+        'records %s expected payer and replays the equivalent input',
+        async (variant) => {
+            const f = await shared();
+            const input: Record<string, unknown> = { ...body(f) };
+            if (variant === 'omitted') delete input.expectedPayerMemberId;
+            else input.expectedPayerMemberId = null;
+            const key = randomUUID();
+            const first = await f.a
+                .post(postPath(f.space), input, key)
+                .expect(201);
+            expect(first.body.commitment.expectedPayerMemberId).toBeNull();
+            expect(first.body.obligation.originalAmountInCents).toBe(20000);
+            expect(
+                (await f.b!.agent.get(first.headers.location).expect(200)).body
+                    .commitment.expectedPayerMemberId,
+            ).toBeNull();
+            const equivalent = { ...input };
+            if (variant === 'omitted') equivalent.expectedPayerMemberId = null;
+            else delete equivalent.expectedPayerMemberId;
+            const replay = await f.a
+                .post(postPath(f.space), equivalent, key)
+                .expect(201);
+            expect(replay.body.replayed).toBe(true);
+            expect(replay.body.commitment.id).toBe(first.body.commitment.id);
+            expect(
+                (
+                    await f.a
+                        .post(
+                            postPath(f.space),
+                            { ...input, expectedPayerMemberId: f.ma },
+                            key,
+                        )
+                        .expect(409)
+                ).body.code,
+            ).toBe('IDEMPOTENCY_KEY_REUSED');
+            expect((await counts()).commitments).toBe(1);
+        },
+    );
     it('records Mercado, returns Location and refreshes the original financial entry', async () => {
         const f = await shared();
         const response = await f.a.post(postPath(f.space), body(f)).expect(201);
@@ -597,6 +636,7 @@ describe('CARD-006 HTTP contract and financial traceability', () => {
     it.each([
         ['description', { description: ' '.repeat(2) }],
         ['amountInCents', { amountInCents: 0 }],
+        ['expectedPayerMemberId', { expectedPayerMemberId: 'invalid-uuid' }],
         ['amountInCents', { amountInCents: Number.MAX_SAFE_INTEGER + 1 }],
         ['amountInCents', { amountInCents: '50000' }],
         ['amountInCents', { amountInCents: 1.2 }],

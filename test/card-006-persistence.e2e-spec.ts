@@ -81,6 +81,26 @@ describe('CARD-006 atomic PostgreSQL persistence', () => {
         vi.restoreAllMocks();
         await app?.close();
     });
+    it('roundtrips an absent planned payer while preserving debt and history', async () => {
+        const result = await handler.execute({
+            ...command(),
+            expectedPayerMemberId: null,
+        });
+        expect(result.commitment.expectedPayerMemberId).toBeNull();
+        expect(result.obligation?.originalAmountInCents).toBe(20000);
+        const [row] = await db.query(
+            'SELECT expected_payer_member_id FROM financial_commitment_versions WHERE commitment_id=$1',
+            [result.commitment.id],
+        );
+        expect(row.expected_payer_member_id).toBeNull();
+        expect(
+            (
+                await db.query(
+                    'SELECT count(*)::int AS count FROM inter_member_obligation_changes',
+                )
+            )[0].count,
+        ).toBe(1);
+    });
     const command = (): RecordSharedCashExpenseCommand => ({
         actorId: PersonId.from(a),
         spaceId: SpaceId.from(space),
@@ -272,7 +292,7 @@ describe('CARD-006 atomic PostgreSQL persistence', () => {
                     .reverse()
                     .map((s) => ({ ...s, memberId: s.memberId.toUpperCase() })),
             },
-            expectedPayerMemberId: input.expectedPayerMemberId.toUpperCase(),
+            expectedPayerMemberId: input.expectedPayerMemberId!.toUpperCase(),
             disbursement: {
                 ...input.disbursement,
                 payerMemberId: input.disbursement.payerMemberId.toUpperCase(),
@@ -413,6 +433,56 @@ describe('CARD-006 atomic PostgreSQL persistence', () => {
             handler.execute({ ...command(), expectedSpaceVersion: 1 }),
         ).rejects.toMatchObject({ code: 'EXPENSE_OPTIONS_CHANGED' });
     });
+    const financialSnapshot = async () => {
+        const tables = [
+            'financial_commitments',
+            'financial_commitment_versions',
+            'financial_commitment_shares',
+            'financial_disbursements',
+            'inter_member_obligations',
+            'inter_member_obligation_changes',
+            'financial_expense_command_receipts',
+        ];
+        return Promise.all(
+            tables.map((table) =>
+                db.query(`SELECT * FROM ${table} ORDER BY 1`),
+            ),
+        );
+    };
+    it('rejects rollback with null historical payer and preserves all facts and receipts', async () => {
+        await handler.execute({ ...command(), expectedPayerMemberId: null });
+        const before = await financialSnapshot();
+        const migrations = await db.query(
+            'SELECT * FROM migrations ORDER BY id',
+        );
+        await migrationSource.initialize();
+        try {
+            await expect(migrationSource.undoLastMigration()).rejects.toThrow(
+                'historical expenses without an expected payer exist',
+            );
+        } finally {
+            await migrationSource.destroy();
+        }
+        expect(await financialSnapshot()).toEqual(before);
+        expect(await db.query('SELECT * FROM migrations ORDER BY id')).toEqual(
+            migrations,
+        );
+    });
+    it('preserves legacy planned facts and receipts across optional down/up', async () => {
+        const input = command();
+        await handler.execute(input);
+        const before = await financialSnapshot();
+        await migrationSource.initialize();
+        try {
+            await migrationSource.undoLastMigration();
+            expect(await financialSnapshot()).toEqual(before);
+            await migrationSource.runMigrations();
+        } finally {
+            await migrationSource.destroy();
+        }
+        expect(await financialSnapshot()).toEqual(before);
+        expect((await handler.execute(input)).replayed).toBe(true);
+    });
     it('migration down/up preserves all existing Spaces and CARD005 data', async () => {
         await db.query(
             `INSERT INTO default_settlement_rules(space_id,kind,day_of_month,version,created_at,updated_at) VALUES($1,'MONTHLY_DAY',10,1,now(),now())`,
@@ -422,6 +492,7 @@ describe('CARD-006 atomic PostgreSQL persistence', () => {
         await migrationSource.initialize();
         try {
             await migrationSource.undoLastMigration();
+            await migrationSource.undoLastMigration(); // Also exercise original CARD-006 reversal.
             expect(
                 await db.query('SELECT * FROM default_settlement_rules'),
             ).toEqual(prior);

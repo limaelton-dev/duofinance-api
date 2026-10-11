@@ -158,6 +158,16 @@ describe('Record shared cash expense orchestration', () => {
                 });
         },
     );
+    it('records no expected payer without changing the obligation', async () => {
+        const f = setup();
+        const r = await f.handler.execute({
+            ...command(),
+            expectedPayerMemberId: null,
+        });
+        expect(r.commitment.expectedPayerMemberId).toBeNull();
+        expect(r.obligation?.originalAmountInCents).toBe(20000);
+        expect(r.disbursement.payerMemberId).toBe(b);
+    });
     it('records sole creator with no rule, obligation or empty cycle', async () => {
         const f = setup();
         f.context.members = f.context.members.slice(0, 1);
