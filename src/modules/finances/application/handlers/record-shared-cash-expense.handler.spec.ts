@@ -63,6 +63,7 @@ function setup() {
     };
     const access: SpaceFinancialContextPort = {
         read: vi.fn(async () => context),
+        lockForSettlement: vi.fn(async () => context),
         lockForWrite: vi.fn(async () => {
             if (context.status !== 'ACTIVE')
                 throw new SpacesDomainError('SPACE_NOT_ACTIVE');

@@ -150,6 +150,7 @@ const detail = object({
             ...obligationProperties,
             status: {
                 type: 'string',
+                enum: ['OPEN', 'PARTIALLY_SETTLED', 'SETTLED'],
                 description:
                     'Estado atual da pendência; a leitura não reconcilia.',
             },

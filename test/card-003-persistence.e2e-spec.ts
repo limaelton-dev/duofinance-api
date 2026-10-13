@@ -133,6 +133,7 @@ describe('CARD-003 — persistência e migration', () => {
                 'ConfigureDefaultSettlementRule1791590400000',
                 'RecordSharedCashExpense1791655785713',
                 'OptionalExpectedPayer1791728636456',
+                'RecordManualSettlementTransfer1791850000000',
             ]);
             expect(await receipts.find(command)).not.toBeNull();
             expect((await repository.findById(legacy.space.id))?.version).toBe(

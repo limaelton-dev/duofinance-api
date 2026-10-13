@@ -122,6 +122,7 @@ describe('GetInterMemberPositionQuery authorization', () => {
         const access = {
             read: vi.fn().mockResolvedValue(context),
             lockForWrite: vi.fn(),
+            lockForSettlement: vi.fn(),
         };
         const reader = {
             read: vi.fn().mockResolvedValue({

@@ -965,7 +965,7 @@ describe('CARD-003 — contrato HTTP com PostgreSQL', () => {
             .expect(200);
         const document = response.body;
         expect(document.info.version).toBe('0.5.0');
-        expect(Object.keys(document.paths)).toHaveLength(19);
+        expect(Object.keys(document.paths)).toHaveLength(22);
         for (const endpoint of endpoints) {
             const operation =
                 document.paths['/v2/invitations/' + endpoint].post;

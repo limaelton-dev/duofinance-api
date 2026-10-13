@@ -252,11 +252,11 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
         const partial = await handler.execute(input(50000)),
             zero = await handler.execute(input(10000));
         await db.query(
-            'UPDATE inter_member_obligations SET remaining_amount_in_cents=25000 WHERE id=$1',
+            "UPDATE inter_member_obligations SET remaining_amount_in_cents=25000,status='PARTIALLY_SETTLED' WHERE id=$1",
             [partial.obligation!.id],
         );
         await db.query(
-            'UPDATE inter_member_obligations SET remaining_amount_in_cents=0 WHERE id=$1',
+            "UPDATE inter_member_obligations SET remaining_amount_in_cents=0,status='SETTLED' WHERE id=$1",
             [zero.obligation!.id],
         );
         const result = await detail(partial.settlementCycle!.id);
@@ -279,7 +279,7 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
                 }),
                 expect.objectContaining({
                     id: zero.obligation!.id,
-                    status: 'OPEN',
+                    status: 'SETTLED',
                     originalAmountInCents: 10000,
                     resolvedAmountInCents: 10000,
                     remainingAmountInCents: 0,
@@ -291,7 +291,7 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
         const empty = await emptyCycle('2026-10-08'),
             zero = await handler.execute(input(10000));
         await db.query(
-            'UPDATE inter_member_obligations SET remaining_amount_in_cents=0 WHERE id=$1',
+            "UPDATE inter_member_obligations SET remaining_amount_in_cents=0,status='SETTLED' WHERE id=$1",
             [zero.obligation!.id],
         );
         await db.query(
@@ -320,6 +320,7 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
             originalAmountInCents: '10000',
             resolvedAmountInCents: '10000',
             remainingAmountInCents: '0',
+            transferredAmountInCents: '0',
         });
         expect((await list('UPCOMING')).items).toEqual([]);
     });
@@ -509,6 +510,7 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
             originalAmountInCents: '18014398509481983',
             resolvedAmountInCents: '0',
             remainingAmountInCents: '18014398509481983',
+            transferredAmountInCents: '0',
         });
         expect(result.cycle.position).toEqual({
             payableAmountInCents: '18014398509481982',
@@ -526,7 +528,7 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
             ),
         ).toBe(true);
         await db.query(
-            'UPDATE inter_member_obligations SET remaining_amount_in_cents=0 WHERE debtor_member_id=$1',
+            "UPDATE inter_member_obligations SET remaining_amount_in_cents=0,status='SETTLED' WHERE debtor_member_id=$1",
             [ma],
         );
         expect(
@@ -535,6 +537,7 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
             originalAmountInCents: '18014398509481983',
             resolvedAmountInCents: '18014398509481982',
             remainingAmountInCents: '1',
+            transferredAmountInCents: '0',
         });
     });
     it.each(['CLOSING', 'CLOSED'])(
@@ -698,7 +701,7 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
                 }
                 expect(waiting).toBe(true);
                 await writer.query(
-                    'UPDATE inter_member_obligations SET remaining_amount_in_cents=25000,version=2 WHERE id=$1',
+                    "UPDATE inter_member_obligations SET remaining_amount_in_cents=25000,status='PARTIALLY_SETTLED',version=2 WHERE id=$1",
                     [recorded.obligation!.id],
                 );
                 await writer.query(
@@ -712,6 +715,7 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
                     originalAmountInCents: '50000',
                     resolvedAmountInCents: '25000',
                     remainingAmountInCents: '25000',
+                    transferredAmountInCents: '0',
                 });
                 expect(after.cycle.version).toBe(2);
                 expect(after.items[0]).toMatchObject({

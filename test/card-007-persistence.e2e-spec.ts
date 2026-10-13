@@ -185,11 +185,11 @@ describe('CARD-007 PostgreSQL read model', () => {
         const reduced = await handler.execute(input()),
             zero = await handler.execute(input(1000));
         await db.query(
-            'UPDATE inter_member_obligations SET remaining_amount_in_cents=$2 WHERE id=$1',
+            "UPDATE inter_member_obligations SET remaining_amount_in_cents=$2,status='PARTIALLY_SETTLED' WHERE id=$1",
             [reduced.obligation!.id, 15000],
         );
         await db.query(
-            'UPDATE inter_member_obligations SET remaining_amount_in_cents=0 WHERE id=$1',
+            "UPDATE inter_member_obligations SET remaining_amount_in_cents=0,status='SETTLED' WHERE id=$1",
             [zero.obligation!.id],
         );
         const result = await position();

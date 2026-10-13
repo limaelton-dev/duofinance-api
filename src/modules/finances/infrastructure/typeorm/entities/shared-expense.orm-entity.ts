@@ -200,8 +200,8 @@ export class SettlementCycleOrmEntity {
 @Index('IDX_obligations_space_origin', ['spaceId', 'commitmentId'])
 @Index('IDX_obligations_space_cycle', ['spaceId', 'cycleId'])
 @Check(
-    'CHK_obligations_initial_state',
-    `${money('original_amount_in_cents', true)} AND ${money('remaining_amount_in_cents')} AND remaining_amount_in_cents <= original_amount_in_cents AND debtor_member_id <> creditor_member_id AND status = 'OPEN' AND version > 0 AND fact_date <= (registered_at AT TIME ZONE 'America/Sao_Paulo')::date`,
+    'CHK_obligations_state',
+    `${money('original_amount_in_cents', true)} AND ${money('remaining_amount_in_cents')} AND remaining_amount_in_cents <= original_amount_in_cents AND debtor_member_id <> creditor_member_id AND version > 0 AND fact_date <= (registered_at AT TIME ZONE 'America/Sao_Paulo')::date AND ((status = 'OPEN' AND remaining_amount_in_cents = original_amount_in_cents) OR (status = 'PARTIALLY_SETTLED' AND remaining_amount_in_cents > 0 AND remaining_amount_in_cents < original_amount_in_cents) OR (status = 'SETTLED' AND remaining_amount_in_cents = 0))`,
 )
 @ForeignKey(
     () => FinancialDisbursementOrmEntity,
@@ -245,7 +245,7 @@ export class InterMemberObligationOrmEntity {
         transformer: safeBigInt,
     })
     remainingAmountInCents!: number;
-    @Column({ type: 'varchar', length: 16 }) status!: string;
+    @Column({ type: 'varchar', length: 24 }) status!: string;
     @Column({ name: 'cycle_id', type: 'uuid', nullable: true }) cycleId!:
         string | null;
     @Column('integer') version!: number;
@@ -253,7 +253,10 @@ export class InterMemberObligationOrmEntity {
     @Column({ name: 'registered_at', type: 'timestamptz' }) registeredAt!: Date;
 }
 @Entity('inter_member_obligation_changes')
-@Check('CHK_obligation_changes_initial', `version = 1 AND type = 'CREATED'`)
+@Check(
+    'CHK_obligation_changes_type',
+    `(version = 1 AND type = 'CREATED' AND allocation_id IS NULL) OR (version > 1 AND type = 'SETTLEMENT_APPLIED' AND allocation_id IS NOT NULL)`,
+)
 @ForeignKey(
     () => InterMemberObligationOrmEntity,
     ['spaceId', 'obligationId'],
@@ -271,7 +274,9 @@ export class InterMemberObligationChangeOrmEntity {
         onDelete: 'RESTRICT',
     })
     actorId!: string;
-    @Column({ type: 'varchar', length: 16 }) type!: string;
+    @Column({ type: 'varchar', length: 24 }) type!: string;
+    @Column({ name: 'allocation_id', type: 'uuid', nullable: true })
+    allocationId!: string | null;
     @Column({ type: 'jsonb' }) snapshot!: unknown;
     @Column({ name: 'registered_at', type: 'timestamptz' }) registeredAt!: Date;
 }

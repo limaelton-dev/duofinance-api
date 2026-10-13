@@ -122,6 +122,7 @@ describe('CARD-002 — persistência PostgreSQL', () => {
             'ConfigureDefaultSettlementRule1791590400000',
             'RecordSharedCashExpense1791655785713',
             'OptionalExpectedPayer1791728636456',
+            'RecordManualSettlementTransfer1791850000000',
         ]);
 
         const context = new TransactionContext();

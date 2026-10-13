@@ -17,12 +17,19 @@ export class TypeOrmSpaceFinancialContext implements SpaceFinancialContextPort {
         actorId: PersonId,
         spaceId: SpaceId,
     ): Promise<SpaceFinancialContext> {
-        return this.load(actorId, spaceId, true);
+        return this.load(actorId, spaceId, true, false);
+    }
+    lockForSettlement(
+        actorId: PersonId,
+        spaceId: SpaceId,
+    ): Promise<SpaceFinancialContext> {
+        return this.load(actorId, spaceId, true, true);
     }
     private async load(
         actorId: PersonId,
         spaceId: SpaceId,
         lock: boolean,
+        settlement = false,
     ): Promise<SpaceFinancialContext> {
         if (lock && !this.manager.get().queryRunner?.isTransactionActive)
             throw new Error('Financial context write requires a transaction');
@@ -36,15 +43,37 @@ export class TypeOrmSpaceFinancialContext implements SpaceFinancialContextPort {
         if (!row) throw new SpacesDomainError('SPACE_NOT_FOUND');
         if (row.type !== 'SHARED')
             throw new SpacesDomainError('SHARED_SPACE_REQUIRED');
-        if (lock && row.status !== 'ACTIVE')
+        if (
+            lock &&
+            row.status !== 'ACTIVE' &&
+            !(settlement && row.status === 'CLOSING')
+        )
             throw new SpacesDomainError('SPACE_NOT_ACTIVE');
         if (!lock) return row;
-        const members = await this.manager
+        const ids: { id: string }[] = await this.manager
             .get()
             .query(
-                `SELECT m.id AS "memberId", m.person_id AS "personId", p.display_name AS "displayName" FROM space_members m JOIN persons p ON p.id=m.person_id WHERE m.space_id=$1 AND m.status='ACTIVE' ORDER BY m.id`,
+                `SELECT id FROM space_members WHERE space_id=$1 AND status='ACTIVE' ORDER BY id`,
                 [spaceId.value],
             );
-        return { ...row, members };
+        const members: {
+            memberId: string;
+            personId: string;
+            displayName: string;
+        }[] = [];
+        for (const member of ids) {
+            const current: typeof members = await this.manager
+                .get()
+                .query(
+                    `SELECT m.id AS "memberId", m.person_id AS "personId", p.display_name AS "displayName" FROM space_members m JOIN persons p ON p.id=m.person_id WHERE m.space_id=$1 AND m.id=$2 AND m.status='ACTIVE' FOR SHARE OF m`,
+                    [spaceId.value, member.id],
+                );
+            if (current.length) members.push(current[0]);
+        }
+        const actorMember = members.find(
+            (member) => member.personId === actorId.value,
+        );
+        if (!actorMember) throw new SpacesDomainError('SPACE_NOT_FOUND');
+        return { ...row, actorMemberId: actorMember.memberId, members };
     }
 }

@@ -234,6 +234,7 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
                     originalAmountInCents: '43000',
                     resolvedAmountInCents: '0',
                     remainingAmountInCents: '43000',
+                    transferredAmountInCents: '0',
                 },
                 position: {
                     payableAmountInCents: '35000',
@@ -323,11 +324,11 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
             zero = await record(f, 10000),
             empty = await emptyCycle(f.space, '2026-10-09');
         await db.query(
-            'UPDATE inter_member_obligations SET remaining_amount_in_cents=25000 WHERE id=$1',
+            "UPDATE inter_member_obligations SET remaining_amount_in_cents=25000,status='PARTIALLY_SETTLED' WHERE id=$1",
             [partial.obligation.id],
         );
         await db.query(
-            'UPDATE inter_member_obligations SET remaining_amount_in_cents=0 WHERE id=$1',
+            "UPDATE inter_member_obligations SET remaining_amount_in_cents=0,status='SETTLED' WHERE id=$1",
             [zero.obligation.id],
         );
         const result = (
@@ -354,7 +355,7 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
                 }),
                 expect.objectContaining({
                     id: zero.obligation.id,
-                    status: 'OPEN',
+                    status: 'SETTLED',
                     resolvedAmountInCents: 10000,
                     remainingAmountInCents: 0,
                 }),
@@ -376,7 +377,7 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
             items: [],
         });
         await db.query(
-            'UPDATE inter_member_obligations SET remaining_amount_in_cents=0 WHERE id=$1',
+            "UPDATE inter_member_obligations SET remaining_amount_in_cents=0,status='SETTLED' WHERE id=$1",
             [partial.obligation.id],
         );
         expect(
@@ -392,6 +393,7 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
                         originalAmountInCents: '60000',
                         resolvedAmountInCents: '60000',
                         remainingAmountInCents: '0',
+                        transferredAmountInCents: '0',
                     },
                 }),
             ]),
@@ -610,6 +612,7 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
             originalAmountInCents: '18014398509481983',
             resolvedAmountInCents: '0',
             remainingAmountInCents: '18014398509481983',
+            transferredAmountInCents: '0',
         });
         expect(result.cycle.position.net).toEqual({
             direction: 'PAYABLE',
