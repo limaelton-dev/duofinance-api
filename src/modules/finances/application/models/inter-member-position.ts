@@ -6,7 +6,7 @@ export interface PositionKey {
 }
 export interface OpenObligationView extends PositionKey {
     version: number;
-    status: 'OPEN';
+    status: 'OPEN' | 'PARTIALLY_SETTLED';
     debtorMemberId: string;
     creditorMemberId: string;
     originalAmountInCents: number;

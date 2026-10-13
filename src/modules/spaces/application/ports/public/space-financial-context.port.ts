@@ -17,4 +17,8 @@ export interface SpaceFinancialContextPort {
         actorId: PersonId,
         spaceId: SpaceId,
     ): Promise<SpaceFinancialContext>;
+    lockForSettlement(
+        actorId: PersonId,
+        spaceId: SpaceId,
+    ): Promise<SpaceFinancialContext>;
 }

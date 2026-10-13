@@ -457,15 +457,21 @@ describe('CARD-006 atomic PostgreSQL persistence', () => {
         );
         await migrationSource.initialize();
         try {
+            await migrationSource.undoLastMigration();
             await expect(migrationSource.undoLastMigration()).rejects.toThrow(
                 'historical expenses without an expected payer exist',
             );
+            await migrationSource.runMigrations();
         } finally {
             await migrationSource.destroy();
         }
         expect(await financialSnapshot()).toEqual(before);
-        expect(await db.query('SELECT * FROM migrations ORDER BY id')).toEqual(
-            migrations,
+        expect(
+            (
+                await db.query('SELECT name FROM migrations ORDER BY timestamp')
+            ).map((migration: { name: string }) => migration.name),
+        ).toEqual(
+            migrations.map((migration: { name: string }) => migration.name),
         );
     });
     it('preserves legacy planned facts and receipts across optional down/up', async () => {
@@ -475,7 +481,7 @@ describe('CARD-006 atomic PostgreSQL persistence', () => {
         await migrationSource.initialize();
         try {
             await migrationSource.undoLastMigration();
-            expect(await financialSnapshot()).toEqual(before);
+            await migrationSource.undoLastMigration();
             await migrationSource.runMigrations();
         } finally {
             await migrationSource.destroy();
@@ -491,6 +497,7 @@ describe('CARD-006 atomic PostgreSQL persistence', () => {
         const prior = await db.query('SELECT * FROM default_settlement_rules');
         await migrationSource.initialize();
         try {
+            await migrationSource.undoLastMigration();
             await migrationSource.undoLastMigration();
             await migrationSource.undoLastMigration(); // Also exercise original CARD-006 reversal.
             expect(

@@ -22,6 +22,7 @@ interface CycleRow {
     finalized_at: string | null;
     original: string;
     remaining: string;
+    transferred: string;
     payable: string;
     receivable: string;
     obligation_count: number;
@@ -30,7 +31,7 @@ interface CycleRow {
 interface DetailRow extends CycleRow {
     obligation_id: string | null;
     obligation_version: number;
-    obligation_status: 'OPEN';
+    obligation_status: 'OPEN' | 'PARTIALLY_SETTLED' | 'SETTLED';
     debtor_member_id: string;
     creditor_member_id: string;
     original_amount_in_cents: string;
@@ -50,7 +51,11 @@ function cycle(row: CycleRow): SettlementCycleRead {
         finalizedAt: row.finalized_at,
         obligationCount: row.obligation_count,
         openObligationCount: row.open_obligation_count,
-        totals: settlementCycleTotals(row.original, row.remaining),
+        totals: settlementCycleTotals(
+            row.original,
+            row.remaining,
+            row.transferred,
+        ),
         payableAmountInCents: row.payable,
         receivableAmountInCents: row.receivable,
     };
@@ -87,7 +92,8 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                 AND ($5::date IS NULL OR (target_date,id)>($5::date,$6::uuid))
                 ORDER BY target_date ASC,id ASC LIMIT 21
             )
-            SELECT ${cycleColumns}, ${aggregate}
+            SELECT ${cycleColumns}, ${aggregate},
+                COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.cycle_id=s.id),0)::text AS transferred
             FROM page s LEFT JOIN inter_member_obligations o ON o.space_id=$1 AND o.cycle_id=s.id
             GROUP BY s.id,s.version,s.target_date,s.status,s.finalized_at
             ORDER BY s.target_date ASC,s.id ASC
@@ -125,7 +131,9 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                 AND ($5::timestamptz IS NULL OR (registered_at,id)<($5::timestamptz,$6::uuid))
                 ORDER BY registered_at DESC,id DESC LIMIT 21
             )
-            SELECT ${cycleColumns},t.*,p.id AS obligation_id,p.version AS obligation_version,p.status AS obligation_status,
+            SELECT ${cycleColumns},t.*,
+                COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.cycle_id=s.id),0)::text AS transferred,
+                p.id AS obligation_id,p.version AS obligation_version,p.status AS obligation_status,
                 p.debtor_member_id,p.creditor_member_id,p.original_amount_in_cents::text,p.remaining_amount_in_cents::text,
                 to_char(p.fact_date,'YYYY-MM-DD') AS fact_date,
                 to_char(p.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS registered_at,

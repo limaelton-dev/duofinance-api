@@ -127,7 +127,7 @@ export function expenseView(
                   creditorMemberId: obligation.creditorMemberId,
                   originalAmountInCents: obligation.originalAmountInCents,
                   remainingAmountInCents: obligation.remainingAmountInCents,
-                  status: obligation.status,
+                  status: 'OPEN',
                   cycleId: obligation.cycleId,
               }
             : null,

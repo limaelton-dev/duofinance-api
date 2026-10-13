@@ -13,6 +13,7 @@ export interface SettlementCycleTotals {
     originalAmountInCents: string;
     resolvedAmountInCents: string;
     remainingAmountInCents: string;
+    transferredAmountInCents: string;
 }
 export interface SettlementCycleSummary extends SettlementCycleKey {
     version: number;
@@ -28,8 +29,9 @@ export interface SettlementCycleDetail extends SettlementCycleSummary {
 }
 export interface SettlementObligationView extends Omit<
     OpenObligationView,
-    'settlementCycle'
+    'settlementCycle' | 'status'
 > {
+    status: 'OPEN' | 'PARTIALLY_SETTLED' | 'SETTLED';
     resolvedAmountInCents: number;
 }
 interface SettlementContext {

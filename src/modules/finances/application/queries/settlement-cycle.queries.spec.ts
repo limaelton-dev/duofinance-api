@@ -54,6 +54,7 @@ describe('settlement cycle exact calculated read values', () => {
             expect(totals).toEqual({
                 originalAmountInCents: original,
                 remainingAmountInCents: remaining,
+                transferredAmountInCents: '0',
                 resolvedAmountInCents: resolved,
             });
             expect(BigInt(totals.originalAmountInCents)).toBe(
@@ -322,6 +323,7 @@ describe('settlement cycle application authorization and public contract', () =>
         const access = {
             read: vi.fn().mockResolvedValue(context),
             lockForWrite: vi.fn(),
+            lockForSettlement: vi.fn(),
         };
         const reader = {
             list: vi.fn().mockResolvedValue([cycle()]),

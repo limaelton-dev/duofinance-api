@@ -11,6 +11,7 @@ interface PositionRow {
     receivable: string;
     id: string | null;
     version: number;
+    status: 'OPEN' | 'PARTIALLY_SETTLED';
     debtor_member_id: string;
     creditor_member_id: string;
     original_amount_in_cents: string;
@@ -43,7 +44,7 @@ export class TypeOrmInterMemberPositionReader implements InterMemberPositionRead
             `
             WITH open_obligations AS MATERIALIZED (
                 SELECT * FROM inter_member_obligations
-                WHERE space_id = $1 AND status = 'OPEN' AND remaining_amount_in_cents > 0
+                WHERE space_id = $1 AND status IN ('OPEN','PARTIALLY_SETTLED') AND remaining_amount_in_cents > 0
                 AND (debtor_member_id = $2 OR creditor_member_id = $2)
             ), totals AS (
                 SELECT COALESCE(SUM(remaining_amount_in_cents) FILTER (WHERE debtor_member_id = $2), 0)::text AS payable,
@@ -55,7 +56,7 @@ export class TypeOrmInterMemberPositionReader implements InterMemberPositionRead
                     AND ($4::timestamptz IS NULL OR (registered_at, id) < ($4::timestamptz, $5::uuid))
                 ORDER BY registered_at DESC, id DESC LIMIT 21
             )
-            SELECT t.payable, t.receivable, p.id, p.version, p.debtor_member_id, p.creditor_member_id,
+            SELECT t.payable, t.receivable, p.id, p.version, p.status, p.debtor_member_id, p.creditor_member_id,
                 p.original_amount_in_cents::text, p.remaining_amount_in_cents::text,
                 to_char(p.fact_date, 'YYYY-MM-DD') AS fact_date,
                 to_char(p.registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS registered_at,
@@ -79,7 +80,7 @@ export class TypeOrmInterMemberPositionReader implements InterMemberPositionRead
             .map((row) => ({
                 id: row.id!,
                 version: row.version,
-                status: 'OPEN',
+                status: row.status,
                 debtorMemberId: row.debtor_member_id,
                 creditorMemberId: row.creditor_member_id,
                 originalAmountInCents: safeAmount(row.original_amount_in_cents),

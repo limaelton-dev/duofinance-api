@@ -1,5 +1,25 @@
 import { Module } from '@nestjs/common';
 import {
+    SettlementTransferOrmEntity,
+    SettlementAllocationOrmEntity,
+    FinancialSettlementCommandReceiptOrmEntity,
+    FinancialSettlementAuditOrmEntity,
+} from './infrastructure/typeorm/entities/settlement-transfer.orm-entity.js';
+import { SettlementTransferController } from './http/controllers/settlement-transfer.controller.js';
+import { RecordManualSettlementTransferHandler } from './application/handlers/record-manual-settlement-transfer.handler.js';
+import {
+    GetSettlementTransferOptionsQuery,
+    GetSettlementTransferQuery,
+    ListSettlementTransfersQuery,
+} from './application/queries/settlement-transfer.queries.js';
+import { RecordManualSettlementTransferPipe } from './http/dto/record-manual-settlement-transfer.dto.js';
+import {
+    SETTLEMENT_TRANSFER_REPOSITORY,
+    SETTLEMENT_TRANSFER_RECEIPTS,
+} from './application/ports/private/settlement-transfer.repository.js';
+import { TypeOrmSettlementTransferRepository } from './infrastructure/typeorm/repositories/typeorm-settlement-transfer.repository.js';
+import { TypeOrmSettlementTransferReceipts } from './infrastructure/typeorm/repositories/typeorm-settlement-transfer-receipts.js';
+import {
     GetSettlementCycleQuery,
     GetSettlementCyclesQuery,
 } from './application/queries/settlement-cycle.queries.js';
@@ -51,6 +71,10 @@ import {
         SpacesModule,
         TypeOrmModule.forFeature([
             ...sharedExpenseEntities,
+            SettlementTransferOrmEntity,
+            SettlementAllocationOrmEntity,
+            FinancialSettlementCommandReceiptOrmEntity,
+            FinancialSettlementAuditOrmEntity,
             DefaultSettlementRuleOrmEntity,
             DefaultSettlementRuleChangeOrmEntity,
             FinancesCommandReceiptOrmEntity,
@@ -61,9 +85,23 @@ import {
         DefaultSettlementRuleController,
         SharedCashExpenseController,
         InterMemberPositionController,
+        SettlementTransferController,
     ],
     providers: [
         GetSettlementCyclesQuery,
+        GetSettlementTransferOptionsQuery,
+        GetSettlementTransferQuery,
+        ListSettlementTransfersQuery,
+        RecordManualSettlementTransferHandler,
+        RecordManualSettlementTransferPipe,
+        {
+            provide: SETTLEMENT_TRANSFER_REPOSITORY,
+            useClass: TypeOrmSettlementTransferRepository,
+        },
+        {
+            provide: SETTLEMENT_TRANSFER_RECEIPTS,
+            useClass: TypeOrmSettlementTransferReceipts,
+        },
         GetSettlementCycleQuery,
         {
             provide: SETTLEMENT_CYCLE_READER,

@@ -112,6 +112,7 @@ const summary = {
         originalAmountInCents: total,
         resolvedAmountInCents: total,
         remainingAmountInCents: total,
+        transferredAmountInCents: total,
     }),
     position: object({
         payableAmountInCents: total,
@@ -217,7 +218,10 @@ export const settlementCycleOpenApi: Pick<
             SettlementCycleObligation: object({
                 id: uuid,
                 version: { ...integer, minimum: 1 },
-                status: { type: 'string', enum: ['OPEN'] },
+                status: {
+                    type: 'string',
+                    enum: ['OPEN', 'PARTIALLY_SETTLED', 'SETTLED'],
+                },
                 debtorMemberId: uuid,
                 creditorMemberId: uuid,
                 originalAmountInCents: { ...integer, minimum: 1 },

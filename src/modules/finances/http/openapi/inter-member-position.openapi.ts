@@ -122,7 +122,7 @@ export const interMemberPositionOpenApi: Pick<
             OpenInterMemberObligation: object({
                 id: uuid,
                 version: { ...money, minimum: 1 },
-                status: { type: 'string', enum: ['OPEN'] },
+                status: { type: 'string', enum: ['OPEN', 'PARTIALLY_SETTLED'] },
                 debtorMemberId: uuid,
                 creditorMemberId: uuid,
                 originalAmountInCents: { ...money, minimum: 1 },
