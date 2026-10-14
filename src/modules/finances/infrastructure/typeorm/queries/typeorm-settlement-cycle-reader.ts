@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { QueryFailedError } from 'typeorm';
+import { FinanceTodayUnavailableError } from '../../../application/ports/public/finance-today-query.port.js';
 import { settlementCycleTotals } from '../../../application/queries/settlement-cycle.calculations.js';
 import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
 import type {
@@ -77,6 +79,67 @@ const cycleColumns = `s.id, s.version, to_char(s.target_date,'YYYY-MM-DD') AS ta
 @Injectable()
 export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
     constructor(private readonly managers: EntityManagerProvider) {}
+    async today(spaceId: string, actorMemberId: string, referenceDate: string) {
+        let rows: (CycleRow & { overdue_count: number })[];
+        try {
+            rows = await this.managers.get().query(
+                `WITH overdue AS MATERIALIZED (
+                    SELECT s.id,s.target_date FROM settlement_cycles s
+                    WHERE s.space_id=$1 AND s.status='OPEN' AND s.target_date<$3::date
+                    AND EXISTS (SELECT 1 FROM inter_member_obligations o WHERE o.space_id=$1 AND o.cycle_id=s.id AND o.remaining_amount_in_cents>0)
+                ), selected AS MATERIALIZED (
+                    (SELECT * FROM settlement_cycles WHERE space_id=$1 AND status='OPEN' AND target_date>=$3::date ORDER BY target_date,id LIMIT 1)
+                    UNION ALL
+                    (SELECT s.* FROM settlement_cycles s JOIN overdue d ON d.id=s.id WHERE s.space_id=$1 ORDER BY s.target_date,s.id LIMIT 3)
+                ), summaries AS (
+                    SELECT ${cycleColumns},${aggregate},
+                        COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.cycle_id=s.id),0)::text AS transferred
+                    FROM selected s LEFT JOIN inter_member_obligations o ON o.space_id=$1 AND o.cycle_id=s.id
+                    GROUP BY s.id,s.version,s.target_date,s.status,s.finalized_at
+                )
+                SELECT c.*,(SELECT COUNT(*)::integer FROM overdue) AS overdue_count
+                FROM (SELECT 1) seed LEFT JOIN summaries c ON true ORDER BY c.target_date,c.id`,
+                [spaceId, actorMemberId, referenceDate],
+            );
+        } catch (error) {
+            const cause =
+                error instanceof QueryFailedError ? error.driverError : error;
+            const code =
+                typeof cause === 'object' && cause !== null && 'code' in cause
+                    ? cause.code
+                    : null;
+            if (
+                typeof code === 'string' &&
+                (code.startsWith('08') ||
+                    [
+                        '53000',
+                        '53100',
+                        '53200',
+                        '53300',
+                        '53400',
+                        '57014',
+                        '57P01',
+                        '57P02',
+                        '57P03',
+                        'ECONNREFUSED',
+                        'ECONNRESET',
+                        'ETIMEDOUT',
+                        'EPIPE',
+                    ].includes(code))
+            )
+                throw new FinanceTodayUnavailableError();
+            throw error;
+        }
+        const cycles = rows.filter((row) => row.id !== null).map(cycle);
+        return {
+            nextCycle:
+                cycles.find((row) => row.targetDate >= referenceDate) ?? null,
+            overdueCycles: {
+                items: cycles.filter((row) => row.targetDate < referenceDate),
+                totalCount: rows[0].overdue_count,
+            },
+        };
+    }
     async list(
         spaceId: string,
         actorMemberId: string,
