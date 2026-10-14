@@ -1,5 +1,6 @@
 import type {
     FinancialCommitment,
+    ExpenseVersion,
     InterMemberObligation,
     SettlementCycle,
 } from '../../../domain/shared-expense/shared-expense.js';
@@ -12,7 +13,7 @@ export const FINANCIAL_COMMITMENT_REPOSITORY = Symbol(
     'FINANCIAL_COMMITMENT_REPOSITORY',
 );
 export interface FinancialCommitmentRepository {
-    save(commitment: FinancialCommitment): Promise<void>;
+    save(commitment: FinancialCommitment<ExpenseVersion>): Promise<void>;
     detail(
         spaceId: string,
         commitmentId: string,

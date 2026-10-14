@@ -189,14 +189,13 @@ describe('CARD-009 PostgreSQL settlement transfer', () => {
                 transferredAmountInCents: '20000',
             },
         });
+        const sourceDetail = await origin.execute(
+            PersonId.from(a),
+            SpaceId.from(space),
+            source.commitment.id,
+        );
         expect(
-            (
-                await origin.execute(
-                    PersonId.from(a),
-                    SpaceId.from(space),
-                    source.commitment.id,
-                )
-            ).obligation,
+            'obligation' in sourceDetail && sourceDetail.obligation,
         ).toMatchObject({ status: 'SETTLED', remainingAmountInCents: 0 });
         const changes = await db.query(
             `SELECT version,type,allocation_id FROM inter_member_obligation_changes WHERE obligation_id=$1 ORDER BY version`,
@@ -585,6 +584,7 @@ describe('CARD-009 PostgreSQL settlement transfer', () => {
         await migrationSource.initialize();
         try {
             await migrationSource.undoLastMigration();
+            await migrationSource.undoLastMigration();
             await db.query(
                 'UPDATE inter_member_obligations SET remaining_amount_in_cents=4000 WHERE id=$1',
                 [id],
@@ -615,6 +615,7 @@ describe('CARD-009 PostgreSQL settlement transfer', () => {
             ).toBe(0);
             const input = command(id, 1, 4000);
             await record.execute(input);
+            await migrationSource.undoLastMigration();
             await expect(migrationSource.undoLastMigration()).rejects.toThrow(
                 'Cannot downgrade settlement transfers with recorded facts',
             );

@@ -1,9 +1,10 @@
 import type {
     FinancialCommitment,
+    ExpenseVersion,
     InterMemberObligation,
     EconomicShare,
 } from '../../domain/shared-expense/shared-expense.js';
-export function commitmentRow(c: FinancialCommitment) {
+export function commitmentRow(c: FinancialCommitment<ExpenseVersion>) {
     return {
         id: c.id,
         spaceId: c.spaceId,
@@ -11,12 +12,30 @@ export function commitmentRow(c: FinancialCommitment) {
         modality: c.modality,
         description: c.description,
         createdBy: c.createdByPersonId,
+        personalOwnerPersonId:
+            'ownerPersonId' in c.initialVersion
+                ? c.initialVersion.ownerPersonId
+                : null,
         version: 1,
         registeredAt: new Date(c.registeredAt),
     };
 }
-export function versionRow(c: FinancialCommitment) {
+export function versionRow(c: FinancialCommitment<ExpenseVersion>) {
     const v = c.initialVersion;
+    if ('ownerPersonId' in v)
+        return {
+            commitmentId: c.id,
+            spaceId: c.spaceId,
+            version: 1,
+            amountInCents: v.amount.amountInCents,
+            factDate: v.factDate,
+            expectedPayerMemberId: null,
+            splitMode: null,
+            splitInput: null,
+            ruleSnapshot: null,
+            ruleSourceVersion: 0,
+            suggestedTargetDate: null,
+        };
     return {
         commitmentId: c.id,
         spaceId: c.spaceId,
@@ -48,14 +67,15 @@ export function shareRow(c: FinancialCommitment, share: EconomicShare) {
         basisPoints: 'basisPoints' in original ? original.basisPoints : null,
     };
 }
-export function disbursementRow(c: FinancialCommitment) {
+export function disbursementRow(c: FinancialCommitment<ExpenseVersion>) {
     const d = c.disbursement;
     return {
         id: d.id,
         spaceId: c.spaceId,
         commitmentId: c.id,
         version: 1,
-        payerMemberId: d.payerMemberId,
+        payerMemberId: 'payerMemberId' in d ? d.payerMemberId : null,
+        payerPersonId: 'payerPersonId' in d ? d.payerPersonId : null,
         amountInCents: d.amountInCents,
         method: d.method,
         factDate: d.factDate,

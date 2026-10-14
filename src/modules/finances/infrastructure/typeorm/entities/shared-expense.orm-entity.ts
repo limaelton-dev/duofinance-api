@@ -8,6 +8,7 @@ import {
     Unique,
     type ValueTransformer,
 } from 'typeorm';
+import type { SplitInput } from '../../../domain/shared-expense/responsibility-split.js';
 export const safeBigInt: ValueTransformer = {
     to(value: number | null): string | null {
         if (value === null) return null;
@@ -27,7 +28,7 @@ const money = (column: string, positive = false) =>
 @Unique('UQ_financial_commitments_space_id', ['spaceId', 'id'])
 @Check(
     'CHK_financial_commitments_scope',
-    `kind = 'EXPENSE' AND modality = 'ONE_TIME' AND version > 0 AND length(description) BETWEEN 1 AND 160 AND description = btrim(description)`,
+    `kind = 'EXPENSE' AND modality = 'ONE_TIME' AND version > 0 AND length(description) BETWEEN 1 AND 160 AND description = btrim(description) AND (personal_owner_person_id IS NULL OR personal_owner_person_id = created_by)`,
 )
 @Index('IDX_financial_commitments_space_registered', [
     'spaceId',
@@ -36,6 +37,12 @@ const money = (column: string, positive = false) =>
 ])
 export class FinancialCommitmentOrmEntity {
     @PrimaryColumn('uuid') id!: string;
+    @Column({ name: 'personal_owner_person_id', type: 'uuid', nullable: true })
+    @ForeignKey('persons', 'id', {
+        name: 'FK_financial_commitments_personal_owner',
+        onDelete: 'RESTRICT',
+    })
+    personalOwnerPersonId!: string | null;
     @Column({ name: 'space_id', type: 'uuid' })
     @ForeignKey('spaces', 'id', {
         name: 'FK_financial_commitments_space',
@@ -58,7 +65,7 @@ export class FinancialCommitmentOrmEntity {
 @Unique('UQ_financial_versions_space', ['spaceId', 'commitmentId', 'version'])
 @Check(
     'CHK_financial_versions_values',
-    `${money('amount_in_cents', true)} AND version = 1 AND split_mode IN ('AMOUNTS','PERCENTAGES') AND rule_source_version >= 0 AND (rule_snapshot IS NULL) = (rule_source_version = 0) AND (suggested_target_date IS NULL OR rule_snapshot IS NOT NULL)`,
+    `${money('amount_in_cents', true)} AND version = 1 AND ((split_mode IS NOT NULL AND split_mode IN ('AMOUNTS','PERCENTAGES') AND split_input IS NOT NULL) OR (split_mode IS NULL AND split_input IS NULL AND expected_payer_member_id IS NULL AND rule_snapshot IS NULL AND rule_source_version = 0 AND suggested_target_date IS NULL)) AND rule_source_version >= 0 AND (rule_snapshot IS NULL) = (rule_source_version = 0) AND (suggested_target_date IS NULL OR rule_snapshot IS NOT NULL)`,
 )
 @ForeignKey(
     () => FinancialCommitmentOrmEntity,
@@ -86,9 +93,10 @@ export class FinancialCommitmentVersionOrmEntity {
     @Column({ name: 'expected_payer_member_id', type: 'uuid', nullable: true })
     expectedPayerMemberId!: string | null;
     @Column({ name: 'fact_date', type: 'date' }) factDate!: string;
-    @Column({ name: 'split_mode', type: 'varchar', length: 16 })
-    splitMode!: string;
-    @Column({ name: 'split_input', type: 'jsonb' }) splitInput!: unknown;
+    @Column({ name: 'split_mode', type: 'varchar', length: 16, nullable: true })
+    splitMode!: string | null;
+    @Column({ name: 'split_input', type: 'jsonb', nullable: true })
+    splitInput!: SplitInput | null;
     @Column({ name: 'rule_snapshot', type: 'jsonb', nullable: true })
     ruleSnapshot!: { kind: 'MONTHLY_DAY'; dayOfMonth: number } | null;
     @Column({ name: 'rule_source_version', type: 'integer' })
@@ -140,7 +148,7 @@ export class FinancialCommitmentShareOrmEntity {
 @Unique('UQ_financial_disbursements_origin', ['spaceId', 'commitmentId', 'id'])
 @Check(
     'CHK_financial_disbursements_values',
-    `${money('amount_in_cents', true)} AND method IN ('PIX','DEBIT','CASH') AND version = 1 AND fact_date <= (registered_at AT TIME ZONE 'America/Sao_Paulo')::date`,
+    `${money('amount_in_cents', true)} AND method IN ('PIX','DEBIT','CASH') AND version = 1 AND fact_date <= (registered_at AT TIME ZONE 'America/Sao_Paulo')::date AND ((payer_member_id IS NOT NULL AND payer_person_id IS NULL) OR (payer_member_id IS NULL AND payer_person_id IS NOT NULL))`,
 )
 @ForeignKey(
     () => FinancialCommitmentVersionOrmEntity,
@@ -157,7 +165,14 @@ export class FinancialDisbursementOrmEntity {
     @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
     @Column({ name: 'commitment_id', type: 'uuid' }) commitmentId!: string;
     @Column('integer') version!: number;
-    @Column({ name: 'payer_member_id', type: 'uuid' }) payerMemberId!: string;
+    @Column({ name: 'payer_member_id', type: 'uuid', nullable: true })
+    payerMemberId!: string | null;
+    @Column({ name: 'payer_person_id', type: 'uuid', nullable: true })
+    @ForeignKey('persons', 'id', {
+        name: 'FK_financial_disbursements_personal_payer',
+        onDelete: 'RESTRICT',
+    })
+    payerPersonId!: string | null;
     @Column({
         name: 'amount_in_cents',
         type: 'bigint',
@@ -283,7 +298,7 @@ export class InterMemberObligationChangeOrmEntity {
 @Entity('financial_expense_command_receipts')
 @Check(
     'CHK_expense_receipt',
-    `operation = 'RECORD_SHARED_CASH_EXPENSE' AND status = 'COMPLETED' AND octet_length(request_hash) = 32`,
+    `operation IN ('RECORD_SHARED_CASH_EXPENSE','RECORD_PERSONAL_EXPENSE') AND status = 'COMPLETED' AND octet_length(request_hash) = 32`,
 )
 export class FinancialExpenseCommandReceiptOrmEntity {
     @PrimaryColumn({ name: 'actor_id', type: 'uuid' })

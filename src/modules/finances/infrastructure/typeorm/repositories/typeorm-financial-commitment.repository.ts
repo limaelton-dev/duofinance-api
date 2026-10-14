@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
 import type { SharedCashExpenseView } from '../../../application/models/shared-cash-expense.js';
 import type { FinancialCommitmentRepository } from '../../../application/ports/private/shared-expense.repositories.js';
-import { FinancialCommitment } from '../../../domain/shared-expense/shared-expense.js';
+import {
+    FinancialCommitment,
+    type ExpenseVersion,
+} from '../../../domain/shared-expense/shared-expense.js';
 import {
     commitmentRow,
     disbursementRow,
@@ -26,17 +29,18 @@ function transaction(provider: EntityManagerProvider) {
 @Injectable()
 export class TypeOrmFinancialCommitmentRepository implements FinancialCommitmentRepository {
     constructor(private readonly provider: EntityManagerProvider) {}
-    async save(c: FinancialCommitment): Promise<void> {
+    async save(c: FinancialCommitment<ExpenseVersion>): Promise<void> {
         const m = transaction(this.provider),
             v = c.initialVersion;
         await m.insert(FinancialCommitmentOrmEntity, commitmentRow(c));
         await m.insert(FinancialCommitmentVersionOrmEntity, versionRow(c));
-        for (const share of v.split.shares) {
-            await m.insert(
-                FinancialCommitmentShareOrmEntity,
-                shareRow(c, share),
-            );
-        }
+        if ('split' in v)
+            for (const share of v.split.shares) {
+                await m.insert(
+                    FinancialCommitmentShareOrmEntity,
+                    shareRow(c as FinancialCommitment, share),
+                );
+            }
         await m.insert(FinancialDisbursementOrmEntity, disbursementRow(c));
     }
     async detail(
@@ -48,7 +52,7 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
             id: commitmentId,
             spaceId,
         });
-        if (!c) return null;
+        if (!c || c.personalOwnerPersonId !== null) return null;
         const v = await m.findOneByOrFail(FinancialCommitmentVersionOrmEntity, {
             commitmentId,
             version: 1,
@@ -98,7 +102,7 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
             },
             disbursement: {
                 id: d.id,
-                payerMemberId: d.payerMemberId,
+                payerMemberId: d.payerMemberId!,
                 method: d.method as 'PIX' | 'DEBIT' | 'CASH',
                 amountInCents: d.amountInCents,
                 factDate: d.factDate,
