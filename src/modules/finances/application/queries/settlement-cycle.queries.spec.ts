@@ -326,6 +326,7 @@ describe('settlement cycle application authorization and public contract', () =>
             lockForSettlement: vi.fn(),
         };
         const reader = {
+            today: vi.fn(),
             list: vi.fn().mockResolvedValue([cycle()]),
             detail: vi.fn().mockResolvedValue({ cycle: cycle(), items: [] }),
         };

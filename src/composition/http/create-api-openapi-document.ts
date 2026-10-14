@@ -1,4 +1,5 @@
 import { financesOpenApi } from '../../modules/finances/http/openapi/finances.openapi.js';
+import { todayOpenApi } from '../today/today.openapi.js';
 import type { OpenAPIObject } from '@nestjs/swagger';
 
 import { createAuthOpenApiDocument } from '../../modules/identity/http/openapi/auth.openapi.js';
@@ -19,12 +20,14 @@ export function createApiOpenApiDocument(isProduction: boolean): OpenAPIObject {
             ...(auth.tags ?? []),
             ...(spacesOpenApi.tags ?? []),
             ...(financesOpenApi.tags ?? []),
+            ...(todayOpenApi.tags ?? []),
         ],
         paths: {
             ...auth.paths,
             ...spacesOpenApi.paths,
             ...invitationsOpenApi.paths,
             ...financesOpenApi.paths,
+            ...todayOpenApi.paths,
         },
         components: {
             ...auth.components,
@@ -33,6 +36,7 @@ export function createApiOpenApiDocument(isProduction: boolean): OpenAPIObject {
                 ...spacesOpenApi.components?.schemas,
                 ...invitationsOpenApi.components?.schemas,
                 ...financesOpenApi.components?.schemas,
+                ...todayOpenApi.components?.schemas,
             },
             parameters: {
                 ...auth.components?.parameters,

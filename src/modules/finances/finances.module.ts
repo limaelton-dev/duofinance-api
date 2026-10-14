@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { GetFinanceTodayQuery } from './application/queries/finance-today.query.js';
+import { FINANCE_TODAY_QUERY_PORT } from './application/ports/public/finance-today-query.port.js';
 import {
     SettlementTransferOrmEntity,
     SettlementAllocationOrmEntity,
@@ -88,6 +90,11 @@ import {
         SettlementTransferController,
     ],
     providers: [
+        GetFinanceTodayQuery,
+        {
+            provide: FINANCE_TODAY_QUERY_PORT,
+            useExisting: GetFinanceTodayQuery,
+        },
         GetSettlementCyclesQuery,
         GetSettlementTransferOptionsQuery,
         GetSettlementTransferQuery,
@@ -160,6 +167,6 @@ import {
             useClass: TypeOrmFinancesCommandReceipts,
         },
     ],
-    exports: [SETTLEMENT_CYCLE_QUERY_PORT],
+    exports: [SETTLEMENT_CYCLE_QUERY_PORT, FINANCE_TODAY_QUERY_PORT],
 })
 export class FinancesModule {}

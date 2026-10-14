@@ -14,6 +14,14 @@ export type SettlementCycleRead = Omit<
     'position' | 'isOverdue'
 > & { payableAmountInCents: string; receivableAmountInCents: string };
 export interface SettlementCycleReader {
+    today(
+        spaceId: string,
+        actorMemberId: string,
+        referenceDate: string,
+    ): Promise<{
+        nextCycle: SettlementCycleRead | null;
+        overdueCycles: { items: SettlementCycleRead[]; totalCount: number };
+    }>;
     list(
         spaceId: string,
         actorMemberId: string,
