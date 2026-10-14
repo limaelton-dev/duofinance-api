@@ -1,4 +1,17 @@
 import { Module } from '@nestjs/common';
+import { PersonalExpenseController } from './http/controllers/personal-expense.controller.js';
+import { RecordPersonalExpensePipe } from './http/dto/record-personal-expense.dto.js';
+import { RecordPersonalExpenseHandler } from './application/handlers/record-personal-expense.handler.js';
+import {
+    GetPersonalExpenseOptionsQuery,
+    ListPersonalExpensesQuery,
+} from './application/queries/personal-expense.queries.js';
+import {
+    PERSONAL_EXPENSE_RECEIPTS,
+    PERSONAL_EXPENSE_READER,
+} from './application/ports/private/personal-expense.ports.js';
+import { TypeOrmPersonalExpenseReceipts } from './infrastructure/typeorm/repositories/typeorm-personal-expense-receipts.js';
+import { TypeOrmPersonalExpenseReader } from './infrastructure/typeorm/queries/typeorm-personal-expense-reader.js';
 import { GetFinanceTodayQuery } from './application/queries/finance-today.query.js';
 import { FINANCE_TODAY_QUERY_PORT } from './application/ports/public/finance-today-query.port.js';
 import {
@@ -83,6 +96,7 @@ import {
         ]),
     ],
     controllers: [
+        PersonalExpenseController,
         SettlementCycleController,
         DefaultSettlementRuleController,
         SharedCashExpenseController,
@@ -90,6 +104,18 @@ import {
         SettlementTransferController,
     ],
     providers: [
+        RecordPersonalExpensePipe,
+        RecordPersonalExpenseHandler,
+        GetPersonalExpenseOptionsQuery,
+        ListPersonalExpensesQuery,
+        {
+            provide: PERSONAL_EXPENSE_RECEIPTS,
+            useClass: TypeOrmPersonalExpenseReceipts,
+        },
+        {
+            provide: PERSONAL_EXPENSE_READER,
+            useClass: TypeOrmPersonalExpenseReader,
+        },
         GetFinanceTodayQuery,
         {
             provide: FINANCE_TODAY_QUERY_PORT,

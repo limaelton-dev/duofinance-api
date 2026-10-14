@@ -8,6 +8,7 @@ import { sharedCashExpenseOpenApi } from './shared-cash-expense.openapi.js';
 import { interMemberPositionOpenApi } from './inter-member-position.openapi.js';
 import { settlementCycleOpenApi } from './settlement-cycle.openapi.js';
 import { settlementTransferOpenApi } from './settlement-transfer.openapi.js';
+import { personalExpenseOpenApi } from './personal-expense.openapi.js';
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
 const object = (
     properties: Record<string, SchemaObject | ReferenceObject>,
@@ -79,6 +80,7 @@ export const financesOpenApi: Pick<
         },
     ],
     paths: {
+        ...personalExpenseOpenApi.paths,
         ...sharedCashExpenseOpenApi.paths,
         ...interMemberPositionOpenApi.paths,
         ...settlementCycleOpenApi.paths,
@@ -186,6 +188,7 @@ export const financesOpenApi: Pick<
     },
     components: {
         schemas: {
+            ...personalExpenseOpenApi.components?.schemas,
             ...sharedCashExpenseOpenApi.components?.schemas,
             ...interMemberPositionOpenApi.components?.schemas,
             ...settlementCycleOpenApi.components?.schemas,

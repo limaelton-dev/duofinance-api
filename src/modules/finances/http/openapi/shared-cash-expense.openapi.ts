@@ -523,7 +523,12 @@ export const sharedCashExpenseOpenApi: Pick<
                 responses: {
                     ...errors,
                     200: response(
-                        ref('FinancialCommitmentDetail'),
+                        {
+                            oneOf: [
+                                ref('FinancialCommitmentDetail'),
+                                ref('PersonalExpenseDetail'),
+                            ],
+                        },
                         'Despesa rastreável com labels autorizados dos membros.',
                     ),
                     404: error(

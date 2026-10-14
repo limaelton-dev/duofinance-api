@@ -1,6 +1,7 @@
 export type FinancesErrorCode =
     | 'VALIDATION_ERROR'
     | 'SHARED_SPACE_REQUIRED'
+    | 'PERSONAL_SPACE_REQUIRED'
     | 'CONCURRENT_MODIFICATION'
     | 'IDEMPOTENCY_KEY_REUSED'
     | 'EXPENSE_OPTIONS_CHANGED'
@@ -12,6 +13,7 @@ export type FinancesErrorCode =
 const messages: Record<FinancesErrorCode, string> = {
     VALIDATION_ERROR: 'Verifique os dados informados.',
     SHARED_SPACE_REQUIRED: 'Esta ação requer um espaço compartilhado.',
+    PERSONAL_SPACE_REQUIRED: 'Esta ação requer um espaço pessoal.',
     CONCURRENT_MODIFICATION:
         'A regra foi alterada. Atualize os dados e confirme novamente.',
     IDEMPOTENCY_KEY_REUSED: 'Esta chave já foi usada para outra solicitação.',

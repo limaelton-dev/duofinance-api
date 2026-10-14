@@ -1,0 +1,242 @@
+import type {
+    OpenAPIObject,
+    SchemaObject,
+    ReferenceObject,
+    ResponseObject,
+} from '@nestjs/swagger';
+const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
+const object = (
+    properties: Record<string, SchemaObject | ReferenceObject>,
+): SchemaObject => ({
+    type: 'object',
+    additionalProperties: false,
+    required: Object.keys(properties),
+    properties,
+});
+const uuid: SchemaObject = { type: 'string', format: 'uuid' },
+    date: SchemaObject = { type: 'string', format: 'date' },
+    instant: SchemaObject = { type: 'string', format: 'date-time' },
+    money: SchemaObject = {
+        type: 'integer',
+        minimum: 1,
+        maximum: Number.MAX_SAFE_INTEGER,
+    },
+    description: SchemaObject = {
+        type: 'string',
+        minLength: 1,
+        maxLength: 160,
+    },
+    method: SchemaObject = { type: 'string', enum: ['PIX', 'DEBIT', 'CASH'] };
+const view = object({
+    spaceId: uuid,
+    spaceType: { type: 'string', enum: ['PERSONAL'] },
+    commitment: object({
+        id: uuid,
+        version: { type: 'integer', enum: [1] },
+        kind: { type: 'string', enum: ['EXPENSE'] },
+        modality: { type: 'string', enum: ['ONE_TIME'] },
+        description,
+        amountInCents: money,
+        factDate: date,
+        registeredAt: instant,
+        createdByPersonId: uuid,
+        ownerPersonId: uuid,
+    }),
+    disbursement: object({
+        id: uuid,
+        payerPersonId: uuid,
+        method,
+        amountInCents: money,
+        factDate: date,
+        registeredAt: instant,
+    }),
+});
+const response = (
+    schema: SchemaObject | ReferenceObject,
+    description: string,
+): ResponseObject => ({
+    description,
+    headers: {
+        'Cache-Control': { schema: { type: 'string', enum: ['no-store'] } },
+    },
+    content: { 'application/json': { schema } },
+});
+const error = (...codes: string[]) =>
+    response(
+        {
+            allOf: [
+                ref('ErrorResponse'),
+                {
+                    type: 'object',
+                    properties: { code: { type: 'string', enum: codes } },
+                },
+            ],
+        },
+        codes.join(', '),
+    );
+const errors = {
+    400: error('VALIDATION_ERROR'),
+    401: error('UNAUTHENTICATED'),
+    404: error('SPACE_NOT_FOUND'),
+    409: error('PERSONAL_SPACE_REQUIRED'),
+    429: {
+        ...error('TOO_MANY_REQUESTS'),
+        headers: { 'Retry-After': { schema: { type: 'integer', minimum: 1 } } },
+    },
+    500: error('INTERNAL_ERROR'),
+};
+const parameters = [
+    { name: 'spaceId', in: 'path' as const, required: true, schema: uuid },
+];
+const security = [{ sessionCookie: [] }];
+export const personalExpenseOpenApi: Pick<
+    OpenAPIObject,
+    'paths' | 'components'
+> = {
+    paths: {
+        '/v2/spaces/{spaceId}/personal-expense-options': {
+            get: {
+                operationId: 'getPersonalExpenseOptions',
+                tags: ['Finances'],
+                summary: 'Consultar opções de despesa pessoal',
+                security,
+                parameters,
+                responses: {
+                    ...errors,
+                    200: response(
+                        ref('PersonalExpenseOptions'),
+                        'Data sugerida da API em America/Sao_Paulo e meios disponíveis; leitura sem escrita.',
+                    ),
+                },
+            },
+        },
+        '/v2/spaces/{spaceId}/personal-expenses': {
+            get: {
+                operationId: 'listPersonalExpenses',
+                tags: ['Finances'],
+                summary: 'Consultar histórico de despesas pessoais',
+                security,
+                parameters: [
+                    ...parameters,
+                    {
+                        name: 'cursor',
+                        in: 'query',
+                        required: false,
+                        schema: { type: 'string', maxLength: 300 },
+                        description:
+                            'Cursor canônico do mesmo espaço, data do fato e ID; ordenação decrescente.',
+                    },
+                ],
+                responses: {
+                    ...errors,
+                    200: response(
+                        ref('PersonalExpenseList'),
+                        'Até 20 fatos pessoais; nenhum acerto ou dupla contagem.',
+                    ),
+                },
+            },
+            post: {
+                operationId: 'recordPersonalExpense',
+                tags: ['Finances'],
+                summary: 'Registrar despesa pessoal e desembolso integral',
+                description:
+                    'Titular, autoria e pagador derivados da sessão autorizada. Uma transação grava compromisso, versão, desembolso e recibo. Retry usa a mesma chave e entrada; o replay revalida acesso e preserva o resultado original.',
+                security,
+                parameters: [
+                    ...parameters,
+                    {
+                        name: 'X-CSRF-Token',
+                        in: 'header',
+                        required: true,
+                        schema: { type: 'string' },
+                    },
+                    {
+                        name: 'Idempotency-Key',
+                        in: 'header',
+                        required: true,
+                        schema: uuid,
+                    },
+                ],
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: ref('RecordPersonalExpenseRequest'),
+                            example: {
+                                description: 'Consulta',
+                                amountInCents: 12000,
+                                factDate: '2026-10-14',
+                                disbursement: { method: 'PIX' },
+                            },
+                        },
+                    },
+                },
+                responses: {
+                    ...errors,
+                    201: {
+                        ...response(
+                            ref('RecordPersonalExpenseResponse'),
+                            'Criação ou replay autorizado.',
+                        ),
+                        headers: {
+                            'Cache-Control': {
+                                schema: { type: 'string', enum: ['no-store'] },
+                            },
+                            Location: {
+                                schema: { type: 'string' },
+                                description:
+                                    'GET /v2/spaces/:spaceId/financial-commitments/:commitmentId',
+                            },
+                        },
+                    },
+                    403: error('INVALID_CSRF_TOKEN'),
+                    409: error(
+                        'PERSONAL_SPACE_REQUIRED',
+                        'SPACE_NOT_ACTIVE',
+                        'IDEMPOTENCY_KEY_REUSED',
+                    ),
+                },
+            },
+        },
+    },
+    components: {
+        schemas: {
+            PersonalExpenseOptions: object({
+                spaceId: uuid,
+                referenceDate: date,
+                disbursementMethods: {
+                    type: 'array',
+                    minItems: 3,
+                    maxItems: 3,
+                    items: method,
+                },
+            }),
+            RecordPersonalExpenseRequest: object({
+                description,
+                amountInCents: money,
+                factDate: date,
+                disbursement: object({ method }),
+            }),
+            PersonalExpenseDetail: view,
+            RecordPersonalExpenseResponse: object({
+                ...view.properties,
+                replayed: { type: 'boolean' },
+            }),
+            PersonalExpenseList: object({
+                spaceId: uuid,
+                items: {
+                    type: 'array',
+                    maxItems: 20,
+                    items: object({
+                        id: uuid,
+                        description,
+                        amountInCents: money,
+                        factDate: date,
+                        disbursement: object({ amountInCents: money, method }),
+                    }),
+                },
+                nextCursor: { oneOf: [{ type: 'string' }, { type: 'null' }] },
+            }),
+        },
+    },
+};

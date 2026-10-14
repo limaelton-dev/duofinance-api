@@ -1,5 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
+    SPACE_ACCESS_PORT,
+    type SpaceAccessPort,
+} from '../../../spaces/application/ports/public/space-access.port.js';
+import {
+    PERSONAL_EXPENSE_READER,
+    type PersonalExpenseReader,
+} from '../ports/private/personal-expense.ports.js';
+import type { PersonalExpenseView } from '../models/personal-expense.js';
+import {
     SPACE_FINANCIAL_CONTEXT_PORT,
     type SpaceFinancialContextPort,
 } from '../../../spaces/application/ports/public/space-financial-context.port.js';
@@ -108,6 +117,10 @@ export class GetSharedCashExpenseOptionsQuery {
 @Injectable()
 export class GetFinancialCommitmentQuery {
     constructor(
+        @Inject(SPACE_ACCESS_PORT)
+        private readonly spaceAccess: SpaceAccessPort,
+        @Inject(PERSONAL_EXPENSE_READER)
+        private readonly personal: PersonalExpenseReader,
         @Inject(SPACE_FINANCIAL_CONTEXT_PORT)
         private readonly access: SpaceFinancialContextPort,
         @Inject(FINANCIAL_COMMITMENT_REPOSITORY)
@@ -118,14 +131,26 @@ export class GetFinancialCommitmentQuery {
         space: SpaceId,
         commitmentId: string,
     ): Promise<
-        SharedCashExpenseView & {
-            members: {
-                memberId: string;
-                personId: string;
-                displayName: string;
-            }[];
-        }
+        | PersonalExpenseView
+        | (SharedCashExpenseView & {
+              members: {
+                  memberId: string;
+                  personId: string;
+                  displayName: string;
+              }[];
+          })
     > {
+        const access = await this.spaceAccess.assertCanRead(actor, space);
+        if (access.type === 'PERSONAL') {
+            const detail = await this.personal.detail(
+                space.value,
+                commitmentId,
+            );
+            if (!detail)
+                throw new FinancesError('FINANCIAL_COMMITMENT_NOT_FOUND');
+            await this.spaceAccess.assertCanRead(actor, space);
+            return detail;
+        }
         await this.access.read(actor, space);
         const detail = await this.commitments.detail(space.value, commitmentId);
         if (!detail) throw new FinancesError('FINANCIAL_COMMITMENT_NOT_FOUND');
