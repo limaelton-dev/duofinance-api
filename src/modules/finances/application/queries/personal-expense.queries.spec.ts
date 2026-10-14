@@ -38,6 +38,7 @@ function fixture() {
             read: vi.fn(),
             lockForWrite: vi.fn(),
             lockForSettlement: vi.fn(),
+            lockForFulfillment: vi.fn(),
         },
         commitments = { save: vi.fn(), detail: vi.fn() };
     return {

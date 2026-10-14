@@ -29,6 +29,7 @@ export class InterMemberObligation {
         remainingAmountInCents = originalAmountInCents,
         version = 1,
         appliedAllocationIds: readonly string[] = [],
+        readonly originKind: 'EXPENSE' | 'INCOME' = 'EXPENSE',
     ) {
         if (
             debtorMemberId === creditorMemberId ||
@@ -87,6 +88,7 @@ export class InterMemberObligation {
             this.remainingAmountInCents - amountInCents,
             this.version + 1,
             [...this.appliedAllocationIds, allocationId],
+            this.originKind,
         );
     }
 }

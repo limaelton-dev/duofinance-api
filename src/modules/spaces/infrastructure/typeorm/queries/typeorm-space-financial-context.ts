@@ -25,6 +25,12 @@ export class TypeOrmSpaceFinancialContext implements SpaceFinancialContextPort {
     ): Promise<SpaceFinancialContext> {
         return this.load(actorId, spaceId, true, true);
     }
+    lockForFulfillment(
+        actorId: PersonId,
+        spaceId: SpaceId,
+    ): Promise<SpaceFinancialContext> {
+        return this.load(actorId, spaceId, true, true);
+    }
     private async load(
         actorId: PersonId,
         spaceId: SpaceId,
