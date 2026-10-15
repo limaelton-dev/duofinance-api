@@ -30,6 +30,18 @@ import { SpaceId } from '../dist/modules/spaces/domain/space/space-id.js';
 import { FINANCES_CLOCK } from '../dist/modules/finances/application/ports/private/shared-expense.repositories.js';
 import type { RecordSettlementTransferCommand } from '../dist/modules/finances/application/models/settlement-transfer.js';
 
+async function rewindToMigration(name: string) {
+    while (
+        (
+            await migrationSource.query(
+                'SELECT name FROM migrations ORDER BY id DESC LIMIT 1',
+            )
+        )[0]?.name !== name
+    ) {
+        await migrationSource.undoLastMigration();
+    }
+}
+
 describe('CARD-009 PostgreSQL settlement transfer', () => {
     let app: INestApplication,
         db: DataSource,
@@ -583,10 +595,7 @@ describe('CARD-009 PostgreSQL settlement transfer', () => {
         );
         await migrationSource.initialize();
         try {
-            await migrationSource.undoLastMigration();
-            await migrationSource.undoLastMigration();
-            await migrationSource.undoLastMigration();
-            await migrationSource.undoLastMigration();
+            await rewindToMigration('OptionalExpectedPayer1791728636456');
             await db.query(
                 'UPDATE inter_member_obligations SET remaining_amount_in_cents=4000 WHERE id=$1',
                 [id],
@@ -617,9 +626,9 @@ describe('CARD-009 PostgreSQL settlement transfer', () => {
             ).toBe(0);
             const input = command(id, 1, 4000);
             await record.execute(input);
-            await migrationSource.undoLastMigration();
-            await migrationSource.undoLastMigration();
-            await migrationSource.undoLastMigration();
+            await rewindToMigration(
+                'RecordManualSettlementTransfer1791850000000',
+            );
             await expect(migrationSource.undoLastMigration()).rejects.toThrow(
                 'Cannot downgrade settlement transfers with recorded facts',
             );

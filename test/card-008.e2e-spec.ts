@@ -1044,11 +1044,21 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
             '#/components/schemas/InterMemberObligationOrigin',
         );
         const origin = doc.components.schemas.InterMemberObligationOrigin;
-        expect(origin.oneOf).toHaveLength(2);
+        expect(origin.oneOf).toHaveLength(3);
         for (const variant of origin.oneOf)
             expect(variant.properties.commitmentId.format).toBe('uuid');
-        expect(origin.oneOf[0].properties.disbursementId.format).toBe('uuid');
-        expect(origin.oneOf[1].properties.receiptId.format).toBe('uuid');
+        for (const factId of [
+            'disbursementId',
+            'receiptId',
+            'externalLiabilityId',
+        ])
+            expect(
+                origin.oneOf.some(
+                    (variant: {
+                        properties: Record<string, { format?: string }>;
+                    }) => variant.properties[factId]?.format === 'uuid',
+                ),
+            ).toBe(true);
         expect(obligation.properties.resolvedAmountInCents.type).toBe(
             'integer',
         );

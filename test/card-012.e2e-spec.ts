@@ -393,7 +393,15 @@ describe('CARD-012 income and receipt HTTP/PostgreSQL', () => {
         );
         await migrationSource.initialize();
         try {
-            await migrationSource.undoLastMigration();
+            while (
+                (
+                    await migrationSource.query(
+                        'SELECT name FROM migrations ORDER BY id DESC LIMIT 1',
+                    )
+                )[0]?.name !== 'RecordIncomeAndReceipt1792022348501'
+            ) {
+                await migrationSource.undoLastMigration();
+            }
             await expect(migrationSource.undoLastMigration()).rejects.toThrow(
                 'CARD-012 rollback refused',
             );

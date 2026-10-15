@@ -155,7 +155,7 @@ describe('CARD-011 personal expense HTTP and PostgreSQL', () => {
                     factDate: '2026-10-14',
                 },
             });
-            expect(result.commitment.id).not.toBe(result.disbursement.id);
+            expect(result.commitment.id).not.toBe(result.disbursement!.id);
             expect(await counts()).toEqual({
                 commitments: 1,
                 versions: 1,
