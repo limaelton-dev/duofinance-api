@@ -258,7 +258,7 @@ describe('Partial financial fulfillment', () => {
         const first = personal();
         const second = first.recordDisbursement(
             {
-                ...first.disbursement,
+                ...first.disbursement!,
                 id: 'two',
                 amountInCents: 20000,
                 factDate: '2026-10-13',
@@ -267,7 +267,7 @@ describe('Partial financial fulfillment', () => {
             today,
         );
         const last = second.recordDisbursement(
-            { ...first.disbursement, id: 'three', amountInCents: 50000 },
+            { ...first.disbursement!, id: 'three', amountInCents: 50000 },
             2,
             today,
         );
@@ -291,13 +291,13 @@ describe('Partial financial fulfillment', () => {
             'three',
         ]);
         expect(last.disbursements[1].factDate).toBe('2026-10-13');
-        expect(last.disbursement.id).toBe('one');
+        expect(last.disbursement!.id).toBe('one');
         expect(
             last.disbursements.every((f) => f.recordedByPersonId === 'owner'),
         ).toBe(true);
         expect(() =>
             last.recordDisbursement(
-                { ...first.disbursement, id: 'four', amountInCents: 1 },
+                { ...first.disbursement!, id: 'four', amountInCents: 1 },
                 3,
                 today,
             ),
@@ -309,7 +309,7 @@ describe('Partial financial fulfillment', () => {
             const first = personal();
             expect(() =>
                 first.recordDisbursement(
-                    { ...first.disbursement, id: 'two', amountInCents },
+                    { ...first.disbursement!, id: 'two', amountInCents },
                     1,
                     today,
                 ),
@@ -318,7 +318,7 @@ describe('Partial financial fulfillment', () => {
     );
     it('rejects a stale version, future fact, duplicate identity and another personal payer', () => {
         const first = personal(),
-            payment = { ...first.disbursement, id: 'two', amountInCents: 1 };
+            payment = { ...first.disbursement!, id: 'two', amountInCents: 1 };
         expect(() => first.recordDisbursement(payment, 2, today)).toThrow();
         expect(() =>
             first.recordDisbursement(

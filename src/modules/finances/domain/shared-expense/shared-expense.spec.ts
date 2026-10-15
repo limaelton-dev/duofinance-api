@@ -67,7 +67,7 @@ describe('Shared cash expense invariants', () => {
             commitment.initialVersion.settlementRuleSnapshot?.dayOfMonth,
         ).toBe(31);
         expect(commitment.initialVersion.expectedPayerMemberId).toBe(a);
-        expect(commitment.disbursement.payerMemberId).toBe(b);
+        expect(commitment.disbursement!.payerMemberId).toBe(b);
         expect(commitment.createdByPersonId).toBe('author');
         expect(commitment.initialVersion.factDate).toBe('2026-10-09');
         expect(Object.isFrozen(snapshot)).toBe(false);
@@ -75,7 +75,7 @@ describe('Shared cash expense invariants', () => {
     it('preserves no expected payer without changing the disbursement', () => {
         const { commitment } = create('2026-10-09', null);
         expect(commitment.initialVersion.expectedPayerMemberId).toBeNull();
-        expect(commitment.disbursement.payerMemberId).toBe(b);
+        expect(commitment.disbursement!.payerMemberId).toBe(b);
     });
     it('rejects future/impossible dates, foreign planned payer and excessive payments', () => {
         expect(() => create('2026-10-11')).toThrow();

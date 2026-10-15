@@ -44,6 +44,7 @@ interface DetailRow extends CycleRow {
     registered_at: string;
     commitment_id: string;
     disbursement_id: string | null;
+    external_liability_id: string | null;
     receipt_id: string | null;
     description: string;
 }
@@ -205,7 +206,7 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                 p.debtor_member_id,p.creditor_member_id,p.original_amount_in_cents::text,p.recognized_amount_in_cents::text,p.remaining_amount_in_cents::text,
                 to_char(p.fact_date,'YYYY-MM-DD') AS fact_date,
                 to_char(p.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS registered_at,
-                p.commitment_id,p.disbursement_id,p.receipt_id,c.description
+                p.commitment_id,p.disbursement_id,p.external_liability_id,p.receipt_id,c.description
             FROM selected_cycle s CROSS JOIN totals t LEFT JOIN page p ON true
             LEFT JOIN financial_commitments c ON c.space_id=$1 AND c.id=p.commitment_id
             ORDER BY p.registered_at DESC,p.id DESC
@@ -248,7 +249,13 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                       }
                     : {
                           commitmentId: row.commitment_id,
-                          disbursementId: row.disbursement_id!,
+                          ...(row.external_liability_id
+                              ? {
+                                    kind: 'EXPENSE' as const,
+                                    externalLiabilityId:
+                                        row.external_liability_id,
+                                }
+                              : { disbursementId: row.disbursement_id! }),
                           description: row.description,
                       },
             }));

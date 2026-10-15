@@ -235,10 +235,12 @@ export const expenseDisbursementOpenApi: Pick<
                     ...obligation.properties,
                     originDisbursementId: uuid,
                     originReceiptId: uuid,
+                    originExternalLiabilityId: uuid,
                 },
                 oneOf: [
                     { required: ['originDisbursementId'] },
                     { required: ['originReceiptId'] },
+                    { required: ['originExternalLiabilityId'] },
                 ],
             },
             RecordExpenseDisbursementRequest: {

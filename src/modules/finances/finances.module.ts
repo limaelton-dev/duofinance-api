@@ -1,3 +1,12 @@
+import { CreditCardPurchaseController } from './http/controllers/credit-card-purchase.controller.js';
+import {
+    RecordCreditCardPurchasePipe,
+    RecordExternalLiabilityPipe,
+} from './http/dto/record-credit-card-purchase.dto.js';
+import { RecordCreditCardPurchaseHandler } from './application/handlers/record-credit-card-purchase.handler.js';
+import { CreditCardPurchaseQueries } from './application/queries/credit-card-purchase.queries.js';
+import { CREDIT_CARD_RECEIPTS } from './application/ports/private/credit-card-receipts.js';
+import { TypeOrmCreditCardReceipts } from './infrastructure/typeorm/repositories/typeorm-credit-card-receipts.js';
 import { Module } from '@nestjs/common';
 import { ExpenseDisbursementController } from './http/controllers/expense-disbursement.controller.js';
 import { RecordExpenseDisbursementPipe } from './http/dto/record-expense-disbursement.dto.js';
@@ -120,6 +129,7 @@ import {
         ]),
     ],
     controllers: [
+        CreditCardPurchaseController,
         ExpenseDisbursementController,
         PersonalExpenseController,
         IncomeController,
@@ -130,6 +140,11 @@ import {
         SettlementTransferController,
     ],
     providers: [
+        RecordCreditCardPurchasePipe,
+        RecordExternalLiabilityPipe,
+        RecordCreditCardPurchaseHandler,
+        CreditCardPurchaseQueries,
+        { provide: CREDIT_CARD_RECEIPTS, useClass: TypeOrmCreditCardReceipts },
         RecordExpenseDisbursementPipe,
         RecordExpenseDisbursementHandler,
         ReconcileFinancialOrigin,

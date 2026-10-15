@@ -68,6 +68,7 @@ function setup() {
         lockForFulfillment: vi.fn(),
     };
     const commitments: FinancialCommitmentRepository = {
+        saveExternalLiability: vi.fn(),
         save: vi.fn(),
         detail: vi.fn(),
         find: vi.fn(async () => root),
@@ -140,7 +141,7 @@ describe('RecordExpenseDisbursement application', () => {
             remainingAmountInCents: 50000,
             status: 'PARTIALLY_PAID',
         });
-        expect(result.disbursement.id).toBe(initial.disbursement.id);
+        expect(result.disbursement!.id).toBe(initial.disbursement!.id);
         expect(result.disbursements).toHaveLength(2);
         expect(result.disbursements[1]).toMatchObject({
             payerPersonId: actor.value,

@@ -51,7 +51,7 @@ describe('Personal FinancialCommitment', () => {
                 amountInCents: 12000,
                 method,
             });
-            expect(c.id).not.toBe(c.disbursement.id);
+            expect(c.id).not.toBe(c.disbursement!.id);
             expect(c.initialVersion).not.toHaveProperty('split');
             expect(c.disbursement).not.toHaveProperty('payerMemberId');
             expect(Object.isFrozen(c)).toBe(true);

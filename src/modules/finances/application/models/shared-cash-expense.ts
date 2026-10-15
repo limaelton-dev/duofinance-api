@@ -51,9 +51,14 @@ export interface SharedCashExpenseView {
     };
     disbursement: FinancialCommitment['disbursement'];
     disbursements: FinancialCommitment['disbursements'];
+    externalLiabilities?: FinancialCommitment['externalLiabilities'];
+    assumedAmountInCents?: number;
+    externalOutstandingAmountInCents?: number;
+    supportedAmountInCents?: number;
+    fulfillmentStatus?: 'PARTIALLY_FULFILLED' | 'FULFILLED';
     paidAmountInCents: number;
     remainingAmountInCents: number;
-    status: 'PARTIALLY_PAID' | 'PAID';
+    status: FinancialCommitment['status'];
     obligation: FulfillmentObligationView | null;
     obligations: FulfillmentObligationView[];
     settlementCycle: null | {
@@ -117,7 +122,15 @@ export function expenseView(
             settlementRuleSourceVersion: version.settlementRuleSourceVersion,
             suggestedTargetDate: version.suggestedTargetDate,
         },
-        disbursement: { ...commitment.disbursement },
+        disbursement: commitment.disbursement
+            ? { ...commitment.disbursement }
+            : null,
+        externalLiabilities: commitment.externalLiabilities,
+        assumedAmountInCents: commitment.assumedAmountInCents,
+        externalOutstandingAmountInCents:
+            commitment.externalOutstandingAmountInCents,
+        supportedAmountInCents: commitment.supportedAmountInCents,
+        fulfillmentStatus: commitment.fulfillmentStatus,
         disbursements: commitment.disbursements,
         paidAmountInCents: commitment.paidAmountInCents,
         remainingAmountInCents: commitment.remainingAmountInCents,

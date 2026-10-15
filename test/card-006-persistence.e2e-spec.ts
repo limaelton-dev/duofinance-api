@@ -30,6 +30,18 @@ import {
 import type { INestApplication } from '@nestjs/common';
 import { IssueSpaceInvitationHandler } from '../dist/modules/spaces/application/handlers/issue-space-invitation.handler.js';
 import { RespondToSharedSpaceInvitationHandler } from '../dist/modules/spaces/application/handlers/respond-to-shared-space-invitation.handler.js';
+async function rewindToMigration(name: string) {
+    while (
+        (
+            await migrationSource.query(
+                'SELECT name FROM migrations ORDER BY id DESC LIMIT 1',
+            )
+        )[0]?.name !== name
+    ) {
+        await migrationSource.undoLastMigration();
+    }
+}
+
 describe('CARD-006 atomic PostgreSQL persistence', () => {
     let app: INestApplication,
         db: DataSource,
@@ -323,7 +335,7 @@ describe('CARD-006 atomic PostgreSQL persistence', () => {
         await expect(
             db.query(
                 `UPDATE financial_disbursements SET amount_in_cents=9007199254740992 WHERE id=$1`,
-                [result.disbursement.id],
+                [result.disbursement!.id],
             ),
         ).rejects.toThrow();
         await expect(
@@ -351,7 +363,7 @@ describe('CARD-006 atomic PostgreSQL persistence', () => {
         await expect(
             db.query(
                 `UPDATE financial_disbursements SET payer_member_id=$1 WHERE id=$2`,
-                [foreignMember, result.disbursement.id],
+                [foreignMember, result.disbursement!.id],
             ),
         ).rejects.toThrow();
         await expect(
@@ -457,10 +469,7 @@ describe('CARD-006 atomic PostgreSQL persistence', () => {
         );
         await migrationSource.initialize();
         try {
-            await migrationSource.undoLastMigration();
-            await migrationSource.undoLastMigration();
-            await migrationSource.undoLastMigration();
-            await migrationSource.undoLastMigration();
+            await rewindToMigration('OptionalExpectedPayer1791728636456');
             await expect(migrationSource.undoLastMigration()).rejects.toThrow(
                 'historical expenses without an expected payer exist',
             );
@@ -484,11 +493,7 @@ describe('CARD-006 atomic PostgreSQL persistence', () => {
         const before = await financialSnapshot();
         await migrationSource.initialize();
         try {
-            await migrationSource.undoLastMigration();
-            await migrationSource.undoLastMigration();
-            await migrationSource.undoLastMigration();
-            await migrationSource.undoLastMigration();
-            await migrationSource.undoLastMigration();
+            await rewindToMigration('RecordSharedCashExpense1791655785713');
             await migrationSource.runMigrations();
         } finally {
             await migrationSource.destroy();
@@ -504,12 +509,9 @@ describe('CARD-006 atomic PostgreSQL persistence', () => {
         const prior = await db.query('SELECT * FROM default_settlement_rules');
         await migrationSource.initialize();
         try {
-            await migrationSource.undoLastMigration();
-            await migrationSource.undoLastMigration();
-            await migrationSource.undoLastMigration();
-            await migrationSource.undoLastMigration();
-            await migrationSource.undoLastMigration();
-            await migrationSource.undoLastMigration();
+            await rewindToMigration(
+                'ConfigureDefaultSettlementRule1791590400000',
+            );
             expect(
                 await db.query('SELECT * FROM default_settlement_rules'),
             ).toEqual(prior);

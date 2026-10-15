@@ -228,6 +228,18 @@ describe('CARD-013 partial fulfillment HTTP/PostgreSQL', () => {
             [commitment],
         );
     }
+    async function undoPartialFulfillment() {
+        while (
+            (
+                await migrationSource.query(
+                    'SELECT name FROM migrations ORDER BY id DESC LIMIT 1',
+                )
+            )[0]?.name !== 'PartialFinancialFulfillment1792022400000'
+        ) {
+            await migrationSource.undoLastMigration();
+        }
+        return migrationSource.undoLastMigration();
+    }
     async function transfer(f: Shared, commitment: string, amount: number) {
         const [o] = await openObligations(commitment);
         return (
@@ -1727,7 +1739,7 @@ describe('CARD-013 partial fulfillment HTTP/PostgreSQL', () => {
             [key],
         );
         await migrationSource.initialize();
-        await migrationSource.undoLastMigration();
+        await undoPartialFulfillment();
         const tables = Object.keys(await snapshot());
         const columns: Record<string, string[]> = {};
         for (const table of tables) {
@@ -1776,7 +1788,7 @@ describe('CARD-013 partial fulfillment HTTP/PostgreSQL', () => {
         expect(replay.commitment.id).toBe(personal.commitment.id);
         expect(replay).not.toHaveProperty('disbursements');
         expect(await legacySnapshot()).toEqual(before);
-        await migrationSource.undoLastMigration();
+        await undoPartialFulfillment();
         expect(await legacySnapshot()).toEqual(before);
         await migrationSource.runMigrations();
         expect(await legacySnapshot()).toEqual(before);
@@ -1807,6 +1819,16 @@ describe('CARD-013 partial fulfillment HTTP/PostgreSQL', () => {
                         },
                     )
                     .expect(201);
+            await migrationSource.initialize();
+            while (
+                (
+                    await migrationSource.query(
+                        'SELECT name FROM migrations ORDER BY id DESC LIMIT 1',
+                    )
+                )[0]?.name !== 'PartialFinancialFulfillment1792022400000'
+            ) {
+                await migrationSource.undoLastMigration();
+            }
             const before = await snapshot();
             const columns = await db.query(
                 "SELECT table_name,column_name,data_type FROM information_schema.columns WHERE table_schema='public' ORDER BY table_name,ordinal_position",
@@ -1814,8 +1836,7 @@ describe('CARD-013 partial fulfillment HTTP/PostgreSQL', () => {
             const migrations = await db.query(
                 'SELECT * FROM migrations ORDER BY id',
             );
-            await migrationSource.initialize();
-            await expect(migrationSource.undoLastMigration()).rejects.toThrow(
+            await expect(undoPartialFulfillment()).rejects.toThrow(
                 'Partial financial fulfillment cannot be reverted without losing recorded facts or reconciliation history',
             );
             expect(await snapshot()).toEqual(before);

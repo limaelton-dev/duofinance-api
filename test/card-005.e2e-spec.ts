@@ -687,10 +687,11 @@ describe('CARD-005 — contrato HTTP e persistência PostgreSQL', () => {
             expect(
                 (
                     await source.query(
-                        'SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 6',
+                        'SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 7',
                     )
                 ).map((m: { name: string }) => m.name),
             ).toEqual([
+                'RecordCreditCardPurchase1792087652424',
                 'PartialFinancialFulfillment1792022400000',
                 'RecordIncomeAndReceipt1792022348501',
                 'RecordPersonalExpense1791995573673',
@@ -698,12 +699,15 @@ describe('CARD-005 — contrato HTTP e persistência PostgreSQL', () => {
                 'OptionalExpectedPayer1791728636456',
                 'RecordSharedCashExpense1791655785713',
             ]);
-            await source.undoLastMigration();
-            await source.undoLastMigration();
-            await source.undoLastMigration();
-            await source.undoLastMigration();
-            await source.undoLastMigration();
-            await source.undoLastMigration();
+            while (
+                (
+                    await source.query(
+                        'SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 1',
+                    )
+                )[0]?.name !== 'ConfigureDefaultSettlementRule1791590400000'
+            ) {
+                await source.undoLastMigration();
+            }
             const latest = (
                 await source.query(
                     'SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 1',
@@ -727,6 +731,7 @@ describe('CARD-005 — contrato HTTP e persistência PostgreSQL', () => {
                 'RecordPersonalExpense1791995573673',
                 'RecordIncomeAndReceipt1792022348501',
                 'PartialFinancialFulfillment1792022400000',
+                'RecordCreditCardPurchase1792087652424',
             ]);
         } finally {
             await source.destroy();

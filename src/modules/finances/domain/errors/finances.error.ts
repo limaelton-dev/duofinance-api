@@ -28,7 +28,7 @@ const messages: Record<FinancesErrorCode, string> = {
     INTER_MEMBER_OBLIGATION_NOT_FOUND: 'Pendência não encontrada.',
     SETTLEMENT_TRANSFER_NOT_FOUND: 'Transferência não encontrada.',
     INCOME_ALREADY_RECEIVED: 'Esta receita já foi recebida.',
-    EXPENSE_ALREADY_PAID: 'Esta despesa já foi paga.',
+    EXPENSE_ALREADY_PAID: 'Esta despesa já foi integralmente realizada.',
     INCOME_OPTIONS_CHANGED: 'As opções mudaram. Atualize e confirme novamente.',
 };
 export class FinancesError extends Error {

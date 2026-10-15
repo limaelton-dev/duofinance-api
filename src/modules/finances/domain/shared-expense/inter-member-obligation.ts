@@ -45,6 +45,7 @@ export class InterMemberObligation {
         readonly recognizedAmountInCents = originalAmountInCents,
         readonly reconciled = false,
         reconciliation: ObligationReconciliation | null = null,
+        readonly originExternalLiabilityId: string | null = null,
     ) {
         if (
             debtorMemberId === creditorMemberId ||
@@ -111,6 +112,9 @@ export class InterMemberObligation {
             [...this.appliedAllocationIds, allocationId],
             this.originKind,
             this.recognizedAmountInCents,
+            this.reconciled,
+            null,
+            this.originExternalLiabilityId,
         );
     }
     reconcile(
@@ -153,6 +157,7 @@ export class InterMemberObligation {
                 previousRemainingAmountInCents: this.remainingAmountInCents,
                 remainingAmountInCents,
             },
+            this.originExternalLiabilityId,
         );
     }
 }

@@ -50,7 +50,7 @@ export class GetExpenseDisbursementOptionsQuery {
             spaceType: access.type,
             commitmentId,
             expectedCommitmentVersion: c.version,
-            amountInCents: c.paidAmountInCents + c.remainingAmountInCents,
+            amountInCents: c.supportedAmountInCents + c.remainingAmountInCents,
             paidAmountInCents: c.paidAmountInCents,
             remainingAmountInCents: c.remainingAmountInCents,
             referenceDate: this.clock.today(),

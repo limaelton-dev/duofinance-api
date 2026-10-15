@@ -22,6 +22,12 @@ export interface OpenObligationView extends PositionKey {
           }
         | {
               commitmentId: string;
+              externalLiabilityId: string;
+              description: string;
+              kind: 'EXPENSE';
+          }
+        | {
+              commitmentId: string;
               receiptId: string;
               description: string;
               kind: 'INCOME';

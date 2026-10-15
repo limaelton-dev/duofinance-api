@@ -32,6 +32,18 @@ import type { RecordPersonalExpenseCommand } from '../dist/modules/finances/appl
 import { RecordPersonalExpense1791995573673 } from '../dist/shared/technical/database/typeorm/migrations/1791995573673-RecordPersonalExpense.js';
 const id = (n: number) =>
     `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+async function rewindToMigration(name: string) {
+    while (
+        (
+            await migrationSource.query(
+                'SELECT name FROM migrations ORDER BY id DESC LIMIT 1',
+            )
+        )[0]?.name !== name
+    ) {
+        await migrationSource.undoLastMigration();
+    }
+}
+
 describe('CARD-011 PostgreSQL transaction and migration compatibility', () => {
     let app: INestApplication,
         db: DataSource,
@@ -171,7 +183,7 @@ describe('CARD-011 PostgreSQL transaction and migration compatibility', () => {
                 handler.execute(c),
             ]);
         expect(first.commitment.id).toBe(second.commitment.id);
-        expect(first.disbursement.id).toBe(second.disbursement.id);
+        expect(first.disbursement!.id).toBe(second.disbursement!.id);
         expect([first.replayed, second.replayed].sort()).toEqual([false, true]);
         expect(reached).toBe(3);
         expect(await counts()).toEqual({
@@ -255,7 +267,7 @@ describe('CARD-011 PostgreSQL transaction and migration compatibility', () => {
         await expect(
             db.query(
                 'INSERT INTO financial_disbursements SELECT * FROM financial_disbursements WHERE id=$1',
-                [r.disbursement.id],
+                [r.disbursement!.id],
             ),
         ).rejects.toMatchObject({
             driverError: {
@@ -287,8 +299,7 @@ describe('CARD-011 PostgreSQL transaction and migration compatibility', () => {
     it('prevents rollback before changing or discarding any personal data', async () => {
         const r = await handler.execute(command()),
             before = await counts();
-        await migrationSource.undoLastMigration();
-        await migrationSource.undoLastMigration();
+        await rewindToMigration('RecordPersonalExpense1791995573673');
         await expect(migrationSource.undoLastMigration()).rejects.toThrow(
             'Personal financial facts prevent schema rollback',
         );
@@ -310,9 +321,7 @@ describe('CARD-011 PostgreSQL transaction and migration compatibility', () => {
         ).toBe(new RecordPersonalExpense1791995573673().name);
     });
     it('upgrades Wave 1 facts without altering identities, snapshots or literal legacy receipt hash and supports safe rollback', async () => {
-        await migrationSource.undoLastMigration();
-        await migrationSource.undoLastMigration();
-        await migrationSource.undoLastMigration();
+        await rewindToMigration('RecordManualSettlementTransfer1791850000000');
         await db.query('TRUNCATE persons CASCADE');
         await db.query(
             `INSERT INTO persons(id,display_name,version,created_at) VALUES($1,'A',1,now()),($2,'B',1,now())`,
@@ -421,6 +430,7 @@ describe('CARD-011 PostgreSQL transaction and migration compatibility', () => {
             ).map(
                 ({
                     receipt_id: _receiptId,
+                    external_liability_id: _externalLiabilityId,
                     recognized_amount_in_cents: _recognized,
                     ...legacy
                 }: Record<string, unknown>) => legacy,
@@ -447,7 +457,7 @@ describe('CARD-011 PostgreSQL transaction and migration compatibility', () => {
         });
         expect(replay).toEqual({ ...result, replayed: true });
         expect(await snapshot()).toEqual(before);
-        await migrationSource.undoLastMigration();
+        await rewindToMigration('RecordIncomeAndReceipt1792022348501');
         expect(await snapshot()).toEqual(before);
         await migrationSource.runMigrations();
         expect(await snapshot()).toEqual(before);

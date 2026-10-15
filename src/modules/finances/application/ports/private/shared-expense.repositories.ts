@@ -25,6 +25,10 @@ export interface FinancialCommitmentRepository {
         commitment: FinancialCommitment<ExpenseVersion>,
         expectedVersion: number,
     ): Promise<void>;
+    saveExternalLiability(
+        commitment: FinancialCommitment<ExpenseVersion>,
+        expectedVersion: number,
+    ): Promise<void>;
     detail(
         spaceId: string,
         commitmentId: string,
