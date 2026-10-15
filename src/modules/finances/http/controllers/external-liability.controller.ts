@@ -30,6 +30,7 @@ class LiabilityParamsDto extends SettlementRuleParamsDto {
 }
 class LiabilityQueryDto {
     @IsOptional() @IsString() cursor?: string;
+    @IsOptional() @IsUUID('all') memberId?: string;
 }
 @Controller('spaces/:spaceId')
 export class ExternalLiabilityController {
@@ -48,6 +49,7 @@ export class ExternalLiabilityController {
             PersonId.from(actor.personId.value),
             SpaceId.from(params.spaceId.toLowerCase()),
             query.cursor,
+            query.memberId,
         );
     }
     @Get(
