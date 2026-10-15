@@ -971,6 +971,6 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
         expect(
             document.components.schemas.TodayFinanceAvailable.properties.data
                 .properties.upcomingCommitments.properties.items.maxItems,
-        ).toBe(0);
+        ).toBe(4);
     });
 });

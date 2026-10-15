@@ -21,4 +21,8 @@ export interface SpaceFinancialContextPort {
         actorId: PersonId,
         spaceId: SpaceId,
     ): Promise<SpaceFinancialContext>;
+    lockForFulfillment(
+        actorId: PersonId,
+        spaceId: SpaceId,
+    ): Promise<SpaceFinancialContext>;
 }

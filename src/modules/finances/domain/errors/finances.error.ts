@@ -9,7 +9,9 @@ export type FinancesErrorCode =
     | 'SETTLEMENT_CYCLE_NOT_FOUND'
     | 'FINANCIAL_COMMITMENT_NOT_FOUND'
     | 'INTER_MEMBER_OBLIGATION_NOT_FOUND'
-    | 'SETTLEMENT_TRANSFER_NOT_FOUND';
+    | 'SETTLEMENT_TRANSFER_NOT_FOUND'
+    | 'INCOME_ALREADY_RECEIVED'
+    | 'INCOME_OPTIONS_CHANGED';
 const messages: Record<FinancesErrorCode, string> = {
     VALIDATION_ERROR: 'Verifique os dados informados.',
     SHARED_SPACE_REQUIRED: 'Esta ação requer um espaço compartilhado.',
@@ -24,6 +26,8 @@ const messages: Record<FinancesErrorCode, string> = {
     FINANCIAL_COMMITMENT_NOT_FOUND: 'Despesa não encontrada.',
     INTER_MEMBER_OBLIGATION_NOT_FOUND: 'Pendência não encontrada.',
     SETTLEMENT_TRANSFER_NOT_FOUND: 'Transferência não encontrada.',
+    INCOME_ALREADY_RECEIVED: 'Esta receita já foi recebida.',
+    INCOME_OPTIONS_CHANGED: 'As opções mudaram. Atualize e confirme novamente.',
 };
 export class FinancesError extends Error {
     constructor(

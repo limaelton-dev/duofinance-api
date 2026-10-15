@@ -35,12 +35,16 @@ function fixture(type: 'SHARED' | 'PERSONAL' = 'SHARED') {
     const clock = {
         now: vi.fn().mockReturnValue(new Date('2026-10-11T02:59:59.999Z')),
     };
+    const incomes = {
+        readUpcoming: vi.fn().mockResolvedValue({ items: [], totalCount: 0 }),
+    };
     return {
         context,
         access,
         finance,
         clock,
-        query: new TodayQuery(access, finance, clock),
+        incomes,
+        query: new TodayQuery(access, finance, clock, incomes),
     };
 }
 

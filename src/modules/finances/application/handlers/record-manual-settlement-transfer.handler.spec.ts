@@ -55,6 +55,7 @@ function setup() {
         read: vi.fn(async () => context),
         lockForWrite: vi.fn(async () => context),
         lockForSettlement: vi.fn(async () => context),
+        lockForFulfillment: vi.fn(async () => context),
     };
     const repo: SettlementTransferRepository = {
         discover: vi.fn(async () => [{ id, cycleId: null }]),

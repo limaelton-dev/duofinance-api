@@ -112,7 +112,7 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
                 ? {
                       id: o.id,
                       originCommitmentId: o.commitmentId,
-                      originDisbursementId: o.disbursementId,
+                      originDisbursementId: o.disbursementId!,
                       debtorMemberId: o.debtorMemberId,
                       creditorMemberId: o.creditorMemberId,
                       originalAmountInCents: o.originalAmountInCents,

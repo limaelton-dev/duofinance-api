@@ -38,6 +38,7 @@ function fixture() {
             read: vi.fn(),
             lockForWrite: vi.fn(),
             lockForSettlement: vi.fn(),
+            lockForFulfillment: vi.fn(),
         },
         commitments = { save: vi.fn(), detail: vi.fn() };
     return {
@@ -56,6 +57,14 @@ function fixture() {
             reader,
             shared,
             commitments,
+            {
+                save: vi.fn(),
+                find: vi.fn(),
+                saveReceipt: vi.fn(),
+                detail: vi.fn(async () => null),
+                list: vi.fn(),
+                upcoming: vi.fn(),
+            },
         ),
     };
 }

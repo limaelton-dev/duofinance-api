@@ -12,11 +12,19 @@ export interface OpenObligationView extends PositionKey {
     originalAmountInCents: number;
     remainingAmountInCents: number;
     factDate: string;
-    origin: {
-        commitmentId: string;
-        disbursementId: string;
-        description: string;
-    };
+    origin:
+        | {
+              commitmentId: string;
+              disbursementId: string;
+              description: string;
+              kind?: 'EXPENSE';
+          }
+        | {
+              commitmentId: string;
+              receiptId: string;
+              description: string;
+              kind: 'INCOME';
+          };
     settlementCycle: null | {
         id: string;
         targetDate: string;
