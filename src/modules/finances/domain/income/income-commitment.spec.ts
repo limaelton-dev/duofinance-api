@@ -69,7 +69,7 @@ describe('income commitment', () => {
         expect(second.participation).toEqual(shared().participation);
     });
 
-    it('rejects duplicate, stale, partial and future realizations', () => {
+    it('rejects duplicate, stale, excessive and future realizations', () => {
         const income = shared();
         const received = income.recordReceipt(receivedBy(a), 1, '2026-10-14');
         expect(() =>
@@ -80,7 +80,7 @@ describe('income commitment', () => {
         ).toThrowError();
         expect(() =>
             income.recordReceipt(
-                { ...receivedBy(a), amountInCents: 50000 },
+                { ...receivedBy(a), amountInCents: 100001 },
                 1,
                 '2026-10-14',
             ),

@@ -3,6 +3,7 @@ import { Money } from '../shared-expense/money.js';
 import { ResponsibilitySplit } from '../shared-expense/responsibility-split.js';
 import { civilDate } from '../shared-expense/settlement-cycle.js';
 import type { SettlementRuleSnapshot } from '../settlement-rule/settlement-rule.js';
+import type { OriginSettlement } from '../shared-expense/obligation-reconciler.js';
 
 export interface IncomeReceipt {
     id: string;
@@ -29,6 +30,10 @@ export class IncomeCommitment {
     readonly modality = 'ONE_TIME';
     readonly version: number;
     readonly receipt: IncomeReceipt | null;
+    readonly receipts: readonly IncomeReceipt[];
+    readonly receivedAmountInCents: number;
+    readonly remainingAmountInCents: number;
+    readonly status: 'PENDING' | 'PARTIALLY_RECEIVED' | 'RECEIVED';
 
     constructor(
         readonly id: string,
@@ -39,9 +44,15 @@ export class IncomeCommitment {
         readonly createdByPersonId: string,
         readonly registeredAt: string,
         readonly participation: IncomeParticipation,
-        receipt: IncomeReceipt | null = null,
-        version = receipt ? 2 : 1,
+        receipt: IncomeReceipt | readonly IncomeReceipt[] | null = null,
+        version = (Array.isArray(receipt) ? receipt.length : receipt ? 1 : 0) +
+            1,
     ) {
+        const receipts: readonly IncomeReceipt[] = Array.isArray(receipt)
+            ? receipt
+            : receipt
+              ? [receipt as IncomeReceipt]
+              : [];
         Money.from(amountInCents);
         civilDate(expectedReceiptDate);
         if (
@@ -53,7 +64,8 @@ export class IncomeCommitment {
             description.length > 160 ||
             amountInCents < 1 ||
             !Number.isFinite(Date.parse(registeredAt)) ||
-            version !== (receipt ? 2 : 1)
+            version !== receipts.length + 1 ||
+            new Set(receipts.map((r) => r.id)).size !== receipts.length
         )
             throw new FinancesError('VALIDATION_ERROR');
         if (participation.type === 'PERSONAL') {
@@ -73,13 +85,14 @@ export class IncomeCommitment {
                 (participation.settlementRuleSourceVersion === 0)
         )
             throw new FinancesError('VALIDATION_ERROR');
-        if (receipt) {
+        let total = 0n;
+        for (const receipt of receipts) {
             Money.from(receipt.amountInCents);
             civilDate(receipt.factDate);
             if (
                 !receipt.id ||
                 receipt.id === id ||
-                receipt.amountInCents !== amountInCents ||
+                receipt.amountInCents < 1 ||
                 !receipt.recordedByPersonId ||
                 !Number.isFinite(Date.parse(receipt.registeredAt)) ||
                 (participation.type === 'PERSONAL'
@@ -93,9 +106,24 @@ export class IncomeCommitment {
                       ))
             )
                 throw new FinancesError('VALIDATION_ERROR');
+            total += BigInt(receipt.amountInCents);
         }
+        if (total > BigInt(amountInCents))
+            throw new FinancesError('VALIDATION_ERROR');
         this.version = version;
-        this.receipt = receipt ? Object.freeze({ ...receipt }) : null;
+        this.receipts = Object.freeze(
+            receipts.map((r) => Object.freeze({ ...r })),
+        );
+        this.receipt = this.receipts[0] ?? null;
+        this.receivedAmountInCents = Number(total);
+        this.remainingAmountInCents =
+            amountInCents - this.receivedAmountInCents;
+        this.status =
+            total === 0n
+                ? 'PENDING'
+                : this.remainingAmountInCents === 0
+                  ? 'RECEIVED'
+                  : 'PARTIALLY_RECEIVED';
         Object.freeze(this);
     }
 
@@ -104,7 +132,8 @@ export class IncomeCommitment {
         expectedVersion: number,
         today: string,
     ): IncomeCommitment {
-        if (this.receipt) throw new FinancesError('INCOME_ALREADY_RECEIVED');
+        if (this.remainingAmountInCents === 0)
+            throw new FinancesError('INCOME_ALREADY_RECEIVED');
         if (expectedVersion !== this.version)
             throw new FinancesError('CONCURRENT_MODIFICATION');
         if (civilDate(receipt.factDate) > civilDate(today))
@@ -118,30 +147,47 @@ export class IncomeCommitment {
             this.createdByPersonId,
             this.registeredAt,
             this.participation,
-            receipt,
+            [...this.receipts, receipt],
             this.version + 1,
         );
     }
 }
 
-export function incomeDifference(income: IncomeCommitment): {
+export function incomeDifference(
+    income: IncomeCommitment,
+    settlements: readonly OriginSettlement[] = [],
+): {
     debtorMemberId: string;
     creditorMemberId: string;
     amountInCents: number;
 } | null {
     if (income.participation.type === 'PERSONAL' || !income.receipt)
         return null;
-    const receiver = income.receipt.recipientMemberId;
-    const own = income.participation.split.shares.find(
-        (share) => share.memberId === receiver,
+    const shares = income.participation.split.realizedShares(
+        income.receivedAmountInCents,
     );
-    const other = income.participation.split.shares.find(
-        (share) => share.memberId !== receiver,
-    );
-    if (!own || !other || other.amountInCents === 0) return null;
+    if (shares.length < 2) return null;
+    const member = shares[0].memberId;
+    let excess =
+        income.receipts.reduce(
+            (sum, r) =>
+                sum +
+                (r.recipientMemberId === member ? BigInt(r.amountInCents) : 0n),
+            0n,
+        ) - BigInt(shares[0].amountInCents);
+    for (const settlement of settlements)
+        excess +=
+            settlement.recipientMemberId === member
+                ? BigInt(settlement.amountInCents)
+                : settlement.payerMemberId === member
+                  ? -BigInt(settlement.amountInCents)
+                  : 0n;
+    if (excess === 0n) return null;
+    const amount = Number(excess > 0n ? excess : -excess);
+    Money.from(amount);
     return {
-        debtorMemberId: own.memberId,
-        creditorMemberId: other.memberId,
-        amountInCents: other.amountInCents,
+        debtorMemberId: excess > 0n ? member : shares[1].memberId,
+        creditorMemberId: excess > 0n ? shares[1].memberId : member,
+        amountInCents: amount,
     };
 }

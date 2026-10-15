@@ -16,6 +16,47 @@ export class EconomicShare {
     }
 }
 export class ResponsibilitySplit {
+    realizedShares(total: number): readonly EconomicShare[] {
+        Money.from(total);
+        if (total > this.total.amountInCents) invalidExpense();
+        const denominator =
+            this.original.mode === 'PERCENTAGES'
+                ? 10000n
+                : BigInt(this.total.amountInCents);
+        const weighted = this.original.shares.map((share) => {
+            const weight =
+                'basisPoints' in share
+                    ? share.basisPoints
+                    : share.amountInCents;
+            const product = BigInt(total) * BigInt(weight);
+            return {
+                memberId: share.memberId,
+                quotient: product / denominator,
+                remainder: product % denominator,
+            };
+        });
+        let residual =
+            BigInt(total) -
+            weighted.reduce((sum, share) => sum + share.quotient, 0n);
+        for (const share of [...weighted].sort((a, b) =>
+            a.remainder === b.remainder
+                ? a.memberId.localeCompare(b.memberId)
+                : a.remainder > b.remainder
+                  ? -1
+                  : 1,
+        )) {
+            if (residual > 0n) {
+                share.quotient++;
+                residual--;
+            }
+        }
+        return Object.freeze(
+            weighted.map(
+                (share) =>
+                    new EconomicShare(share.memberId, Number(share.quotient)),
+            ),
+        );
+    }
     private constructor(
         readonly total: Money,
         readonly original: SplitInput,

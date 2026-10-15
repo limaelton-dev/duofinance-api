@@ -2,7 +2,18 @@ import { FinancesError } from '../errors/finances.error.js';
 import { Money } from './money.js';
 import { civilDate } from './settlement-cycle.js';
 import { invalidExpense } from './validation.js';
-export type ObligationStatus = 'OPEN' | 'PARTIALLY_SETTLED' | 'SETTLED';
+export type ObligationStatus =
+    'OPEN' | 'PARTIALLY_SETTLED' | 'SETTLED' | 'RECONCILED';
+export interface ObligationReconciliation {
+    type: 'RECONCILED';
+    actorId: string;
+    causeFulfillmentId: string;
+    registeredAt: string;
+    previousRecognizedAmountInCents: number;
+    recognizedAmountInCents: number;
+    previousRemainingAmountInCents: number;
+    remainingAmountInCents: number;
+}
 export class InterMemberObligation {
     readonly status: ObligationStatus;
     readonly version: number;
@@ -30,13 +41,17 @@ export class InterMemberObligation {
         version = 1,
         appliedAllocationIds: readonly string[] = [],
         readonly originKind: 'EXPENSE' | 'INCOME' = 'EXPENSE',
+        readonly recognizedAmountInCents = originalAmountInCents,
+        readonly reconciled = false,
+        readonly reconciliation: ObligationReconciliation | null = null,
     ) {
         if (
             debtorMemberId === creditorMemberId ||
             Money.from(originalAmountInCents).amountInCents === 0 ||
             !Number.isSafeInteger(remainingAmountInCents) ||
             remainingAmountInCents < 0 ||
-            remainingAmountInCents > originalAmountInCents ||
+            remainingAmountInCents >
+                Money.from(recognizedAmountInCents).amountInCents ||
             !Number.isSafeInteger(version) ||
             version < 1
         )
@@ -47,8 +62,10 @@ export class InterMemberObligation {
         this.appliedAllocationIds = Object.freeze([...appliedAllocationIds]);
         this.status =
             remainingAmountInCents === 0
-                ? 'SETTLED'
-                : remainingAmountInCents === originalAmountInCents
+                ? reconciled
+                    ? 'RECONCILED'
+                    : 'SETTLED'
+                : remainingAmountInCents === recognizedAmountInCents
                   ? 'OPEN'
                   : 'PARTIALLY_SETTLED';
         this.history = Object.freeze({
@@ -89,6 +106,49 @@ export class InterMemberObligation {
             this.version + 1,
             [...this.appliedAllocationIds, allocationId],
             this.originKind,
+            this.recognizedAmountInCents,
+        );
+    }
+    reconcile(
+        remainingAmountInCents: number,
+        actorId: string,
+        causeFulfillmentId: string,
+        registeredAt: string,
+    ): InterMemberObligation {
+        Money.from(remainingAmountInCents);
+        const settled =
+            this.recognizedAmountInCents - this.remainingAmountInCents;
+        const recognized = Money.from(settled).add(
+            Money.from(remainingAmountInCents),
+        ).amountInCents;
+        return new InterMemberObligation(
+            this.id,
+            this.spaceId,
+            this.originCommitmentId,
+            this.originDisbursementId,
+            this.debtorMemberId,
+            this.creditorMemberId,
+            this.originalAmountInCents,
+            this.cycleId,
+            this.factDate,
+            this.registeredAt,
+            this.history.actorId,
+            remainingAmountInCents,
+            this.version + 1,
+            this.appliedAllocationIds,
+            this.originKind,
+            recognized,
+            remainingAmountInCents === 0,
+            {
+                type: 'RECONCILED',
+                actorId,
+                causeFulfillmentId,
+                registeredAt,
+                previousRecognizedAmountInCents: this.recognizedAmountInCents,
+                recognizedAmountInCents: recognized,
+                previousRemainingAmountInCents: this.remainingAmountInCents,
+                remainingAmountInCents,
+            },
         );
     }
 }
