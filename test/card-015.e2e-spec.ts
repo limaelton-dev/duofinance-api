@@ -777,11 +777,11 @@ describe('CARD-015 external liability settlement HTTP/PostgreSQL', () => {
             const settlements = await db.query(
                 'SELECT * FROM financial_external_liability_settlements',
             );
-            expect(settlements).toHaveLength(
-                results[0].status === 201 || kind === 'same-key' ? 1 : 0,
-            );
+            const settlementWon =
+                kind !== 'concurrent-support' || results[0].status === 201;
+            expect(settlements).toHaveLength(settlementWon ? 1 : 0);
             expect(detail.externalOutstandingAmountInCents).toBe(
-                results[0].status === 201 || kind === 'same-key' ? 0 : 20000,
+                settlementWon ? 0 : 20000,
             );
             expect(
                 await db.query('SELECT * FROM financial_disbursements'),
