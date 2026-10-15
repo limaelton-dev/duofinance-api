@@ -1204,7 +1204,7 @@ describe('CARD-014 credit card purchase HTTP/PostgreSQL', () => {
             [key],
         );
         await migrationSource.initialize();
-        await migrationSource.undoLastMigration();
+        await undoCreditCardPurchase();
         const columns: { table_name: string; column_name: string }[] =
             await db.query(
                 "SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND (table_name LIKE 'financial_%' OR table_name LIKE 'inter_member_%' OR table_name LIKE 'settlement_%') ORDER BY table_name,ordinal_position",
@@ -1247,7 +1247,7 @@ describe('CARD-014 credit card purchase HTTP/PostgreSQL', () => {
             ).body,
         ).toEqual({ ...stored.result, replayed: true });
         expect(await legacy()).toEqual(before);
-        await migrationSource.undoLastMigration();
+        await undoCreditCardPurchase();
         expect(await legacy()).toEqual(before);
         await migrationSource.runMigrations();
         expect(await legacy()).toEqual(before);
@@ -1293,6 +1293,8 @@ describe('CARD-014 credit card purchase HTTP/PostgreSQL', () => {
         const a = await browser(),
             space = a.context.personalSpace.id as string;
         await a.post(purchasePath(space), personalCard()).expect(201);
+        await migrationSource.initialize();
+        await reachCreditCardPurchase();
         const before = await snapshot();
         const schema = async () =>
             db.query(
@@ -1300,7 +1302,6 @@ describe('CARD-014 credit card purchase HTTP/PostgreSQL', () => {
             );
         const constraints = await schema(),
             migrations = await db.query('SELECT * FROM migrations ORDER BY id');
-        await migrationSource.initialize();
         await expect(migrationSource.undoLastMigration()).rejects.toThrow();
         expect(await snapshot()).toEqual(before);
         expect(await schema()).toEqual(constraints);
@@ -1308,6 +1309,22 @@ describe('CARD-014 credit card purchase HTTP/PostgreSQL', () => {
             migrations,
         );
     });
+
+    async function reachCreditCardPurchase() {
+        while (
+            (
+                await migrationSource.query(
+                    'SELECT name FROM migrations ORDER BY id DESC LIMIT 1',
+                )
+            )[0]?.name !== 'RecordCreditCardPurchase1792087652424'
+        ) {
+            await migrationSource.undoLastMigration();
+        }
+    }
+    async function undoCreditCardPurchase() {
+        await reachCreditCardPurchase();
+        return migrationSource.undoLastMigration();
+    }
 
     async function concurrent<T>(space: string, start: () => Promise<T>) {
         const gate = db.createQueryRunner();
