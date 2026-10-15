@@ -36,6 +36,7 @@ export interface PersonalExpenseView {
     externalLiabilities?: FinancialCommitment<PersonalCommitmentVersion>['externalLiabilities'];
     assumedAmountInCents?: number;
     externalOutstandingAmountInCents?: number;
+    externalSettledAmountInCents?: number;
     supportedAmountInCents?: number;
     fulfillmentStatus?: 'PARTIALLY_FULFILLED' | 'FULFILLED';
     paidAmountInCents: number;
@@ -57,6 +58,7 @@ export interface PersonalExpenseSummary {
     externalLiabilities?: FinancialCommitment<PersonalCommitmentVersion>['externalLiabilities'];
     assumedAmountInCents?: number;
     externalOutstandingAmountInCents?: number;
+    externalSettledAmountInCents?: number;
     supportedAmountInCents?: number;
     fulfillmentStatus?: 'PARTIALLY_FULFILLED' | 'FULFILLED';
     paidAmountInCents: number;
@@ -83,6 +85,7 @@ export function personalExpenseView(
         },
         disbursement: c.disbursement ? { ...c.disbursement } : null,
         externalLiabilities: c.externalLiabilities,
+        externalSettledAmountInCents: c.externalSettledAmountInCents,
         assumedAmountInCents: c.assumedAmountInCents,
         externalOutstandingAmountInCents: c.externalOutstandingAmountInCents,
         supportedAmountInCents: c.supportedAmountInCents,

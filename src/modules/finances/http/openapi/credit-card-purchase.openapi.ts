@@ -38,6 +38,7 @@ export const expenseSupportProperties: Record<
     externalLiabilities: { type: 'array', items: ref('ExternalLiability') },
     assumedAmountInCents: money,
     externalOutstandingAmountInCents: money,
+    externalSettledAmountInCents: money,
     supportedAmountInCents: money,
     fulfillmentStatus: {
         type: 'string',
@@ -48,10 +49,14 @@ const fact = {
     id: uuid,
     sequence: positive,
     amountInCents: positive,
-    remainingAmountInCents: positive,
+    remainingAmountInCents: money,
     factDate: date,
     registeredAt: { type: 'string' as const, format: 'date-time' },
     recordedByPersonId: uuid,
+    settlements: {
+        type: 'array' as const,
+        items: ref('ExternalLiabilitySettlement'),
+    },
 };
 const description: SchemaObject = {
     type: 'string',
@@ -276,8 +281,24 @@ export const creditCardPurchaseOpenApi: Pick<
         schemas: {
             ExternalLiability: {
                 oneOf: [
-                    object({ ...fact, holderMemberId: uuid }),
-                    object({ ...fact, holderPersonId: uuid }),
+                    {
+                        ...object({ ...fact, holderMemberId: uuid }),
+                        required: [
+                            ...Object.keys(fact).filter(
+                                (k) => k !== 'settlements',
+                            ),
+                            'holderMemberId',
+                        ],
+                    },
+                    {
+                        ...object({ ...fact, holderPersonId: uuid }),
+                        required: [
+                            ...Object.keys(fact).filter(
+                                (k) => k !== 'settlements',
+                            ),
+                            'holderPersonId',
+                        ],
+                    },
                 ],
             },
             RecordCreditCardPurchaseRequest: {

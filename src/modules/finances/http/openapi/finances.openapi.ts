@@ -1,3 +1,4 @@
+import { externalLiabilitySettlementOpenApi } from './external-liability-settlement.openapi.js';
 import type {
     OpenAPIObject,
     SchemaObject,
@@ -91,6 +92,7 @@ export const financesOpenApi: Pick<
         ...incomeOpenApi.paths,
         ...expenseDisbursementOpenApi.paths,
         ...creditCardPurchaseOpenApi.paths,
+        ...externalLiabilitySettlementOpenApi.paths,
         '/v2/spaces/{spaceId}/default-settlement-rule': {
             get: {
                 operationId: 'getDefaultSettlementRule',
@@ -202,6 +204,7 @@ export const financesOpenApi: Pick<
             ...incomeOpenApi.components?.schemas,
             ...expenseDisbursementOpenApi.components?.schemas,
             ...creditCardPurchaseOpenApi.components?.schemas,
+            ...externalLiabilitySettlementOpenApi.components?.schemas,
             SettlementRule: rule,
             DefaultSettlementRuleResponse: view,
             ConfigureDefaultSettlementRuleRequest: object({

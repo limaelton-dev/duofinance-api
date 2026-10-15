@@ -87,6 +87,7 @@ result.required = result.required!.filter(
 result.properties = {
     ...result.properties,
     externalLiability: ref('ExternalLiability'),
+    settlement: ref('ExternalLiabilitySettlement'),
 };
 const response = (
     schema: SchemaObject | ReferenceObject,

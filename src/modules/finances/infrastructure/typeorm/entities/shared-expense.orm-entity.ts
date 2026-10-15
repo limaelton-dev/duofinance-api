@@ -196,7 +196,7 @@ export class FinancialDisbursementOrmEntity {
 @Unique('UQ_external_liabilities_sequence', ['commitmentId', 'sequence'])
 @Check(
     'CHK_external_liabilities_values',
-    `${money('amount_in_cents', true)} AND remaining_amount_in_cents = amount_in_cents AND sequence > 0 AND version = 1 AND fact_date <= (registered_at AT TIME ZONE 'America/Sao_Paulo')::date AND ((holder_member_id IS NOT NULL AND holder_person_id IS NULL) OR (holder_member_id IS NULL AND holder_person_id IS NOT NULL))`,
+    `${money('amount_in_cents', true)} AND remaining_amount_in_cents BETWEEN 0 AND amount_in_cents AND sequence > 0 AND version = 1 AND fact_date <= (registered_at AT TIME ZONE 'America/Sao_Paulo')::date AND ((holder_member_id IS NOT NULL AND holder_person_id IS NULL) OR (holder_member_id IS NULL AND holder_person_id IS NOT NULL))`,
 )
 @ForeignKey(
     () => FinancialCommitmentVersionOrmEntity,
@@ -384,7 +384,7 @@ export class InterMemberObligationChangeOrmEntity {
 @Entity('financial_expense_command_receipts')
 @Check(
     'CHK_expense_receipt',
-    `operation IN ('RECORD_SHARED_CASH_EXPENSE','RECORD_PERSONAL_EXPENSE','RECORD_EXPENSE_DISBURSEMENT','RECORD_CREDIT_CARD_PURCHASE','RECORD_EXTERNAL_LIABILITY') AND status = 'COMPLETED' AND octet_length(request_hash) = 32`,
+    `operation IN ('RECORD_SHARED_CASH_EXPENSE','RECORD_PERSONAL_EXPENSE','RECORD_EXPENSE_DISBURSEMENT','RECORD_CREDIT_CARD_PURCHASE','RECORD_EXTERNAL_LIABILITY','SETTLE_EXTERNAL_LIABILITY') AND status = 'COMPLETED' AND octet_length(request_hash) = 32`,
 )
 export class FinancialExpenseCommandReceiptOrmEntity {
     @PrimaryColumn({ name: 'actor_id', type: 'uuid' })

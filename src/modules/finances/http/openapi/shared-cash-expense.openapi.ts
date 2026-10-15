@@ -184,6 +184,7 @@ result.properties = {
     ...result.properties,
     members: financialContextSchema.properties!.members,
     externalLiability: ref('ExternalLiability'),
+    settlement: ref('ExternalLiabilitySettlement'),
 };
 const detail = object({
     ...initialProperties,

@@ -1,3 +1,14 @@
+import { ExternalLiabilityController } from './http/controllers/external-liability.controller.js';
+import { SettleExternalLiabilityPipe } from './http/dto/settle-external-liability.dto.js';
+import { SettleExternalLiabilityHandler } from './application/handlers/settle-external-liability.handler.js';
+import { ExternalLiabilityQueries } from './application/queries/external-liability.queries.js';
+import {
+    EXTERNAL_LIABILITY_SETTLEMENT_RECEIPTS,
+    EXTERNAL_LIABILITY_SETTLEMENT_REPOSITORY,
+} from './application/ports/private/external-liability-settlement.ports.js';
+import { TypeOrmExternalLiabilitySettlementReceipts } from './infrastructure/typeorm/repositories/typeorm-external-liability-settlement-receipts.js';
+import { TypeOrmExternalLiabilitySettlementRepository } from './infrastructure/typeorm/repositories/typeorm-external-liability-settlement.repository.js';
+import { FinancialExternalLiabilitySettlementOrmEntity } from './infrastructure/typeorm/entities/external-liability-settlement.orm-entity.js';
 import { CreditCardPurchaseController } from './http/controllers/credit-card-purchase.controller.js';
 import {
     RecordCreditCardPurchasePipe,
@@ -118,6 +129,7 @@ import {
         SpacesModule,
         TypeOrmModule.forFeature([
             ...sharedExpenseEntities,
+            FinancialExternalLiabilitySettlementOrmEntity,
             ...incomeEntities,
             SettlementTransferOrmEntity,
             SettlementAllocationOrmEntity,
@@ -129,6 +141,7 @@ import {
         ]),
     ],
     controllers: [
+        ExternalLiabilityController,
         CreditCardPurchaseController,
         ExpenseDisbursementController,
         PersonalExpenseController,
@@ -140,6 +153,17 @@ import {
         SettlementTransferController,
     ],
     providers: [
+        SettleExternalLiabilityPipe,
+        SettleExternalLiabilityHandler,
+        ExternalLiabilityQueries,
+        {
+            provide: EXTERNAL_LIABILITY_SETTLEMENT_RECEIPTS,
+            useClass: TypeOrmExternalLiabilitySettlementReceipts,
+        },
+        {
+            provide: EXTERNAL_LIABILITY_SETTLEMENT_REPOSITORY,
+            useClass: TypeOrmExternalLiabilitySettlementRepository,
+        },
         RecordCreditCardPurchasePipe,
         RecordExternalLiabilityPipe,
         RecordCreditCardPurchaseHandler,
