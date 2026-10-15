@@ -857,6 +857,52 @@ describe('CARD-014 credit card purchase HTTP/PostgreSQL', () => {
         expect(detail.externalOutstandingAmountInCents).toBe(10000);
     });
 
+    it('A16 serializes same-key purchase creation on independent PostgreSQL connections', async () => {
+        const f = await shared(),
+            key = randomUUID(),
+            body = cardInput(f);
+        const results = await concurrent(f.space, () =>
+            Promise.all([
+                f.a.post(purchasePath(f.space), body, key),
+                f.a.post(purchasePath(f.space), body, key),
+            ]),
+        );
+        expect(results.map((result) => result.status).sort()).toEqual([
+            200, 201,
+        ]);
+        const first = results.find((result) => result.status === 201)!.body;
+        const replay = results.find((result) => result.status === 200)!.body;
+        expect(replay).toEqual({ ...first, replayed: true });
+        expect(await db.query('SELECT id FROM financial_commitments')).toEqual([
+            { id: first.commitment.id },
+        ]);
+        expect(
+            await db.query(
+                'SELECT id,commitment_id FROM financial_external_liabilities',
+            ),
+        ).toEqual([
+            {
+                id: first.externalLiability.id,
+                commitment_id: first.commitment.id,
+            },
+        ]);
+        expect(
+            await db.query(
+                'SELECT commitment_id,idempotency_key,result FROM financial_expense_command_receipts',
+            ),
+        ).toEqual([
+            {
+                commitment_id: first.commitment.id,
+                idempotency_key: key,
+                result: first,
+            },
+        ]);
+        expect(await openObligations(first.commitment.id)).toHaveLength(1);
+        expect(await db.query('SELECT * FROM financial_disbursements')).toEqual(
+            [],
+        );
+    });
+
     it.each(['same-key', 'two-cards', 'card-and-cash'])(
         'A16/A17 serializes %s on independent PostgreSQL connections',
         async (kind) => {
