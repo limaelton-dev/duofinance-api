@@ -194,7 +194,7 @@ export class RecordSharedCashExpenseHandler {
                           randomUUID(),
                           c.spaceId.value,
                           commitment.id,
-                          commitment.disbursement.id,
+                          commitment.disbursement!.id,
                           difference.debtorMemberId,
                           difference.creditorMemberId,
                           difference.amountInCents,

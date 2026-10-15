@@ -21,6 +21,7 @@ interface PositionRow {
     registered_at: string;
     commitment_id: string;
     disbursement_id: string | null;
+    external_liability_id: string | null;
     receipt_id: string | null;
     description: string;
     cycle_id: string | null;
@@ -62,7 +63,7 @@ export class TypeOrmInterMemberPositionReader implements InterMemberPositionRead
                 p.original_amount_in_cents::text, p.recognized_amount_in_cents::text, p.remaining_amount_in_cents::text,
                 to_char(p.fact_date, 'YYYY-MM-DD') AS fact_date,
                 to_char(p.registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS registered_at,
-                p.commitment_id, p.disbursement_id, p.receipt_id, c.description, p.cycle_id,
+                p.commitment_id, p.disbursement_id, p.external_liability_id, p.receipt_id, c.description, p.cycle_id,
                 to_char(s.target_date, 'YYYY-MM-DD') AS target_date, s.status AS cycle_status
             FROM totals t LEFT JOIN page p ON true
             LEFT JOIN financial_commitments c ON c.space_id = $1 AND c.id = p.commitment_id
@@ -103,7 +104,13 @@ export class TypeOrmInterMemberPositionReader implements InterMemberPositionRead
                       }
                     : {
                           commitmentId: row.commitment_id,
-                          disbursementId: row.disbursement_id!,
+                          ...(row.external_liability_id
+                              ? {
+                                    kind: 'EXPENSE' as const,
+                                    externalLiabilityId:
+                                        row.external_liability_id,
+                                }
+                              : { disbursementId: row.disbursement_id! }),
                           description: row.description,
                       },
                 settlementCycle:

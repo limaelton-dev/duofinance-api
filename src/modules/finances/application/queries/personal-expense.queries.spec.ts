@@ -41,6 +41,7 @@ function fixture() {
             lockForFulfillment: vi.fn(),
         },
         commitments = {
+            saveExternalLiability: vi.fn(),
             save: vi.fn(),
             detail: vi.fn(),
             find: vi.fn(),

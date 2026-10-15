@@ -63,7 +63,7 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
                     o.id,
                     o.spaceId,
                     o.commitmentId,
-                    o.disbursementId ?? o.receiptId!,
+                    o.disbursementId ?? o.receiptId ?? o.externalLiabilityId!,
                     o.debtorMemberId,
                     o.creditorMemberId,
                     o.originalAmountInCents,
@@ -79,11 +79,13 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
                     o.receiptId ? 'INCOME' : 'EXPENSE',
                     o.recognizedAmountInCents,
                     o.status === 'RECONCILED',
+                    null,
+                    o.externalLiabilityId,
                 ),
             );
         }
         const chronology: { id: string }[] = await m.query(
-            `SELECT o.id FROM inter_member_obligations o LEFT JOIN financial_disbursements d ON d.space_id=o.space_id AND d.commitment_id=o.commitment_id AND d.id=o.disbursement_id LEFT JOIN financial_receipts r ON r.space_id=o.space_id AND r.commitment_id=o.commitment_id AND r.id=o.receipt_id WHERE o.space_id=$1 AND o.commitment_id=$2 ORDER BY COALESCE(d.sequence,r.sequence),o.id`,
+            `SELECT o.id FROM inter_member_obligations o LEFT JOIN financial_disbursements d ON d.space_id=o.space_id AND d.commitment_id=o.commitment_id AND d.id=o.disbursement_id LEFT JOIN financial_receipts r ON r.space_id=o.space_id AND r.commitment_id=o.commitment_id AND r.id=o.receipt_id LEFT JOIN financial_external_liabilities e ON e.space_id=o.space_id AND e.commitment_id=o.commitment_id AND e.id=o.external_liability_id WHERE o.space_id=$1 AND o.commitment_id=$2 ORDER BY COALESCE(d.sequence,r.sequence,e.sequence),o.id`,
             [spaceId, commitmentId],
         );
         const order = new Map(chronology.map((row, index) => [row.id, index]));
@@ -149,11 +151,16 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
                 'r',
                 'r.space_id=o.space_id AND r.commitment_id=o.commitment_id AND r.id=o.receipt_id',
             )
+            .leftJoin(
+                'financial_external_liabilities',
+                'e',
+                'e.space_id=o.space_id AND e.commitment_id=o.commitment_id AND e.id=o.external_liability_id',
+            )
             .where('o.space_id=:spaceId AND o.commitment_id=:commitmentId', {
                 spaceId,
                 commitmentId,
             })
-            .orderBy('COALESCE(d.sequence,r.sequence)', 'ASC')
+            .orderBy('COALESCE(d.sequence,r.sequence,e.sequence)', 'ASC')
             .addOrderBy('o.id', 'ASC')
             .getMany();
         const result: FulfillmentObligationView[] = [];
@@ -167,7 +174,9 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
                 originCommitmentId: o.commitmentId,
                 ...(o.receiptId
                     ? { originReceiptId: o.receiptId }
-                    : { originDisbursementId: o.disbursementId! }),
+                    : o.externalLiabilityId
+                      ? { originExternalLiabilityId: o.externalLiabilityId }
+                      : { originDisbursementId: o.disbursementId! }),
                 debtorMemberId: o.debtorMemberId,
                 creditorMemberId: o.creditorMemberId,
                 originalAmountInCents: o.originalAmountInCents,

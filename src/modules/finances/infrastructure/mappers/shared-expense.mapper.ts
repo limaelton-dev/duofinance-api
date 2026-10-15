@@ -69,14 +69,14 @@ export function shareRow(c: FinancialCommitment, share: EconomicShare) {
 }
 export function disbursementRow(
     c: FinancialCommitment<ExpenseVersion>,
-    d = c.disbursement,
+    d = c.disbursement!,
 ) {
     return {
         id: d.id,
         spaceId: c.spaceId,
         commitmentId: c.id,
         recordedByPersonId: d.recordedByPersonId ?? c.createdByPersonId,
-        sequence: c.disbursements.findIndex((f) => f.id === d.id) + 1,
+        sequence: d.sequence!,
         version: 1,
         payerMemberId: 'payerMemberId' in d ? d.payerMemberId : null,
         payerPersonId: 'payerPersonId' in d ? d.payerPersonId : null,
@@ -92,7 +92,10 @@ export function obligationRow(o: InterMemberObligation) {
         spaceId: o.spaceId,
         commitmentId: o.originCommitmentId,
         disbursementId:
-            o.originKind === 'EXPENSE' ? o.originDisbursementId : null,
+            o.originKind === 'EXPENSE' && !o.originExternalLiabilityId
+                ? o.originDisbursementId
+                : null,
+        externalLiabilityId: o.originExternalLiabilityId,
         receiptId: o.originKind === 'INCOME' ? o.originDisbursementId : null,
         debtorMemberId: o.debtorMemberId,
         creditorMemberId: o.creditorMemberId,
@@ -116,7 +119,9 @@ export function obligationChangeRow(o: InterMemberObligation) {
         snapshot: {
             originCommitmentId: o.originCommitmentId,
             ...(o.originKind === 'EXPENSE'
-                ? { originDisbursementId: o.originDisbursementId }
+                ? o.originExternalLiabilityId
+                    ? { originExternalLiabilityId: o.originExternalLiabilityId }
+                    : { originDisbursementId: o.originDisbursementId }
                 : { originReceiptId: o.originDisbursementId }),
             debtorMemberId: o.debtorMemberId,
             creditorMemberId: o.creditorMemberId,
@@ -125,5 +130,25 @@ export function obligationChangeRow(o: InterMemberObligation) {
             cycleId: o.cycleId,
         },
         registeredAt: new Date(o.registeredAt),
+    };
+}
+
+export function externalLiabilityRow(
+    c: FinancialCommitment<ExpenseVersion>,
+    f: FinancialCommitment<ExpenseVersion>['externalLiabilities'][number],
+) {
+    return {
+        id: f.id,
+        spaceId: c.spaceId,
+        commitmentId: c.id,
+        version: 1,
+        sequence: f.sequence!,
+        holderMemberId: 'holderMemberId' in f ? f.holderMemberId : null,
+        holderPersonId: 'holderPersonId' in f ? f.holderPersonId : null,
+        recordedByPersonId: f.recordedByPersonId,
+        amountInCents: f.amountInCents,
+        remainingAmountInCents: f.remainingAmountInCents,
+        factDate: f.factDate,
+        registeredAt: new Date(f.registeredAt),
     };
 }

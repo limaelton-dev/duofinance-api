@@ -20,6 +20,7 @@ import { FinancesError } from '../../../domain/errors/finances.error.js';
 import {
     commitmentRow,
     disbursementRow,
+    externalLiabilityRow,
     shareRow,
     versionRow,
 } from '../../mappers/shared-expense.mapper.js';
@@ -28,6 +29,7 @@ import {
     FinancialCommitmentShareOrmEntity,
     FinancialCommitmentVersionOrmEntity,
     FinancialDisbursementOrmEntity,
+    FinancialExternalLiabilityOrmEntity,
     SettlementCycleOrmEntity,
 } from '../entities/shared-expense.orm-entity.js';
 function transaction(provider: EntityManagerProvider) {
@@ -55,11 +57,38 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
                     FinancialCommitmentShareOrmEntity,
                     shareRow(c as FinancialCommitment, share),
                 );
+        for (const fact of c.externalLiabilities)
+            await m.insert(
+                FinancialExternalLiabilityOrmEntity,
+                externalLiabilityRow(c, fact),
+            );
         for (const fact of c.disbursements)
             await m.insert(
                 FinancialDisbursementOrmEntity,
                 disbursementRow(c, fact),
             );
+    }
+    async saveExternalLiability(
+        c: FinancialCommitment<ExpenseVersion>,
+        expectedVersion: number,
+    ): Promise<void> {
+        const m = transaction(this.provider);
+        const updated = await m.update(
+            FinancialCommitmentOrmEntity,
+            {
+                id: c.id,
+                spaceId: c.spaceId,
+                version: expectedVersion,
+                kind: 'EXPENSE',
+            },
+            { version: c.version },
+        );
+        if (updated.affected !== 1)
+            throw new FinancesError('CONCURRENT_MODIFICATION');
+        await m.insert(
+            FinancialExternalLiabilityOrmEntity,
+            externalLiabilityRow(c, c.externalLiabilities.at(-1)!),
+        );
     }
     async find(
         spaceId: string,
@@ -82,6 +111,10 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
             version: 1,
         });
         const facts = await m.find(FinancialDisbursementOrmEntity, {
+            where: { spaceId, commitmentId },
+            order: { sequence: 'ASC' },
+        });
+        const liabilities = await m.find(FinancialExternalLiabilityOrmEntity, {
             where: { spaceId, commitmentId },
             order: { sequence: 'ASC' },
         });
@@ -114,6 +147,7 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
             p,
             facts.map((d) => ({
                 id: d.id,
+                sequence: d.sequence,
                 ...(d.payerPersonId
                     ? { payerPersonId: d.payerPersonId }
                     : { payerMemberId: d.payerMemberId! }),
@@ -125,6 +159,18 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
             })),
             this.clock.today(),
             c.version,
+            liabilities.map((f) => ({
+                id: f.id,
+                sequence: f.sequence,
+                ...(f.holderPersonId
+                    ? { holderPersonId: f.holderPersonId }
+                    : { holderMemberId: f.holderMemberId! }),
+                amountInCents: f.amountInCents,
+                remainingAmountInCents: f.remainingAmountInCents,
+                factDate: f.factDate,
+                registeredAt: f.registeredAt.toISOString(),
+                recordedByPersonId: f.recordedByPersonId,
+            })),
         );
     }
     async saveDisbursement(

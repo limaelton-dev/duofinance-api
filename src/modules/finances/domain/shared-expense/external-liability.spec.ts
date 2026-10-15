@@ -7,6 +7,8 @@ import {
 import { ResponsibilitySplit } from './responsibility-split.js';
 import { expenseDifference } from './obligation-reconciler.js';
 import { Money } from './money.js';
+import { InterMemberObligation } from './inter-member-obligation.js';
+import { planObligationReconciliation } from './obligation-reconciler.js';
 const today = '2026-10-15',
     now = '2026-10-15T15:00:00.000Z';
 const split = ResponsibilitySplit.create(20000, ['a', 'b'], {
@@ -184,6 +186,67 @@ describe('External liability expense support', () => {
                 },
             ]),
         ).toBeNull();
+    });
+    it('preserves 20 payable after 400 cash, 80 transfer and 100 card support', () => {
+        const responsibility = ResponsibilitySplit.create(50000, ['a', 'b'], {
+            mode: 'AMOUNTS',
+            shares: [
+                { memberId: 'a', amountInCents: 30000 },
+                { memberId: 'b', amountInCents: 20000 },
+            ],
+        });
+        const c = new FinancialCommitment(
+            'expense',
+            'space',
+            'Purchase',
+            'author',
+            now,
+            { ...version, split: responsibility },
+            {
+                id: 'cash',
+                payerMemberId: 'a',
+                method: 'DEBIT',
+                amountInCents: 40000,
+                factDate: today,
+                registeredAt: now,
+            },
+            today,
+        );
+        const previous = new InterMemberObligation(
+            'episode',
+            'space',
+            c.id,
+            'cash',
+            'b',
+            'a',
+            10000,
+            null,
+            today,
+            now,
+            'author',
+        ).applySettlement('allocation', 8000, 1);
+        const next = c.recordExternalLiability(
+            liability('card', 10000, 'b'),
+            1,
+            today,
+        );
+        const difference = expenseDifference(responsibility, support(next), [
+            { payerMemberId: 'b', recipientMemberId: 'a', amountInCents: 8000 },
+        ]);
+        expect(difference).toEqual({
+            debtorMemberId: 'b',
+            creditorMemberId: 'a',
+            amountInCents: 2000,
+        });
+        const plan = planObligationReconciliation([previous], difference);
+        expect(plan.changes).toEqual([]);
+        expect(plan.reusedObligation).toBe(previous);
+        expect(plan.newDifference).toBeNull();
+        expect(previous.appliedAllocationIds).toEqual(['allocation']);
+        expect(previous.remainingAmountInCents).toBe(2000);
+        expect(next.paidAmountInCents).toBe(40000);
+        expect(next.externalOutstandingAmountInCents).toBe(10000);
+        expect(next.remainingAmountInCents).toBe(0);
     });
     it.each([0, -1, 0.5, 20001, Number.MAX_SAFE_INTEGER + 1])(
         'rejects invalid assumed amount %s',

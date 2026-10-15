@@ -36,32 +36,42 @@ export class TypeOrmPersonalExpenseReader implements PersonalExpenseReader {
         spaceId: string,
         after: { factDate: string; id: string } | null,
     ): Promise<PersonalExpenseSummary[]> {
-        const rows: {
-            id: string;
-            description: string;
-            amount: string;
-            fact_date: string;
-            first_amount: string;
-            method: 'PIX' | 'DEBIT' | 'CASH';
-            paid: string;
-        }[] = await this.provider
+        const rows: { id: string }[] = await this.provider
             .get()
             .query(
-                `SELECT c.id,c.description,v.amount_in_cents::text AS amount,to_char(v.fact_date,'YYYY-MM-DD') AS fact_date,d.amount_in_cents::text AS first_amount,d.method,(SELECT SUM(p.amount_in_cents)::text FROM financial_disbursements p WHERE p.space_id=c.space_id AND p.commitment_id=c.id) AS paid FROM financial_commitments c JOIN financial_commitment_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id AND v.version=1 JOIN financial_disbursements d ON d.space_id=c.space_id AND d.commitment_id=c.id AND d.sequence=1 WHERE c.space_id=$1 AND c.kind='EXPENSE' AND c.personal_owner_person_id IS NOT NULL AND ($2::date IS NULL OR (v.fact_date,c.id)<($2::date,$3::uuid)) ORDER BY v.fact_date DESC,c.id DESC LIMIT 21`,
+                `SELECT c.id FROM financial_commitments c JOIN financial_commitment_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id AND v.version=1 WHERE c.space_id=$1 AND c.kind='EXPENSE' AND c.personal_owner_person_id IS NOT NULL AND ($2::date IS NULL OR (v.fact_date,c.id)<($2::date,$3::uuid)) ORDER BY v.fact_date DESC,c.id DESC LIMIT 21`,
                 [spaceId, after?.factDate ?? null, after?.id ?? null],
             );
-        return rows.map((r) => ({
-            id: r.id,
-            description: r.description,
-            amountInCents: Number(r.amount),
-            factDate: r.fact_date,
-            disbursement: {
-                amountInCents: Number(r.first_amount),
-                method: r.method,
-            },
-            paidAmountInCents: Number(r.paid),
-            remainingAmountInCents: Number(r.amount) - Number(r.paid),
-            status: r.amount === r.paid ? 'PAID' : 'PARTIALLY_PAID',
-        }));
+        return Promise.all(
+            rows.map(async (r) => {
+                const c = await this.commitments.find(spaceId, r.id);
+                if (!c || !('ownerPersonId' in c.initialVersion))
+                    throw new Error('Personal expense missing');
+                const view = personalExpenseView(
+                    c as FinancialCommitment<PersonalCommitmentVersion>,
+                );
+                return {
+                    id: r.id,
+                    description: view.commitment.description,
+                    amountInCents: view.commitment.amountInCents,
+                    factDate: view.commitment.factDate,
+                    disbursement: view.disbursement
+                        ? {
+                              amountInCents: view.disbursement.amountInCents,
+                              method: view.disbursement.method,
+                          }
+                        : null,
+                    externalLiabilities: view.externalLiabilities,
+                    assumedAmountInCents: view.assumedAmountInCents,
+                    externalOutstandingAmountInCents:
+                        view.externalOutstandingAmountInCents,
+                    supportedAmountInCents: view.supportedAmountInCents,
+                    fulfillmentStatus: view.fulfillmentStatus,
+                    paidAmountInCents: view.paidAmountInCents,
+                    remainingAmountInCents: view.remainingAmountInCents,
+                    status: view.status,
+                };
+            }),
+        );
     }
 }

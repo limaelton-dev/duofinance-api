@@ -31,11 +31,16 @@ export interface PersonalExpenseView {
         createdByPersonId: string;
         ownerPersonId: string;
     };
-    disbursement: PersonalDisbursement;
+    disbursement: PersonalDisbursement | null;
     disbursements: readonly PersonalDisbursement[];
+    externalLiabilities?: FinancialCommitment<PersonalCommitmentVersion>['externalLiabilities'];
+    assumedAmountInCents?: number;
+    externalOutstandingAmountInCents?: number;
+    supportedAmountInCents?: number;
+    fulfillmentStatus?: 'PARTIALLY_FULFILLED' | 'FULFILLED';
     paidAmountInCents: number;
     remainingAmountInCents: number;
-    status: 'PARTIALLY_PAID' | 'PAID';
+    status: FinancialCommitment['status'];
 }
 export interface PersonalExpenseResult extends PersonalExpenseView {
     replayed: boolean;
@@ -45,10 +50,18 @@ export interface PersonalExpenseSummary {
     description: string;
     amountInCents: number;
     factDate: string;
-    disbursement: { amountInCents: number; method: 'PIX' | 'DEBIT' | 'CASH' };
+    disbursement: {
+        amountInCents: number;
+        method: 'PIX' | 'DEBIT' | 'CASH';
+    } | null;
+    externalLiabilities?: FinancialCommitment<PersonalCommitmentVersion>['externalLiabilities'];
+    assumedAmountInCents?: number;
+    externalOutstandingAmountInCents?: number;
+    supportedAmountInCents?: number;
+    fulfillmentStatus?: 'PARTIALLY_FULFILLED' | 'FULFILLED';
     paidAmountInCents: number;
     remainingAmountInCents: number;
-    status: 'PARTIALLY_PAID' | 'PAID';
+    status: FinancialCommitment['status'];
 }
 export function personalExpenseView(
     c: FinancialCommitment<PersonalCommitmentVersion>,
@@ -68,7 +81,12 @@ export function personalExpenseView(
             createdByPersonId: c.createdByPersonId,
             ownerPersonId: c.initialVersion.ownerPersonId,
         },
-        disbursement: { ...c.disbursement },
+        disbursement: c.disbursement ? { ...c.disbursement } : null,
+        externalLiabilities: c.externalLiabilities,
+        assumedAmountInCents: c.assumedAmountInCents,
+        externalOutstandingAmountInCents: c.externalOutstandingAmountInCents,
+        supportedAmountInCents: c.supportedAmountInCents,
+        fulfillmentStatus: c.fulfillmentStatus,
         disbursements: c.disbursements,
         paidAmountInCents: c.paidAmountInCents,
         remainingAmountInCents: c.remainingAmountInCents,

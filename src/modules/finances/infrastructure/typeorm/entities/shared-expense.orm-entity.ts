@@ -191,6 +191,58 @@ export class FinancialDisbursementOrmEntity {
     @Column({ name: 'fact_date', type: 'date' }) factDate!: string;
     @Column({ name: 'registered_at', type: 'timestamptz' }) registeredAt!: Date;
 }
+@Entity('financial_external_liabilities')
+@Unique('UQ_external_liabilities_origin', ['spaceId', 'commitmentId', 'id'])
+@Unique('UQ_external_liabilities_sequence', ['commitmentId', 'sequence'])
+@Check(
+    'CHK_external_liabilities_values',
+    `${money('amount_in_cents', true)} AND remaining_amount_in_cents = amount_in_cents AND sequence > 0 AND version = 1 AND fact_date <= (registered_at AT TIME ZONE 'America/Sao_Paulo')::date AND ((holder_member_id IS NOT NULL AND holder_person_id IS NULL) OR (holder_member_id IS NULL AND holder_person_id IS NOT NULL))`,
+)
+@ForeignKey(
+    () => FinancialCommitmentVersionOrmEntity,
+    ['spaceId', 'commitmentId', 'version'],
+    ['spaceId', 'commitmentId', 'version'],
+    { name: 'FK_external_liabilities_version', onDelete: 'RESTRICT' },
+)
+@ForeignKey('space_members', ['spaceId', 'holderMemberId'], ['spaceId', 'id'], {
+    name: 'FK_external_liabilities_holder',
+    onDelete: 'RESTRICT',
+})
+export class FinancialExternalLiabilityOrmEntity {
+    @PrimaryColumn('uuid') id!: string;
+    @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
+    @Column({ name: 'commitment_id', type: 'uuid' }) commitmentId!: string;
+    @Column('integer') sequence!: number;
+    @Column('integer') version!: number;
+    @Column({ name: 'holder_member_id', type: 'uuid', nullable: true })
+    holderMemberId!: string | null;
+    @Column({ name: 'holder_person_id', type: 'uuid', nullable: true })
+    @ForeignKey('persons', 'id', {
+        name: 'FK_external_liabilities_personal_holder',
+        onDelete: 'RESTRICT',
+    })
+    holderPersonId!: string | null;
+    @Column({ name: 'recorded_by_person_id', type: 'uuid' })
+    @ForeignKey('persons', 'id', {
+        name: 'FK_external_liabilities_recorder',
+        onDelete: 'RESTRICT',
+    })
+    recordedByPersonId!: string;
+    @Column({
+        name: 'amount_in_cents',
+        type: 'bigint',
+        transformer: safeBigInt,
+    })
+    amountInCents!: number;
+    @Column({
+        name: 'remaining_amount_in_cents',
+        type: 'bigint',
+        transformer: safeBigInt,
+    })
+    remainingAmountInCents!: number;
+    @Column({ name: 'fact_date', type: 'date' }) factDate!: string;
+    @Column({ name: 'registered_at', type: 'timestamptz' }) registeredAt!: Date;
+}
 @Entity('settlement_cycles')
 @Unique('UQ_settlement_cycles_space_date', ['spaceId', 'targetDate'])
 @Unique('UQ_settlement_cycles_space_id', ['spaceId', 'id'])
@@ -227,7 +279,13 @@ export class SettlementCycleOrmEntity {
 )
 @Check(
     'CHK_obligations_origin_xor',
-    `(disbursement_id IS NOT NULL) <> (receipt_id IS NOT NULL)`,
+    `num_nonnulls(disbursement_id, receipt_id, external_liability_id) = 1`,
+)
+@ForeignKey(
+    () => FinancialExternalLiabilityOrmEntity,
+    ['spaceId', 'commitmentId', 'externalLiabilityId'],
+    ['spaceId', 'commitmentId', 'id'],
+    { name: 'FK_obligations_external_liability', onDelete: 'RESTRICT' },
 )
 @ForeignKey(
     'financial_receipts',
@@ -265,6 +323,8 @@ export class InterMemberObligationOrmEntity {
     disbursementId!: string | null;
     @Column({ name: 'receipt_id', type: 'uuid', nullable: true })
     receiptId!: string | null;
+    @Column({ name: 'external_liability_id', type: 'uuid', nullable: true })
+    externalLiabilityId!: string | null;
     @Column({ name: 'debtor_member_id', type: 'uuid' }) debtorMemberId!: string;
     @Column({ name: 'creditor_member_id', type: 'uuid' })
     creditorMemberId!: string;
@@ -324,7 +384,7 @@ export class InterMemberObligationChangeOrmEntity {
 @Entity('financial_expense_command_receipts')
 @Check(
     'CHK_expense_receipt',
-    `operation IN ('RECORD_SHARED_CASH_EXPENSE','RECORD_PERSONAL_EXPENSE','RECORD_EXPENSE_DISBURSEMENT') AND status = 'COMPLETED' AND octet_length(request_hash) = 32`,
+    `operation IN ('RECORD_SHARED_CASH_EXPENSE','RECORD_PERSONAL_EXPENSE','RECORD_EXPENSE_DISBURSEMENT','RECORD_CREDIT_CARD_PURCHASE','RECORD_EXTERNAL_LIABILITY') AND status = 'COMPLETED' AND octet_length(request_hash) = 32`,
 )
 export class FinancialExpenseCommandReceiptOrmEntity {
     @PrimaryColumn({ name: 'actor_id', type: 'uuid' })
@@ -352,6 +412,7 @@ export const sharedExpenseEntities = [
     FinancialCommitmentVersionOrmEntity,
     FinancialCommitmentShareOrmEntity,
     FinancialDisbursementOrmEntity,
+    FinancialExternalLiabilityOrmEntity,
     SettlementCycleOrmEntity,
     InterMemberObligationOrmEntity,
     InterMemberObligationChangeOrmEntity,

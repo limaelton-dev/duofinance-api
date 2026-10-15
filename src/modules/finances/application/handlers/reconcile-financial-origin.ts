@@ -48,13 +48,20 @@ export class ReconcileFinancialOrigin {
             : 'split' in origin.initialVersion
               ? expenseDifference(
                     origin.initialVersion.split,
-                    origin.disbursements as FinancialCommitment['disbursements'],
+                    [
+                        ...(origin.disbursements as FinancialCommitment['disbursements']),
+                        ...origin.externalLiabilities.map((f) => ({
+                            payerMemberId:
+                                'holderMemberId' in f ? f.holderMemberId : '',
+                            amountInCents: f.amountInCents,
+                        })),
+                    ],
                     state.settlements,
                 )
               : null;
         const fact = income
             ? origin.receipts.at(-1)!
-            : origin.disbursements.at(-1)!;
+            : origin.fulfillments.at(-1)!;
         const plan = planObligationReconciliation(
             state.obligations,
             difference,
@@ -149,6 +156,10 @@ export class ReconcileFinancialOrigin {
                 undefined,
                 undefined,
                 income ? 'INCOME' : 'EXPENSE',
+                undefined,
+                undefined,
+                null,
+                !income && 'holderMemberId' in fact ? fact.id : null,
             ),
         );
     }

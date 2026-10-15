@@ -61,7 +61,7 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
     readonly kind = 'EXPENSE';
     readonly modality = 'ONE_TIME';
     readonly initialVersion: V;
-    readonly disbursement: ExpenseDisbursement<V>;
+    readonly disbursement: ExpenseDisbursement<V> | null;
     readonly disbursements: readonly ExpenseDisbursement<V>[];
     readonly externalLiabilities: readonly ExpenseExternalLiability<V>[];
     readonly fulfillments: readonly (
@@ -237,7 +237,7 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
                 (a, b) => a.sequence! - b.sequence!,
             ),
         );
-        this.disbursement = this.disbursements[0];
+        this.disbursement = this.disbursements[0] ?? null;
         this.version = version ?? all.length;
         this.assumedAmountInCents = Number(assumed);
         this.externalOutstandingAmountInCents = Number(assumed);
