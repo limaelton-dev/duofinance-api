@@ -181,8 +181,12 @@ export class IncomeQueries {
                 commitmentId,
                 expectedCommitmentVersion: income.version,
                 amountInCents: income.amountInCents,
+                receivedAmountInCents: income.receivedAmountInCents,
+                remainingAmountInCents: income.remainingAmountInCents,
                 referenceDate,
-                canReceive: !income.receipt && access.status === 'ACTIVE',
+                canReceive:
+                    income.remainingAmountInCents > 0 &&
+                    access.status === 'ACTIVE',
             };
         }
         const context = await this.context.read(actor, space);
@@ -201,8 +205,12 @@ export class IncomeQueries {
             expectedCommitmentVersion: income.version,
             expectedSpaceVersion: context.version,
             amountInCents: income.amountInCents,
+            receivedAmountInCents: income.receivedAmountInCents,
+            remainingAmountInCents: income.remainingAmountInCents,
             referenceDate,
-            canReceive: !income.receipt && context.status !== 'CLOSED',
+            canReceive:
+                income.remainingAmountInCents > 0 &&
+                context.status !== 'CLOSED',
             members: context.members.filter((m) =>
                 p.split.shares.some((s) => s.memberId === m.memberId),
             ),

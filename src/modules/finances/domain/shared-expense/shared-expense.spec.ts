@@ -77,11 +77,11 @@ describe('Shared cash expense invariants', () => {
         expect(commitment.initialVersion.expectedPayerMemberId).toBeNull();
         expect(commitment.disbursement.payerMemberId).toBe(b);
     });
-    it('rejects future/impossible dates, foreign planned payer and partial payments', () => {
+    it('rejects future/impossible dates, foreign planned payer and excessive payments', () => {
         expect(() => create('2026-10-11')).toThrow();
         expect(() => create('2026-02-30')).toThrow();
         expect(() => create('2026-10-09', 'foreign')).toThrow();
-        expect(() => create('2026-10-09', a, 20000)).toThrow();
+        expect(() => create('2026-10-09', a, 50001)).toThrow();
     });
     it('keeps distinct obligations per origin with initial history', () => {
         const first = new InterMemberObligation(

@@ -10,6 +10,7 @@ export interface OpenObligationView extends PositionKey {
     debtorMemberId: string;
     creditorMemberId: string;
     originalAmountInCents: number;
+    recognizedAmountInCents: number;
     remainingAmountInCents: number;
     factDate: string;
     origin:

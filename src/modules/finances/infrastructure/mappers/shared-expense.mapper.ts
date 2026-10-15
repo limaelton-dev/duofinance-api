@@ -16,7 +16,7 @@ export function commitmentRow(c: FinancialCommitment<ExpenseVersion>) {
             'ownerPersonId' in c.initialVersion
                 ? c.initialVersion.ownerPersonId
                 : null,
-        version: 1,
+        version: c.version,
         registeredAt: new Date(c.registeredAt),
     };
 }
@@ -67,12 +67,16 @@ export function shareRow(c: FinancialCommitment, share: EconomicShare) {
         basisPoints: 'basisPoints' in original ? original.basisPoints : null,
     };
 }
-export function disbursementRow(c: FinancialCommitment<ExpenseVersion>) {
-    const d = c.disbursement;
+export function disbursementRow(
+    c: FinancialCommitment<ExpenseVersion>,
+    d = c.disbursement,
+) {
     return {
         id: d.id,
         spaceId: c.spaceId,
         commitmentId: c.id,
+        recordedByPersonId: d.recordedByPersonId ?? c.createdByPersonId,
+        sequence: c.disbursements.findIndex((f) => f.id === d.id) + 1,
         version: 1,
         payerMemberId: 'payerMemberId' in d ? d.payerMemberId : null,
         payerPersonId: 'payerPersonId' in d ? d.payerPersonId : null,
@@ -93,10 +97,11 @@ export function obligationRow(o: InterMemberObligation) {
         debtorMemberId: o.debtorMemberId,
         creditorMemberId: o.creditorMemberId,
         originalAmountInCents: o.originalAmountInCents,
+        recognizedAmountInCents: o.recognizedAmountInCents,
         remainingAmountInCents: o.remainingAmountInCents,
         status: o.status,
         cycleId: o.cycleId,
-        version: 1,
+        version: o.version,
         factDate: o.factDate,
         registeredAt: new Date(o.registeredAt),
     };

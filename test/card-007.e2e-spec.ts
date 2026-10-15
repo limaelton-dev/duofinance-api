@@ -401,7 +401,13 @@ describe('CARD-007 HTTP authorized position and origin', () => {
         expect(schema.properties).not.toHaveProperty('replayed');
         expect(
             doc.components.schemas.OpenInterMemberObligation.properties.origin
-                .properties.commitmentId.format,
-        ).toBe('uuid');
+                .$ref,
+        ).toBe('#/components/schemas/InterMemberObligationOrigin');
+        const origin = doc.components.schemas.InterMemberObligationOrigin;
+        expect(origin.oneOf).toHaveLength(2);
+        for (const variant of origin.oneOf)
+            expect(variant.properties.commitmentId.format).toBe('uuid');
+        expect(origin.oneOf[0].properties.disbursementId.format).toBe('uuid');
+        expect(origin.oneOf[1].properties.receiptId.format).toBe('uuid');
     });
 });

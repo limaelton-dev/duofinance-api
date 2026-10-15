@@ -1,4 +1,11 @@
 import { Module } from '@nestjs/common';
+import { ExpenseDisbursementController } from './http/controllers/expense-disbursement.controller.js';
+import { RecordExpenseDisbursementPipe } from './http/dto/record-expense-disbursement.dto.js';
+import { RecordExpenseDisbursementHandler } from './application/handlers/record-expense-disbursement.handler.js';
+import { ReconcileFinancialOrigin } from './application/handlers/reconcile-financial-origin.js';
+import { GetExpenseDisbursementOptionsQuery } from './application/queries/expense-disbursement.queries.js';
+import { EXPENSE_DISBURSEMENT_RECEIPTS } from './application/ports/private/expense-disbursement.ports.js';
+import { TypeOrmExpenseDisbursementReceipts } from './infrastructure/typeorm/repositories/typeorm-expense-disbursement-receipts.js';
 import { GetIncomeTodayQuery } from './application/queries/income-today.query.js';
 import { INCOME_TODAY_QUERY_PORT } from './application/ports/public/income-today-query.port.js';
 import { incomeEntities } from './infrastructure/typeorm/entities/income.orm-entity.js';
@@ -113,6 +120,7 @@ import {
         ]),
     ],
     controllers: [
+        ExpenseDisbursementController,
         PersonalExpenseController,
         IncomeController,
         SettlementCycleController,
@@ -122,6 +130,14 @@ import {
         SettlementTransferController,
     ],
     providers: [
+        RecordExpenseDisbursementPipe,
+        RecordExpenseDisbursementHandler,
+        ReconcileFinancialOrigin,
+        GetExpenseDisbursementOptionsQuery,
+        {
+            provide: EXPENSE_DISBURSEMENT_RECEIPTS,
+            useClass: TypeOrmExpenseDisbursementReceipts,
+        },
         RecordPersonalExpensePipe,
         RecordIncomePipe,
         RecordIncomeReceiptPipe,

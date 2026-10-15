@@ -27,7 +27,7 @@ const uuid: SchemaObject = { type: 'string', format: 'uuid' },
         maxLength: 160,
     },
     method: SchemaObject = { type: 'string', enum: ['PIX', 'DEBIT', 'CASH'] };
-const view = object({
+const legacyView = object({
     spaceId: uuid,
     spaceType: { type: 'string', enum: ['PERSONAL'] },
     commitment: object({
@@ -50,6 +50,22 @@ const view = object({
         factDate: date,
         registeredAt: instant,
     }),
+});
+const payment = object({
+    ...(legacyView.properties!.disbursement as SchemaObject).properties,
+    recordedByPersonId: uuid,
+});
+const view = object({
+    ...legacyView.properties,
+    commitment: object({
+        ...(legacyView.properties!.commitment as SchemaObject).properties,
+        version: money,
+    }),
+    disbursement: payment,
+    disbursements: { type: 'array', minItems: 1, items: payment },
+    paidAmountInCents: money,
+    remainingAmountInCents: { ...money, minimum: 0 },
+    status: { type: 'string', enum: ['PARTIALLY_PAID', 'PAID'] },
 });
 const response = (
     schema: SchemaObject | ReferenceObject,
@@ -131,16 +147,17 @@ export const personalExpenseOpenApi: Pick<
                     ...errors,
                     200: response(
                         ref('PersonalExpenseList'),
-                        'Até 20 fatos pessoais; nenhum acerto ou dupla contagem.',
+                        'Até 20 compromissos pessoais, com pago acumulado e restante; pagamentos não duplicam linhas.',
                     ),
                 },
             },
             post: {
                 operationId: 'recordPersonalExpense',
                 tags: ['Finances'],
-                summary: 'Registrar despesa pessoal e desembolso integral',
+                summary:
+                    'Registrar despesa pessoal com primeiro pagamento parcial ou integral',
                 description:
-                    'Titular, autoria e pagador derivados da sessão autorizada. Uma transação grava compromisso, versão, desembolso e recibo. Retry usa a mesma chave e entrada; o replay revalida acesso e preserva o resultado original.',
+                    'Titular, autoria e pagador derivados da sessão autorizada. disbursement.amountInCents omitido preserva o pagamento integral legado; informado deve ser positivo e até o total. Uma transação grava compromisso, versão, desembolso e recibo. Retry usa a mesma chave e entrada; replay revalida acesso e preserva o resultado histórico, inclusive seu formato legado.',
                 security,
                 parameters: [
                     ...parameters,
@@ -176,7 +193,7 @@ export const personalExpenseOpenApi: Pick<
                     201: {
                         ...response(
                             ref('RecordPersonalExpenseResponse'),
-                            'Criação ou replay autorizado.',
+                            'Criação autorizada.',
                         ),
                         headers: {
                             'Cache-Control': {
@@ -189,6 +206,15 @@ export const personalExpenseOpenApi: Pick<
                             },
                         },
                     },
+                    200: response(
+                        {
+                            oneOf: [
+                                ref('RecordPersonalExpenseResponse'),
+                                ref('LegacyPersonalExpenseReplay'),
+                            ],
+                        },
+                        'Replay autorizado do resultado histórico original.',
+                    ),
                     403: error('INVALID_CSRF_TOKEN'),
                     409: error(
                         'PERSONAL_SPACE_REQUIRED',
@@ -215,12 +241,19 @@ export const personalExpenseOpenApi: Pick<
                 description,
                 amountInCents: money,
                 factDate: date,
-                disbursement: object({ method }),
+                disbursement: {
+                    ...object({ method, amountInCents: money }),
+                    required: ['method'],
+                },
             }),
             PersonalExpenseDetail: view,
             RecordPersonalExpenseResponse: object({
                 ...view.properties,
                 replayed: { type: 'boolean' },
+            }),
+            LegacyPersonalExpenseReplay: object({
+                ...legacyView.properties,
+                replayed: { type: 'boolean', enum: [true] },
             }),
             PersonalExpenseList: object({
                 spaceId: uuid,
@@ -233,6 +266,12 @@ export const personalExpenseOpenApi: Pick<
                         amountInCents: money,
                         factDate: date,
                         disbursement: object({ amountInCents: money, method }),
+                        paidAmountInCents: money,
+                        remainingAmountInCents: { ...money, minimum: 0 },
+                        status: {
+                            type: 'string',
+                            enum: ['PARTIALLY_PAID', 'PAID'],
+                        },
                     }),
                 },
                 nextCursor: { oneOf: [{ type: 'string' }, { type: 'null' }] },

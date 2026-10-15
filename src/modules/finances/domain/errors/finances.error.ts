@@ -11,6 +11,7 @@ export type FinancesErrorCode =
     | 'INTER_MEMBER_OBLIGATION_NOT_FOUND'
     | 'SETTLEMENT_TRANSFER_NOT_FOUND'
     | 'INCOME_ALREADY_RECEIVED'
+    | 'EXPENSE_ALREADY_PAID'
     | 'INCOME_OPTIONS_CHANGED';
 const messages: Record<FinancesErrorCode, string> = {
     VALIDATION_ERROR: 'Verifique os dados informados.',
@@ -27,6 +28,7 @@ const messages: Record<FinancesErrorCode, string> = {
     INTER_MEMBER_OBLIGATION_NOT_FOUND: 'Pendência não encontrada.',
     SETTLEMENT_TRANSFER_NOT_FOUND: 'Transferência não encontrada.',
     INCOME_ALREADY_RECEIVED: 'Esta receita já foi recebida.',
+    EXPENSE_ALREADY_PAID: 'Esta despesa já foi paga.',
     INCOME_OPTIONS_CHANGED: 'As opções mudaram. Atualize e confirme novamente.',
 };
 export class FinancesError extends Error {

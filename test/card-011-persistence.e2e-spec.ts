@@ -29,7 +29,6 @@ import {
     type PersonalExpenseReceipts,
 } from '../dist/modules/finances/application/ports/private/personal-expense.ports.js';
 import type { RecordPersonalExpenseCommand } from '../dist/modules/finances/application/models/personal-expense.js';
-import type { SharedCashExpenseResult } from '../dist/modules/finances/application/models/shared-cash-expense.js';
 import { RecordPersonalExpense1791995573673 } from '../dist/shared/technical/database/typeorm/migrations/1791995573673-RecordPersonalExpense.js';
 const id = (n: number) =>
     `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -251,17 +250,16 @@ describe('CARD-011 PostgreSQL transaction and migration compatibility', () => {
             receipts: 1,
         });
     });
-    it('keeps the one-disbursement constraint and personal payer FK', async () => {
+    it('keeps disbursement identity unique and preserves the personal payer and author FKs', async () => {
         const r = await handler.execute(command());
         await expect(
             db.query(
-                `INSERT INTO financial_disbursements SELECT $1,space_id,commitment_id,version,payer_member_id,amount_in_cents,method,fact_date,registered_at,payer_person_id FROM financial_disbursements WHERE id=$2`,
-                [randomUUID(), r.disbursement.id],
+                'INSERT INTO financial_disbursements SELECT * FROM financial_disbursements WHERE id=$1',
+                [r.disbursement.id],
             ),
         ).rejects.toMatchObject({
             driverError: {
                 code: '23505',
-                constraint: 'UQ_financial_disbursements_commitment',
             },
         });
         await expect(
@@ -274,10 +272,22 @@ describe('CARD-011 PostgreSQL transaction and migration compatibility', () => {
                 constraint: 'FK_financial_disbursements_personal_payer',
             },
         });
+        await expect(
+            db.query(
+                'UPDATE financial_disbursements SET recorded_by_person_id=$1',
+                [randomUUID()],
+            ),
+        ).rejects.toMatchObject({
+            driverError: {
+                code: '23503',
+                constraint: 'FK_financial_disbursements_recorder',
+            },
+        });
     });
     it('prevents rollback before changing or discarding any personal data', async () => {
         const r = await handler.execute(command()),
             before = await counts();
+        await migrationSource.undoLastMigration();
         await migrationSource.undoLastMigration();
         await expect(migrationSource.undoLastMigration()).rejects.toThrow(
             'Personal financial facts prevent schema rollback',
@@ -302,6 +312,7 @@ describe('CARD-011 PostgreSQL transaction and migration compatibility', () => {
     it('upgrades Wave 1 facts without altering identities, snapshots or literal legacy receipt hash and supports safe rollback', async () => {
         await migrationSource.undoLastMigration();
         await migrationSource.undoLastMigration();
+        await migrationSource.undoLastMigration();
         await db.query('TRUNCATE persons CASCADE');
         await db.query(
             `INSERT INTO persons(id,display_name,version,created_at) VALUES($1,'A',1,now()),($2,'B',1,now())`,
@@ -324,7 +335,7 @@ describe('CARD-011 PostgreSQL transaction and migration compatibility', () => {
         };
         const registered = '2026-10-09T15:00:00.000Z',
             fact = '2026-10-09';
-        const result: SharedCashExpenseResult = {
+        const result = {
             spaceId: id(4),
             commitment: {
                 id: id(6),
@@ -410,6 +421,7 @@ describe('CARD-011 PostgreSQL transaction and migration compatibility', () => {
             ).map(
                 ({
                     receipt_id: _receiptId,
+                    recognized_amount_in_cents: _recognized,
                     ...legacy
                 }: Record<string, unknown>) => legacy,
             ),
@@ -440,7 +452,7 @@ describe('CARD-011 PostgreSQL transaction and migration compatibility', () => {
         await migrationSource.runMigrations();
         expect(await snapshot()).toEqual(before);
         const constraints = await db.query(
-            `SELECT conname FROM pg_constraint WHERE conname IN ('FK_obligation_changes_allocation','UQ_obligation_changes_allocation','default_settlement_rules_version_check','finances_command_receipts_request_hash_check','UQ_financial_disbursements_commitment','FK_financial_disbursements_personal_payer')`,
+            `SELECT conname FROM pg_constraint WHERE conname IN ('FK_obligation_changes_allocation','UQ_obligation_changes_allocation','default_settlement_rules_version_check','finances_command_receipts_request_hash_check','FK_financial_disbursements_recorder','FK_financial_disbursements_personal_payer')`,
         );
         expect(constraints).toHaveLength(6);
         const personalSpace = id(10);

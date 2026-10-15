@@ -190,7 +190,7 @@ describe('CARD-006 HTTP contract and financial traceability', () => {
             else delete equivalent.expectedPayerMemberId;
             const replay = await f.a
                 .post(postPath(f.space), equivalent, key)
-                .expect(201);
+                .expect(200);
             expect(replay.body.replayed).toBe(true);
             expect(replay.body.commitment.id).toBe(first.body.commitment.id);
             expect(
@@ -334,7 +334,7 @@ describe('CARD-006 HTTP contract and financial traceability', () => {
                     },
                     key,
                 )
-                .expect(201)
+                .expect(200)
         ).body;
         expect(replay).toEqual({ ...first, replayed: true });
         await f.a
@@ -409,7 +409,7 @@ describe('CARD-006 HTTP contract and financial traceability', () => {
             })
             .expect(200);
         expect(
-            (await f.a.post(postPath(f.space), input, key).expect(201)).body,
+            (await f.a.post(postPath(f.space), input, key).expect(200)).body,
         ).toEqual({ ...first, replayed: true });
         const detail = (
             await f.a.agent
@@ -626,7 +626,7 @@ describe('CARD-006 HTTP contract and financial traceability', () => {
         ).toBe('CLOSED');
         await f.a
             .post(postPath(f.space), input, key)
-            .expect(201)
+            .expect(200)
             .expect((r) => expect(r.body.replayed).toBe(true));
         await f.a
             .post(postPath(f.space), input)

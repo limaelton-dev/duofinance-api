@@ -22,6 +22,7 @@ function cycle(targetDate: string, remaining = '8000'): SettlementCycleRead {
         openObligationCount: remaining === '0' ? 0 : 2,
         totals: {
             originalAmountInCents: remaining,
+            recognizedAmountInCents: remaining,
             remainingAmountInCents: remaining,
             resolvedAmountInCents: '0',
             transferredAmountInCents: '0',

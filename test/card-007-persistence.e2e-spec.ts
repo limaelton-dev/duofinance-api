@@ -366,7 +366,9 @@ describe('CARD-007 PostgreSQL read model', () => {
             await runner.release();
         }
         const plan = await db.query('EXPLAIN (FORMAT JSON) ' + sql, parameters);
-        expect(JSON.stringify(plan)).toContain('IDX_obligations_space_origin');
+        expect(JSON.stringify(plan)).toMatch(
+            /IDX_obligations_space_origin|UQ_obligations_open_origin/,
+        );
     });
     it('repeated GET read model preserves all financial contents and versions', async () => {
         await handler.execute({

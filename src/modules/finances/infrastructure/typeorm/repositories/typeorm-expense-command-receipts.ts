@@ -58,6 +58,9 @@ export function expenseCommandHash(c: RecordSharedCashExpenseCommand): Buffer {
                 c.disbursement.payerMemberId.toLowerCase(),
                 c.disbursement.method,
                 selection,
+                ...(c.disbursement.amountInCents === undefined
+                    ? []
+                    : [c.disbursement.amountInCents]),
             ]),
         )
         .digest();

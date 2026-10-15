@@ -232,6 +232,7 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
                 openObligationCount: 2,
                 totals: {
                     originalAmountInCents: '43000',
+                    recognizedAmountInCents: '43000',
                     resolvedAmountInCents: '0',
                     remainingAmountInCents: '43000',
                     transferredAmountInCents: '0',
@@ -341,6 +342,7 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
             openObligationCount: 1,
             totals: {
                 originalAmountInCents: '60000',
+                recognizedAmountInCents: '60000',
                 resolvedAmountInCents: '35000',
                 remainingAmountInCents: '25000',
             },
@@ -370,6 +372,7 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
                 obligationCount: 0,
                 totals: {
                     originalAmountInCents: '0',
+                    recognizedAmountInCents: '0',
                     resolvedAmountInCents: '0',
                     remainingAmountInCents: '0',
                 },
@@ -391,6 +394,7 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
                     openObligationCount: 0,
                     totals: {
                         originalAmountInCents: '60000',
+                        recognizedAmountInCents: '60000',
                         resolvedAmountInCents: '60000',
                         remainingAmountInCents: '0',
                         transferredAmountInCents: '0',
@@ -573,6 +577,7 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
             obligationCount: 23,
             totals: {
                 originalAmountInCents: '23',
+                recognizedAmountInCents: '23',
                 remainingAmountInCents: '23',
             },
         });
@@ -610,6 +615,7 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
         ).body;
         expect(result.cycle.totals).toEqual({
             originalAmountInCents: '18014398509481983',
+            recognizedAmountInCents: '18014398509481983',
             resolvedAmountInCents: '0',
             remainingAmountInCents: '18014398509481983',
             transferredAmountInCents: '0',
@@ -1020,8 +1026,10 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
             obligation = doc.components.schemas.SettlementCycleObligation;
         for (const amount of [
             'originalAmountInCents',
+            'recognizedAmountInCents',
             'resolvedAmountInCents',
             'remainingAmountInCents',
+            'transferredAmountInCents',
         ])
             expect(summary.properties.totals.properties[amount].type).toBe(
                 'string',
@@ -1032,9 +1040,15 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
             { type: 'null' },
             { type: 'string', format: 'date-time' },
         ]);
-        expect(
-            obligation.properties.origin.properties.commitmentId.format,
-        ).toBe('uuid');
+        expect(obligation.properties.origin.$ref).toBe(
+            '#/components/schemas/InterMemberObligationOrigin',
+        );
+        const origin = doc.components.schemas.InterMemberObligationOrigin;
+        expect(origin.oneOf).toHaveLength(2);
+        for (const variant of origin.oneOf)
+            expect(variant.properties.commitmentId.format).toBe('uuid');
+        expect(origin.oneOf[0].properties.disbursementId.format).toBe('uuid');
+        expect(origin.oneOf[1].properties.receiptId.format).toBe('uuid');
         expect(obligation.properties.resolvedAmountInCents.type).toBe(
             'integer',
         );

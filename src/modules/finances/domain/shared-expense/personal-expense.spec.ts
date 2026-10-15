@@ -83,7 +83,7 @@ describe('Personal FinancialCommitment', () => {
         ).toBe(now));
     it.each([
         { payerPersonId: 'other' },
-        { amountInCents: 1 },
+        { amountInCents: 12001 },
         { factDate: '2026-10-13' },
         { method: 'CREDIT' },
         { registeredAt: '2026-10-13T15:00:00Z' },

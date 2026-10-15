@@ -9,6 +9,7 @@ import type {
     SettlementCycle,
 } from '../../domain/shared-expense/shared-expense.js';
 import type { SettlementRuleSnapshot } from '../../domain/settlement-rule/settlement-rule.js';
+import type { FulfillmentObligationView } from './fulfillment-obligation.js';
 export interface RecordSharedCashExpenseInput {
     expectedSpaceVersion: number;
     description: string;
@@ -16,7 +17,11 @@ export interface RecordSharedCashExpenseInput {
     factDate: string;
     responsibilitySplit: SplitInput;
     expectedPayerMemberId: string | null;
-    disbursement: { payerMemberId: string; method: 'PIX' | 'DEBIT' | 'CASH' };
+    disbursement: {
+        payerMemberId: string;
+        method: 'PIX' | 'DEBIT' | 'CASH';
+        amountInCents?: number;
+    };
     settlement: SettlementSelection;
 }
 export interface RecordSharedCashExpenseCommand extends RecordSharedCashExpenseInput {
@@ -45,17 +50,12 @@ export interface SharedCashExpenseView {
         suggestedTargetDate: string | null;
     };
     disbursement: FinancialCommitment['disbursement'];
-    obligation: null | {
-        id: string;
-        originCommitmentId: string;
-        originDisbursementId: string;
-        debtorMemberId: string;
-        creditorMemberId: string;
-        originalAmountInCents: number;
-        remainingAmountInCents: number;
-        status: string;
-        cycleId: string | null;
-    };
+    disbursements: FinancialCommitment['disbursements'];
+    paidAmountInCents: number;
+    remainingAmountInCents: number;
+    status: 'PARTIALLY_PAID' | 'PAID';
+    obligation: FulfillmentObligationView | null;
+    obligations: FulfillmentObligationView[];
     settlementCycle: null | {
         id: string;
         targetDate: string;
@@ -77,7 +77,7 @@ export type InitialSharedCashExpenseView = Omit<
               status: 'OPEN';
           });
 };
-export interface SharedCashExpenseResult extends InitialSharedCashExpenseView {
+export interface SharedCashExpenseResult extends SharedCashExpenseView {
     replayed: boolean;
 }
 export interface SharedCashExpenseOptions extends SpaceFinancialContext {
@@ -100,7 +100,7 @@ export function expenseView(
         spaceId: commitment.spaceId,
         commitment: {
             id: commitment.id,
-            version: 1,
+            version: commitment.version,
             kind: 'EXPENSE',
             modality: 'ONE_TIME',
             description: commitment.description,
@@ -118,6 +118,11 @@ export function expenseView(
             suggestedTargetDate: version.suggestedTargetDate,
         },
         disbursement: { ...commitment.disbursement },
+        disbursements: commitment.disbursements,
+        paidAmountInCents: commitment.paidAmountInCents,
+        remainingAmountInCents: commitment.remainingAmountInCents,
+        status: commitment.status,
+        obligations: [],
         obligation: obligation
             ? {
                   id: obligation.id,
@@ -126,6 +131,19 @@ export function expenseView(
                   debtorMemberId: obligation.debtorMemberId,
                   creditorMemberId: obligation.creditorMemberId,
                   originalAmountInCents: obligation.originalAmountInCents,
+                  recognizedAmountInCents: obligation.recognizedAmountInCents,
+                  transferredAmountInCents:
+                      obligation.recognizedAmountInCents -
+                      obligation.remainingAmountInCents,
+                  history: [
+                      {
+                          version: 1,
+                          type: 'CREATED',
+                          actorId: obligation.history.actorId,
+                          registeredAt: obligation.registeredAt,
+                          snapshot: {},
+                      },
+                  ],
                   remainingAmountInCents: obligation.remainingAmountInCents,
                   status: 'OPEN',
                   cycleId: obligation.cycleId,

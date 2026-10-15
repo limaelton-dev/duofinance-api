@@ -20,7 +20,8 @@ export interface SettlementTransferRepository {
     discover(
         spaceId: string,
         ids: string[],
-    ): Promise<{ id: string; cycleId: string | null }[]>;
+    ): Promise<{ id: string; cycleId: string | null; commitmentId: string }[]>;
+    lockOrigins(spaceId: string, ids: string[]): Promise<void>;
     lockCycles(spaceId: string, ids: string[]): Promise<void>;
     lockObligations(
         spaceId: string,

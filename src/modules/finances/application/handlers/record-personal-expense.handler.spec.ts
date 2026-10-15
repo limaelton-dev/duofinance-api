@@ -34,6 +34,8 @@ function setup() {
         assertCanWrite: vi.fn(async () => context),
     };
     const commitments: FinancialCommitmentRepository = {
+        find: vi.fn(),
+        saveDisbursement: vi.fn(),
         save: vi.fn(),
         detail: vi.fn(),
     };

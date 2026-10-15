@@ -96,6 +96,10 @@ export class RecordManualSettlementTransferHandler {
                     throw new FinancesError(
                         'INTER_MEMBER_OBLIGATION_NOT_FOUND',
                     );
+                await this.transfers.lockOrigins(
+                    c.spaceId.value,
+                    [...new Set(discovered.map((o) => o.commitmentId))].sort(),
+                );
                 await this.transfers.lockCycles(
                     c.spaceId.value,
                     [

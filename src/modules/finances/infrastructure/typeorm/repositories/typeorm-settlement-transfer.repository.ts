@@ -32,6 +32,7 @@ interface ObligationRow {
     debtor_member_id: string;
     creditor_member_id: string;
     original_amount_in_cents: string;
+    recognized_amount_in_cents: string;
     remaining_amount_in_cents: string;
     cycle_id: string | null;
     fact_date: string;
@@ -48,6 +49,7 @@ interface OptionRow {
     debtor_member_id: string;
     creditor_member_id: string;
     original_amount_in_cents: string;
+    recognized_amount_in_cents: string;
     remaining_amount_in_cents: string;
     fact_date: string;
     registered_at: string;
@@ -64,12 +66,22 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
     constructor(private readonly provider: EntityManagerProvider) {}
     async discover(spaceId: string, ids: string[]) {
         if (!ids.length) return [];
-        const rows: { id: string; cycleId: string | null }[] =
-            await transaction(this.provider).query(
-                `SELECT id, cycle_id AS "cycleId" FROM inter_member_obligations WHERE space_id=$1 AND id=ANY($2::uuid[]) ORDER BY id`,
-                [spaceId, ids],
-            );
+        const rows: {
+            id: string;
+            cycleId: string | null;
+            commitmentId: string;
+        }[] = await transaction(this.provider).query(
+            `SELECT id, cycle_id AS "cycleId", commitment_id AS "commitmentId" FROM inter_member_obligations WHERE space_id=$1 AND id=ANY($2::uuid[]) ORDER BY id`,
+            [spaceId, ids],
+        );
         return rows;
+    }
+    async lockOrigins(spaceId: string, ids: string[]): Promise<void> {
+        for (const id of ids)
+            await transaction(this.provider).query(
+                `SELECT id FROM financial_commitments WHERE space_id=$1 AND id=$2 FOR UPDATE`,
+                [spaceId, id],
+            );
     }
     async lockCycles(spaceId: string, ids: string[]): Promise<void> {
         const m = transaction(this.provider);
@@ -119,6 +131,7 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
                     o.version,
                     changes.map((change) => change.allocation_id),
                     o.receipt_id ? 'INCOME' : 'EXPENSE',
+                    amount(o.recognized_amount_in_cents),
                 ),
             );
         }
@@ -231,7 +244,7 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
                 ORDER BY registered_at DESC,id DESC LIMIT 21
             )
             SELECT t.payable,t.receivable,p.id,p.version,p.status,p.debtor_member_id,p.creditor_member_id,
-                p.original_amount_in_cents::text,p.remaining_amount_in_cents::text,
+                p.original_amount_in_cents::text,p.recognized_amount_in_cents::text,p.remaining_amount_in_cents::text,
                 to_char(p.fact_date,'YYYY-MM-DD') AS fact_date,
                 to_char(p.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS registered_at,
                 p.commitment_id,p.disbursement_id,p.receipt_id,c.description,p.cycle_id,
@@ -258,6 +271,7 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
                 debtorMemberId: r.debtor_member_id,
                 creditorMemberId: r.creditor_member_id,
                 originalAmountInCents: amount(r.original_amount_in_cents),
+                recognizedAmountInCents: amount(r.recognized_amount_in_cents),
                 remainingAmountInCents: amount(r.remaining_amount_in_cents),
                 factDate: r.fact_date,
                 registeredAt: r.registered_at,

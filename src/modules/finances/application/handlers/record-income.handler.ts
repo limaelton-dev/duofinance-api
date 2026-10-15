@@ -13,15 +13,10 @@ import {
     type SpaceFinancialContextPort,
 } from '../../../spaces/application/ports/public/space-financial-context.port.js';
 import { FinancesError } from '../../domain/errors/finances.error.js';
-import {
-    IncomeCommitment,
-    incomeDifference,
-} from '../../domain/income/income-commitment.js';
-import { SettlementRule } from '../../domain/settlement-rule/settlement-rule.js';
-import { InterMemberObligation } from '../../domain/shared-expense/inter-member-obligation.js';
+import { IncomeCommitment } from '../../domain/income/income-commitment.js';
+import { ReconcileFinancialOrigin } from './reconcile-financial-origin.js';
 import { ResponsibilitySplit } from '../../domain/shared-expense/responsibility-split.js';
 import { civilDate } from '../../domain/shared-expense/settlement-cycle.js';
-import type { SettlementSelection } from '../../domain/shared-expense/settlement-selection.js';
 import type {
     IncomeResult,
     RecordIncomeCommand,
@@ -40,11 +35,7 @@ import {
 } from '../ports/private/income.ports.js';
 import {
     FINANCES_CLOCK,
-    INTER_MEMBER_OBLIGATION_REPOSITORY,
-    SETTLEMENT_CYCLE_REPOSITORY,
     type FinancesClock,
-    type InterMemberObligationRepository,
-    type SettlementCycleRepository,
 } from '../ports/private/shared-expense.repositories.js';
 
 @Injectable()
@@ -57,92 +48,11 @@ export class RecordIncomeHandler {
         @Inject(DEFAULT_SETTLEMENT_RULE_REPOSITORY)
         private readonly rules: DefaultSettlementRuleRepository,
         @Inject(INCOME_REPOSITORY) private readonly incomes: IncomeRepository,
-        @Inject(INTER_MEMBER_OBLIGATION_REPOSITORY)
-        private readonly obligations: InterMemberObligationRepository,
-        @Inject(SETTLEMENT_CYCLE_REPOSITORY)
-        private readonly cycles: SettlementCycleRepository,
         @Inject(INCOME_COMMAND_RECEIPTS)
         private readonly receipts: IncomeCommandReceipts,
         @Inject(FINANCES_CLOCK) private readonly clock: FinancesClock,
+        private readonly reconcile: ReconcileFinancialOrigin,
     ) {}
-
-    private async cycleFor(
-        income: IncomeCommitment,
-        selection: SettlementSelection,
-        today: string,
-    ) {
-        const difference = incomeDifference(income);
-        if (!difference) {
-            if (selection.mode !== 'NONE')
-                throw new FinancesError('VALIDATION_ERROR', [
-                    'settlement.mode',
-                ]);
-            return null;
-        }
-        if (selection.mode === 'NONE') return null;
-        if (selection.mode === 'DATE') {
-            if (civilDate(selection.targetDate) < today)
-                throw new FinancesError('VALIDATION_ERROR', [
-                    'settlement.targetDate',
-                ]);
-            return this.cycles.lockForDate(
-                income.spaceId,
-                selection.targetDate,
-            );
-        }
-        if (selection.mode === 'CYCLE') {
-            const cycle = await this.cycles.lockExisting(
-                income.spaceId,
-                selection.cycleId,
-            );
-            if (!cycle) throw new FinancesError('SETTLEMENT_CYCLE_NOT_FOUND');
-            cycle.assertOpen();
-            return cycle;
-        }
-        const p = income.participation;
-        if (
-            p.type !== 'SHARED' ||
-            !p.settlementRuleSnapshot ||
-            selection.referenceDate !== today ||
-            selection.expectedRuleVersion !== p.settlementRuleSourceVersion
-        )
-            throw new FinancesError('INCOME_OPTIONS_CHANGED');
-        return this.cycles.lockForDate(
-            income.spaceId,
-            SettlementRule.from(p.settlementRuleSnapshot).suggestTargetDate(
-                today,
-            ),
-        );
-    }
-
-    private async obligationFor(
-        income: IncomeCommitment,
-        selection: SettlementSelection,
-        now: string,
-        today: string,
-        actorId: string,
-    ) {
-        const difference = incomeDifference(income);
-        const cycle = await this.cycleFor(income, selection, today);
-        if (!difference) return null;
-        return new InterMemberObligation(
-            randomUUID(),
-            income.spaceId,
-            income.id,
-            income.receipt!.id,
-            difference.debtorMemberId,
-            difference.creditorMemberId,
-            difference.amountInCents,
-            cycle?.id ?? null,
-            income.receipt!.factDate,
-            now,
-            actorId,
-            undefined,
-            undefined,
-            undefined,
-            'INCOME',
-        );
-    }
 
     async execute(c: RecordIncomeCommand): Promise<IncomeResult> {
         try {
@@ -246,7 +156,8 @@ export class RecordIncomeHandler {
                     ? pending.recordReceipt(
                           {
                               id: randomUUID(),
-                              amountInCents: c.amountInCents,
+                              amountInCents:
+                                  c.receipt.amountInCents ?? c.amountInCents,
                               factDate: c.receipt.factDate,
                               registeredAt: now,
                               recordedByPersonId: c.actorId.value,
@@ -262,18 +173,15 @@ export class RecordIncomeHandler {
                           today,
                       )
                     : pending;
-                const obligation =
-                    income.receipt && 'settlement' in c.receipt!
-                        ? await this.obligationFor(
-                              income,
-                              c.receipt!.settlement,
-                              now,
-                              today,
-                              c.actorId.value,
-                          )
-                        : null;
                 await this.incomes.save(income);
-                if (obligation) await this.obligations.save(obligation);
+                if (income.receipt && 'settlement' in c.receipt!)
+                    await this.reconcile.execute(
+                        income,
+                        c.receipt!.settlement,
+                        c.actorId.value,
+                        today,
+                        now,
+                    );
                 const detail = await this.incomes.detail(
                     c.spaceId.value,
                     income.id,
@@ -343,12 +251,22 @@ export class RecordIncomeHandler {
                     throw new FinancesError('VALIDATION_ERROR', [
                         'recipientMemberId',
                     ]);
+                const concurrentReceipt = await this.receipts.find(c);
+                if (concurrentReceipt)
+                    return { ...concurrentReceipt, replayed: true };
+                if (
+                    c.amountInCents === undefined &&
+                    existing.receipts.length > 0 &&
+                    existing.remainingAmountInCents > 0
+                )
+                    throw new FinancesError('INCOME_OPTIONS_CHANGED');
                 const today = this.clock.today();
                 const now = this.clock.now().toISOString();
                 const income = existing.recordReceipt(
                     {
                         id: randomUUID(),
-                        amountInCents: existing.amountInCents,
+                        amountInCents:
+                            c.amountInCents ?? existing.amountInCents,
                         factDate: c.factDate,
                         registeredAt: now,
                         recordedByPersonId: c.actorId.value,
@@ -358,17 +276,15 @@ export class RecordIncomeHandler {
                     c.expectedCommitmentVersion,
                     today,
                 );
-                const obligation = shared
-                    ? await this.obligationFor(
-                          income,
-                          c.settlement!,
-                          now,
-                          today,
-                          c.actorId.value,
-                      )
-                    : null;
                 await this.incomes.saveReceipt(income, existing.version);
-                if (obligation) await this.obligations.save(obligation);
+                if (shared)
+                    await this.reconcile.execute(
+                        income,
+                        c.settlement!,
+                        c.actorId.value,
+                        today,
+                        now,
+                    );
                 const detail = await this.incomes.detail(
                     c.spaceId.value,
                     income.id,

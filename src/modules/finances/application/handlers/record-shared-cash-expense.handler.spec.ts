@@ -76,10 +76,16 @@ function setup() {
         save: vi.fn(),
     };
     const commitments: FinancialCommitmentRepository = {
+        find: vi.fn(),
+        saveDisbursement: vi.fn(),
         save: vi.fn(async () => {}),
         detail: vi.fn(async () => null),
     };
     const obligations: InterMemberObligationRepository = {
+        originState: vi.fn(),
+        lockOrigin: vi.fn(),
+        saveReconciliation: vi.fn(),
+        history: vi.fn(),
         save: vi.fn(async () => {}),
     };
     const cycles: SettlementCycleRepository = {

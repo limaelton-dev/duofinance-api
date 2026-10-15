@@ -22,6 +22,9 @@ export function personalExpenseCommandHash(
                 c.amountInCents,
                 c.factDate,
                 c.disbursement.method,
+                ...(c.disbursement.amountInCents === undefined
+                    ? []
+                    : [c.disbursement.amountInCents]),
             ]),
         )
         .digest();

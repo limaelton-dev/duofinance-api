@@ -135,27 +135,48 @@ const commitment = object({
     settlementRuleSourceVersion: money,
     suggestedTargetDate: nullable(date),
 });
-const initialProperties = {
+const legacyInitialProperties = {
     spaceId: uuid,
     commitment,
     disbursement,
     obligation: nullable(object(obligationProperties)),
     settlementCycle: nullable(cycle),
 };
-const result = object({ ...initialProperties, replayed: { type: 'boolean' } });
-const detail = object({
-    ...initialProperties,
-    obligation: nullable(
+const legacyResult = object({
+    ...legacyInitialProperties,
+    replayed: { type: 'boolean', enum: [true] },
+});
+const payment = object({
+    ...disbursement.properties,
+    recordedByPersonId: uuid,
+});
+const initialProperties = {
+    ...legacyInitialProperties,
+    disbursement: payment,
+    disbursements: { type: 'array' as const, minItems: 1, items: payment },
+    paidAmountInCents: positive,
+    remainingAmountInCents: money,
+    status: { type: 'string' as const, enum: ['PARTIALLY_PAID', 'PAID'] },
+    obligation: nullable(ref('FinancialFulfillmentObligation')),
+    obligations: {
+        type: 'array' as const,
+        items: ref('FinancialFulfillmentObligation'),
+    },
+    settlementCycle: nullable(
         object({
-            ...obligationProperties,
-            status: {
-                type: 'string',
-                enum: ['OPEN', 'PARTIALLY_SETTLED', 'SETTLED'],
-                description:
-                    'Estado atual da pendência; a leitura não reconcilia.',
-            },
+            ...cycle.properties,
+            status: { type: 'string', enum: ['OPEN', 'FINALIZED'] },
         }),
     ),
+};
+const result = object({ ...initialProperties, replayed: { type: 'boolean' } });
+result.properties = {
+    ...result.properties,
+    members: financialContextSchema.properties!.members,
+};
+const detail = object({
+    ...initialProperties,
+    obligation: nullable(ref('FinancialFulfillmentObligation')),
     settlementCycle: nullable(
         object({
             ...cycle.properties,
@@ -171,10 +192,14 @@ const input = object({
     factDate: date,
     responsibilitySplit: split,
     expectedPayerMemberId: nullable(uuid),
-    disbursement: object({
-        payerMemberId: uuid,
-        method: { type: 'string', enum: ['PIX', 'DEBIT', 'CASH'] },
-    }),
+    disbursement: {
+        ...object({
+            payerMemberId: uuid,
+            method: { type: 'string', enum: ['PIX', 'DEBIT', 'CASH'] },
+            amountInCents: positive,
+        }),
+        required: ['payerMemberId', 'method'],
+    },
     settlement: selection,
 });
 input.required = input.required!.filter(
@@ -277,6 +302,7 @@ const originalResult = {
     },
     disbursement: {
         id: '00000000-0000-4000-8000-000000000005',
+        recordedByPersonId: '00000000-0000-4000-8000-000000000009',
         payerMemberId: b,
         method: 'DEBIT',
         amountInCents: 50000,
@@ -290,12 +316,31 @@ const originalResult = {
         debtorMemberId: a,
         creditorMemberId: b,
         originalAmountInCents: 20000,
+        recognizedAmountInCents: 20000,
+        transferredAmountInCents: 0,
         remainingAmountInCents: 20000,
         status: 'OPEN',
         cycleId: null,
+        history: [
+            {
+                version: 1,
+                type: 'CREATED',
+                actorId: '00000000-0000-4000-8000-000000000009',
+                registeredAt: '2026-10-10T15:00:00.000Z',
+                snapshot: {},
+            },
+        ],
     },
     settlementCycle: null,
     replayed: false,
+};
+const currentResult = {
+    ...originalResult,
+    disbursements: [originalResult.disbursement],
+    obligations: [originalResult.obligation],
+    paidAmountInCents: 50000,
+    remainingAmountInCents: 0,
+    status: 'PAID',
 };
 export const sharedCashExpenseOpenApi: Pick<
     OpenAPIObject,
@@ -364,9 +409,9 @@ export const sharedCashExpenseOpenApi: Pick<
                 operationId: 'recordSharedCashExpense',
                 tags: ['Finances'],
                 summary:
-                    'Registrar despesa integralmente paga e pendência inicial',
+                    'Registrar despesa compartilhada com pagamento parcial ou integral',
                 description:
-                    'Autoria pela sessão. Uma transação grava a origem, desembolso, reconciliação, histórico, ciclo opcional e recibo. Retry conserva chave/entrada. Sem pendência, settlement NONE e nenhuma criação de ciclo.',
+                    'Autoria pela sessão. disbursement.amountInCents omitido significa integral no contrato legado; explícito deve ser positivo e até o valor original. Uma transação grava origem, desembolso, reconciliação, histórico, ciclo eventual e recibo. Responsabilidade original permanece; suporte acumulado determina a pendência. Retry conserva chave/entrada. Sem nova pendência, não cria ciclo.',
                 security: [{ sessionCookie: [] }],
                 parameters: [
                     ...parameters,
@@ -431,7 +476,7 @@ export const sharedCashExpenseOpenApi: Pick<
                     201: {
                         ...response(
                             ref('RecordSharedCashExpenseResponse'),
-                            'Registro inicial ou replay histórico autorizado; replayed true preserva IDs/datas/valores originais. obligation e settlementCycle podem ser null.',
+                            'Registro inicial autorizado. obligation e settlementCycle podem ser null.',
                         ),
                         headers: {
                             'Cache-Control': {
@@ -447,16 +492,10 @@ export const sharedCashExpenseOpenApi: Pick<
                             'application/json': {
                                 schema: ref('RecordSharedCashExpenseResponse'),
                                 examples: {
-                                    created: { value: originalResult },
-                                    replay: {
-                                        value: {
-                                            ...originalResult,
-                                            replayed: true,
-                                        },
-                                    },
+                                    created: { value: currentResult },
                                     noObligation: {
                                         value: {
-                                            ...originalResult,
+                                            ...currentResult,
                                             commitment: {
                                                 ...originalResult.commitment,
                                                 responsibilitySplit: {
@@ -484,6 +523,7 @@ export const sharedCashExpenseOpenApi: Pick<
                                                 },
                                             },
                                             obligation: null,
+                                            obligations: [],
                                         },
                                     },
                                 },
@@ -491,6 +531,15 @@ export const sharedCashExpenseOpenApi: Pick<
                         },
                     },
                     403: error('INVALID_CSRF_TOKEN'),
+                    200: response(
+                        {
+                            oneOf: [
+                                ref('RecordSharedCashExpenseResponse'),
+                                ref('LegacySharedCashExpenseReplay'),
+                            ],
+                        },
+                        'Replay autorizado preservando o resultado histórico original, inclusive formato legado.',
+                    ),
                     404: error('SPACE_NOT_FOUND', 'SETTLEMENT_CYCLE_NOT_FOUND'),
                     409: error(
                         'SHARED_SPACE_REQUIRED',
@@ -547,6 +596,7 @@ export const sharedCashExpenseOpenApi: Pick<
             ExpenseSettlementSelection: selection,
             RecordSharedCashExpenseRequest: input,
             RecordSharedCashExpenseResponse: result,
+            LegacySharedCashExpenseReplay: legacyResult,
             SharedCashExpenseOptions: options,
             FinancialCommitmentDetail: detail,
         },

@@ -25,6 +25,7 @@ function hash(c: IncomeCommand): Buffer {
                   c.expectedSpaceVersion ?? null,
                   c.recipientMemberId?.toLowerCase() ?? null,
                   c.settlement ?? null,
+                  ...(c.amountInCents === undefined ? [] : [c.amountInCents]),
               ]
             : [
                   c.description.trim(),

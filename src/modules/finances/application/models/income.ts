@@ -4,19 +4,21 @@ import type { SettlementRuleSnapshot } from '../../domain/settlement-rule/settle
 import type { SplitInput } from '../../domain/shared-expense/responsibility-split.js';
 import type { SettlementSelection } from '../../domain/shared-expense/settlement-selection.js';
 import type { IncomeCommitment } from '../../domain/income/income-commitment.js';
+import type { FulfillmentObligationView } from './fulfillment-obligation.js';
 
 export type RecordIncomeInput = {
     description: string;
     amountInCents: number;
     expectedReceiptDate: string;
 } & (
-    | { receipt: null | { factDate: string } }
+    | { receipt: null | { factDate: string; amountInCents?: number } }
     | {
           expectedSpaceVersion: number;
           participationSplit: SplitInput;
           expectedRecipientMemberId: string | null;
           receipt: null | {
               factDate: string;
+              amountInCents?: number;
               recipientMemberId: string;
               settlement: SettlementSelection;
           };
@@ -29,6 +31,7 @@ export type RecordIncomeCommand = RecordIncomeInput & {
 };
 export type RecordIncomeReceiptInput = {
     expectedCommitmentVersion: number;
+    amountInCents?: number;
     factDate: string;
 } & (
     | {
@@ -70,19 +73,12 @@ export interface IncomeView {
         settlementRuleSourceVersion?: number;
     };
     receipt: null | NonNullable<IncomeCommitment['receipt']>;
-    status: 'PENDING' | 'RECEIVED';
+    receipts: IncomeCommitment['receipts'];
+    status: 'PENDING' | 'PARTIALLY_RECEIVED' | 'RECEIVED';
     receivedAmountInCents: number;
-    obligation: null | {
-        id: string;
-        originCommitmentId: string;
-        originReceiptId: string;
-        debtorMemberId: string;
-        creditorMemberId: string;
-        originalAmountInCents: number;
-        remainingAmountInCents: number;
-        status: 'OPEN' | 'PARTIALLY_SETTLED' | 'SETTLED';
-        cycleId: string | null;
-    };
+    remainingAmountInCents: number;
+    obligation: FulfillmentObligationView | null;
+    obligations: FulfillmentObligationView[];
     settlementCycle: null | {
         id: string;
         targetDate: string;
@@ -105,4 +101,5 @@ export type IncomeSummary = Pick<
 > & {
     status: IncomeView['status'];
     receivedAmountInCents: number;
+    remainingAmountInCents: number;
 };

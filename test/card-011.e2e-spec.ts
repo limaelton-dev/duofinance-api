@@ -277,25 +277,22 @@ describe('CARD-011 personal expense HTTP and PostgreSQL', () => {
         });
         expect((await counts()).commitments).toBe(0);
     });
-    it.each([
-        'payerMemberId',
-        'payerPersonId',
-        'amountInCents',
-        'factDate',
-        'registeredAt',
-    ])('rejects extra nested disbursement.%s', async (field) => {
-        const b = await browser(),
-            r = await b
-                .post(path(b.context.personalSpace.id), {
-                    ...input(),
-                    disbursement: { method: 'PIX', [field]: randomUUID() },
-                })
-                .expect(400);
-        expect(r.body.details.fields).toContainEqual({
-            field: `disbursement.${field}`,
-            messages: ['Este campo não é permitido.'],
-        });
-    });
+    it.each(['payerMemberId', 'payerPersonId', 'factDate', 'registeredAt'])(
+        'rejects extra nested disbursement.%s',
+        async (field) => {
+            const b = await browser(),
+                r = await b
+                    .post(path(b.context.personalSpace.id), {
+                        ...input(),
+                        disbursement: { method: 'PIX', [field]: randomUUID() },
+                    })
+                    .expect(400);
+            expect(r.body.details.fields).toContainEqual({
+                field: `disbursement.${field}`,
+                messages: ['Este campo não é permitido.'],
+            });
+        },
+    );
     it('requires session, CSRF and UUID idempotency key', async () => {
         await request(app.getHttpServer()).get(path(randomUUID())).expect(401);
         const b = await browser(),
@@ -383,7 +380,7 @@ describe('CARD-011 personal expense HTTP and PostgreSQL', () => {
             first = await b.post(url, input(), key).expect(201);
         const replay = await b
             .post(url, { ...input(), description: 'Consulta' }, key)
-            .expect(201);
+            .expect(200);
         expect(replay.body).toEqual({ ...first.body, replayed: true });
         expect(replay.headers.location).toBe(first.headers.location);
         const conflict = await b

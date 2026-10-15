@@ -76,7 +76,9 @@ export class RecordPersonalExpenseHandler {
                             id: randomUUID(),
                             payerPersonId: c.actorId.value,
                             method: c.disbursement.method,
-                            amountInCents: c.amountInCents,
+                            amountInCents:
+                                c.disbursement.amountInCents ?? c.amountInCents,
+                            recordedByPersonId: c.actorId.value,
                             factDate: c.factDate,
                             registeredAt,
                         },

@@ -75,6 +75,7 @@ export class SharedCashExpenseController {
             'Location',
             `/v2/spaces/${result.spaceId}/financial-commitments/${result.commitment.id}`,
         );
+        if (result.replayed) response.status(200);
         return result;
     }
     @Get('financial-commitments/:commitmentId')

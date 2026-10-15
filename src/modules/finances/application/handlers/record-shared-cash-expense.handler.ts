@@ -28,11 +28,11 @@ import {
 import {
     FinancialCommitment,
     ResponsibilitySplit,
-    reconcileInitialObligation,
     InterMemberObligation,
     civilDate,
     type SettlementCycle,
 } from '../../domain/shared-expense/shared-expense.js';
+import { expenseDifference } from '../../domain/shared-expense/obligation-reconciler.js';
 import { FinancesError } from '../../domain/errors/finances.error.js';
 import {
     expenseView,
@@ -110,11 +110,18 @@ export class RecordSharedCashExpenseHandler {
                     context.members.map((m) => m.memberId),
                     c.responsibilitySplit,
                 );
-                const difference = reconcileInitialObligation(
-                    split,
-                    c.disbursement.payerMemberId,
-                );
-                if (!difference && c.settlement.mode !== 'NONE')
+                const difference = expenseDifference(split, [
+                    {
+                        payerMemberId: c.disbursement.payerMemberId,
+                        amountInCents:
+                            c.disbursement.amountInCents ?? c.amountInCents,
+                    },
+                ]);
+                if (
+                    !difference &&
+                    c.settlement.mode !== 'NONE' &&
+                    c.disbursement.amountInCents === undefined
+                )
                     throw new FinancesError('VALIDATION_ERROR', [
                         'settlement.mode',
                     ]);
@@ -174,7 +181,9 @@ export class RecordSharedCashExpenseHandler {
                         id: randomUUID(),
                         payerMemberId: c.disbursement.payerMemberId,
                         method: c.disbursement.method,
-                        amountInCents: c.amountInCents,
+                        amountInCents:
+                            c.disbursement.amountInCents ?? c.amountInCents,
+                        recordedByPersonId: c.actorId.value,
                         factDate: c.factDate,
                         registeredAt: now,
                     },
@@ -201,6 +210,8 @@ export class RecordSharedCashExpenseHandler {
                     ...expenseView(commitment, obligation, cycle),
                     replayed: false,
                 };
+                if (result.obligation)
+                    result.obligations.push(result.obligation);
                 await this.receipts.save(c, result, now);
                 return result;
             });
