@@ -507,7 +507,8 @@ export const sharedCashExpenseOpenApi: Pick<
             get: {
                 operationId: 'getFinancialCommitment',
                 tags: ['Finances'],
-                summary: 'Consultar despesa e referências financeiras atuais',
+                summary:
+                    'Consultar compromisso financeiro e referências atuais',
                 description:
                     'Leitura mínima autorizada, sem reconciliação e sem reparo de pendências. Snapshot do compromisso permanece histórico; pendência/ciclo podem refletir estado atual. Não contém replayed.',
                 security: [{ sessionCookie: [] }],
@@ -527,6 +528,7 @@ export const sharedCashExpenseOpenApi: Pick<
                             oneOf: [
                                 ref('FinancialCommitmentDetail'),
                                 ref('PersonalExpenseDetail'),
+                                ref('IncomeDetail'),
                             ],
                         },
                         'Despesa rastreável com labels autorizados dos membros.',

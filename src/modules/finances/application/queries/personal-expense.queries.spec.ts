@@ -57,6 +57,14 @@ function fixture() {
             reader,
             shared,
             commitments,
+            {
+                save: vi.fn(),
+                find: vi.fn(),
+                saveReceipt: vi.fn(),
+                detail: vi.fn(async () => null),
+                list: vi.fn(),
+                upcoming: vi.fn(),
+            },
         ),
     };
 }

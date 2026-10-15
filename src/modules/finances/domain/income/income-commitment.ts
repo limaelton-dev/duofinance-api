@@ -124,9 +124,7 @@ export class IncomeCommitment {
     }
 }
 
-export function incomeDifference(
-    income: IncomeCommitment,
-): {
+export function incomeDifference(income: IncomeCommitment): {
     debtorMemberId: string;
     creditorMemberId: string;
     amountInCents: number;

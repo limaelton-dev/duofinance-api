@@ -166,9 +166,9 @@ describe('CARD-007 PostgreSQL read model', () => {
         const filtered = await position(a, 'RECEIVABLE');
         expect(filtered.items).toHaveLength(1);
         expect(filtered.summary).toEqual(result.summary);
-        expect(filtered.items[0].origin.disbursementId).toBe(
-            receivable.disbursement.id,
-        );
+        expect(filtered.items[0].origin).toMatchObject({
+            disbursementId: receivable.disbursement.id,
+        });
     });
     it('balanced positive gross amounts keep both open obligations untouched', async () => {
         await handler.execute(input(8000));

@@ -28,7 +28,7 @@ const money = (column: string, positive = false) =>
 @Unique('UQ_financial_commitments_space_id', ['spaceId', 'id'])
 @Check(
     'CHK_financial_commitments_scope',
-    `kind = 'EXPENSE' AND modality = 'ONE_TIME' AND version > 0 AND length(description) BETWEEN 1 AND 160 AND description = btrim(description) AND (personal_owner_person_id IS NULL OR personal_owner_person_id = created_by)`,
+    `kind IN ('EXPENSE','INCOME') AND modality = 'ONE_TIME' AND version > 0 AND length(description) BETWEEN 1 AND 160 AND description = btrim(description) AND (personal_owner_person_id IS NULL OR personal_owner_person_id = created_by)`,
 )
 @Index('IDX_financial_commitments_space_registered', [
     'spaceId',
@@ -218,6 +218,16 @@ export class SettlementCycleOrmEntity {
     'CHK_obligations_state',
     `${money('original_amount_in_cents', true)} AND ${money('remaining_amount_in_cents')} AND remaining_amount_in_cents <= original_amount_in_cents AND debtor_member_id <> creditor_member_id AND version > 0 AND fact_date <= (registered_at AT TIME ZONE 'America/Sao_Paulo')::date AND ((status = 'OPEN' AND remaining_amount_in_cents = original_amount_in_cents) OR (status = 'PARTIALLY_SETTLED' AND remaining_amount_in_cents > 0 AND remaining_amount_in_cents < original_amount_in_cents) OR (status = 'SETTLED' AND remaining_amount_in_cents = 0))`,
 )
+@Check(
+    'CHK_obligations_origin_xor',
+    `(disbursement_id IS NOT NULL) <> (receipt_id IS NOT NULL)`,
+)
+@ForeignKey(
+    'financial_receipts',
+    ['spaceId', 'commitmentId', 'receiptId'],
+    ['spaceId', 'commitmentId', 'id'],
+    { name: 'FK_obligations_receipt', onDelete: 'RESTRICT' },
+)
 @ForeignKey(
     () => FinancialDisbursementOrmEntity,
     ['spaceId', 'commitmentId', 'disbursementId'],
@@ -244,7 +254,10 @@ export class InterMemberObligationOrmEntity {
     @PrimaryColumn('uuid') id!: string;
     @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
     @Column({ name: 'commitment_id', type: 'uuid' }) commitmentId!: string;
-    @Column({ name: 'disbursement_id', type: 'uuid' }) disbursementId!: string;
+    @Column({ name: 'disbursement_id', type: 'uuid', nullable: true })
+    disbursementId!: string | null;
+    @Column({ name: 'receipt_id', type: 'uuid', nullable: true })
+    receiptId!: string | null;
     @Column({ name: 'debtor_member_id', type: 'uuid' }) debtorMemberId!: string;
     @Column({ name: 'creditor_member_id', type: 'uuid' })
     creditorMemberId!: string;

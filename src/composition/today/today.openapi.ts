@@ -55,7 +55,7 @@ export const todayOpenApi: Pick<
                 tags: ['Today'],
                 summary: 'Consultar Hoje no espaço atual',
                 description:
-                    'Compõe somente contratos públicos. Uma data civil em America/Sao_Paulo por resposta. Próximo acerto é o primeiro OPEN de hoje ou futuro por data-alvo/UUID, inclusive zerado. Atenção traz até três OPEN anteriores com restante bruto positivo e contagem completa, em um snapshot financeiro único. Próximos compromissos permanece vazio no recorte da Wave 1; despesas já pagas e datas de acerto não se tornam vencimentos. Pessoal retorna settlements null sem chamar leitura exclusiva SHARED. Autoriza antes e depois. Falha técnica financeira permite UNAVAILABLE com contexto preservado; acesso, validação e inconsistência mantêm erros HTTP. Não aceita filtros, cursor ou ator do cliente. GET não escreve nem finaliza ciclos.',
+                    'Compõe contratos públicos de Finanças. Próximos compromissos traz até quatro receitas únicas pendentes de hoje ou futuras e sua contagem; despesas pagas e datas de acerto não se tornam vencimentos. Próximo acerto e atenção conservam o resumo anterior. Pessoal retorna settlements null sem chamar leitura exclusiva SHARED. Autoriza antes e depois. Falha técnica financeira permite UNAVAILABLE com contexto preservado. GET não escreve.',
                 security: [{ sessionCookie: [] }],
                 parameters: [
                     {
@@ -109,8 +109,25 @@ export const todayOpenApi: Pick<
                 status: { type: 'string', enum: ['AVAILABLE'] },
                 data: object({
                     upcomingCommitments: object({
-                        items: { type: 'array', maxItems: 0, items: {} },
-                        totalCount: { type: 'integer', enum: [0] },
+                        items: {
+                            type: 'array',
+                            maxItems: 4,
+                            items: object({
+                                commitmentId: uuid,
+                                kind: { type: 'string', enum: ['INCOME'] },
+                                description: { type: 'string' },
+                                expectedReceiptDate: {
+                                    type: 'string',
+                                    format: 'date',
+                                },
+                                amountInCents: {
+                                    type: 'integer',
+                                    minimum: 1,
+                                    maximum: Number.MAX_SAFE_INTEGER,
+                                },
+                            }),
+                        },
+                        totalCount: { type: 'integer', minimum: 0 },
                     }),
                     settlements: {
                         oneOf: [

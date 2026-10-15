@@ -1,4 +1,20 @@
 import { Module } from '@nestjs/common';
+import { GetIncomeTodayQuery } from './application/queries/income-today.query.js';
+import { INCOME_TODAY_QUERY_PORT } from './application/ports/public/income-today-query.port.js';
+import { incomeEntities } from './infrastructure/typeorm/entities/income.orm-entity.js';
+import { IncomeController } from './http/controllers/income.controller.js';
+import {
+    RecordIncomePipe,
+    RecordIncomeReceiptPipe,
+} from './http/dto/record-income.dto.js';
+import { RecordIncomeHandler } from './application/handlers/record-income.handler.js';
+import { IncomeQueries } from './application/queries/income.queries.js';
+import {
+    INCOME_REPOSITORY,
+    INCOME_COMMAND_RECEIPTS,
+} from './application/ports/private/income.ports.js';
+import { TypeOrmIncomeRepository } from './infrastructure/typeorm/repositories/typeorm-income.repository.js';
+import { TypeOrmIncomeCommandReceipts } from './infrastructure/typeorm/repositories/typeorm-income-command-receipts.js';
 import { PersonalExpenseController } from './http/controllers/personal-expense.controller.js';
 import { RecordPersonalExpensePipe } from './http/dto/record-personal-expense.dto.js';
 import { RecordPersonalExpenseHandler } from './application/handlers/record-personal-expense.handler.js';
@@ -86,6 +102,7 @@ import {
         SpacesModule,
         TypeOrmModule.forFeature([
             ...sharedExpenseEntities,
+            ...incomeEntities,
             SettlementTransferOrmEntity,
             SettlementAllocationOrmEntity,
             FinancialSettlementCommandReceiptOrmEntity,
@@ -97,6 +114,7 @@ import {
     ],
     controllers: [
         PersonalExpenseController,
+        IncomeController,
         SettlementCycleController,
         DefaultSettlementRuleController,
         SharedCashExpenseController,
@@ -105,6 +123,17 @@ import {
     ],
     providers: [
         RecordPersonalExpensePipe,
+        RecordIncomePipe,
+        RecordIncomeReceiptPipe,
+        RecordIncomeHandler,
+        IncomeQueries,
+        GetIncomeTodayQuery,
+        { provide: INCOME_TODAY_QUERY_PORT, useExisting: GetIncomeTodayQuery },
+        { provide: INCOME_REPOSITORY, useClass: TypeOrmIncomeRepository },
+        {
+            provide: INCOME_COMMAND_RECEIPTS,
+            useClass: TypeOrmIncomeCommandReceipts,
+        },
         RecordPersonalExpenseHandler,
         GetPersonalExpenseOptionsQuery,
         ListPersonalExpensesQuery,
@@ -193,6 +222,10 @@ import {
             useClass: TypeOrmFinancesCommandReceipts,
         },
     ],
-    exports: [SETTLEMENT_CYCLE_QUERY_PORT, FINANCE_TODAY_QUERY_PORT],
+    exports: [
+        SETTLEMENT_CYCLE_QUERY_PORT,
+        FINANCE_TODAY_QUERY_PORT,
+        INCOME_TODAY_QUERY_PORT,
+    ],
 })
 export class FinancesModule {}

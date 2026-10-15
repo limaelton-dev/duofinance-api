@@ -87,7 +87,9 @@ export function obligationRow(o: InterMemberObligation) {
         id: o.id,
         spaceId: o.spaceId,
         commitmentId: o.originCommitmentId,
-        disbursementId: o.originDisbursementId,
+        disbursementId:
+            o.originKind === 'EXPENSE' ? o.originDisbursementId : null,
+        receiptId: o.originKind === 'INCOME' ? o.originDisbursementId : null,
         debtorMemberId: o.debtorMemberId,
         creditorMemberId: o.creditorMemberId,
         originalAmountInCents: o.originalAmountInCents,
@@ -108,7 +110,9 @@ export function obligationChangeRow(o: InterMemberObligation) {
         type: 'CREATED',
         snapshot: {
             originCommitmentId: o.originCommitmentId,
-            originDisbursementId: o.originDisbursementId,
+            ...(o.originKind === 'EXPENSE'
+                ? { originDisbursementId: o.originDisbursementId }
+                : { originReceiptId: o.originDisbursementId }),
             debtorMemberId: o.debtorMemberId,
             creditorMemberId: o.creditorMemberId,
             originalAmountInCents: o.originalAmountInCents,

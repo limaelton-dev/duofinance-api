@@ -12,6 +12,10 @@ import {
     type FinanceTodayQueryPort,
 } from '../../modules/finances/application/ports/public/finance-today-query.port.js';
 import {
+    INCOME_TODAY_QUERY_PORT,
+    type IncomeTodayQueryPort,
+} from '../../modules/finances/application/ports/public/income-today-query.port.js';
+import {
     TODAY_CLOCK,
     todayReferenceDate,
     type TodayClock,
@@ -25,6 +29,8 @@ export class TodayQuery {
         @Inject(FINANCE_TODAY_QUERY_PORT)
         private readonly finances: FinanceTodayQueryPort,
         @Inject(TODAY_CLOCK) private readonly clock: TodayClock,
+        @Inject(INCOME_TODAY_QUERY_PORT)
+        private readonly incomes: IncomeTodayQueryPort,
     ) {}
 
     async execute(actor: PersonId, space: SpaceId): Promise<TodayResponse> {
@@ -37,8 +43,13 @@ export class TodayQuery {
                 settlements: null,
             },
         };
-        if (authorized.type === 'SHARED') {
-            try {
+        try {
+            finance.data.upcomingCommitments = await this.incomes.readUpcoming(
+                actor,
+                space,
+                referenceDate,
+            );
+            if (authorized.type === 'SHARED') {
                 const result = await this.finances.read(
                     actor,
                     space,
@@ -56,18 +67,17 @@ export class TodayQuery {
                     nextCycle: result.nextCycle,
                     overdueCycles: result.overdueCycles,
                 };
-            } catch (error) {
-                if (!(error instanceof FinanceTodayUnavailableError))
-                    throw error;
-                finance = {
-                    status: 'UNAVAILABLE',
-                    error: {
-                        code: 'FINANCE_TODAY_UNAVAILABLE',
-                        message:
-                            'Não foi possível carregar as finanças. Tente novamente.',
-                    },
-                };
             }
+        } catch (error) {
+            if (!(error instanceof FinanceTodayUnavailableError)) throw error;
+            finance = {
+                status: 'UNAVAILABLE',
+                error: {
+                    code: 'FINANCE_TODAY_UNAVAILABLE',
+                    message:
+                        'Não foi possível carregar as finanças. Tente novamente.',
+                },
+            };
         }
         const confirmed = await this.access.assertCanRead(actor, space);
         if (

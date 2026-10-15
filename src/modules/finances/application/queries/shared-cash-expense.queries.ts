@@ -8,6 +8,11 @@ import {
     type PersonalExpenseReader,
 } from '../ports/private/personal-expense.ports.js';
 import type { PersonalExpenseView } from '../models/personal-expense.js';
+import type { IncomeView } from '../models/income.js';
+import {
+    INCOME_REPOSITORY,
+    type IncomeRepository,
+} from '../ports/private/income.ports.js';
 import {
     SPACE_FINANCIAL_CONTEXT_PORT,
     type SpaceFinancialContextPort,
@@ -125,6 +130,8 @@ export class GetFinancialCommitmentQuery {
         private readonly access: SpaceFinancialContextPort,
         @Inject(FINANCIAL_COMMITMENT_REPOSITORY)
         private readonly commitments: FinancialCommitmentRepository,
+        @Inject(INCOME_REPOSITORY)
+        private readonly incomes: IncomeRepository,
     ) {}
     async execute(
         actor: PersonId,
@@ -132,6 +139,7 @@ export class GetFinancialCommitmentQuery {
         commitmentId: string,
     ): Promise<
         | PersonalExpenseView
+        | IncomeView
         | (SharedCashExpenseView & {
               members: {
                   memberId: string;
@@ -142,6 +150,11 @@ export class GetFinancialCommitmentQuery {
     > {
         const access = await this.spaceAccess.assertCanRead(actor, space);
         if (access.type === 'PERSONAL') {
+            const income = await this.incomes.detail(space.value, commitmentId);
+            if (income) {
+                await this.spaceAccess.assertCanRead(actor, space);
+                return income;
+            }
             const detail = await this.personal.detail(
                 space.value,
                 commitmentId,
@@ -152,6 +165,11 @@ export class GetFinancialCommitmentQuery {
             return detail;
         }
         await this.access.read(actor, space);
+        const income = await this.incomes.detail(space.value, commitmentId);
+        if (income) {
+            const context = await this.access.read(actor, space);
+            return { ...income, members: context.members };
+        }
         const detail = await this.commitments.detail(space.value, commitmentId);
         if (!detail) throw new FinancesError('FINANCIAL_COMMITMENT_NOT_FOUND');
         const context = await this.access.read(actor, space);
