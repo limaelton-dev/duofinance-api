@@ -138,12 +138,17 @@ describe('CARD-012 income and receipt HTTP/PostgreSQL', () => {
             { commitmentId: created.commitment.id, kind: 'INCOME' },
         ]);
         const receiptPath = `/v2/spaces/${space}/financial-commitments/${created.commitment.id}/receipts`;
+        const receiptKey = randomUUID();
         const received = (
             await b
-                .post(receiptPath, {
-                    expectedCommitmentVersion: 1,
-                    factDate: '2026-10-14',
-                })
+                .post(
+                    receiptPath,
+                    {
+                        expectedCommitmentVersion: 1,
+                        factDate: '2026-10-14',
+                    },
+                    receiptKey,
+                )
                 .expect(201)
         ).body;
         expect(received).toMatchObject({
@@ -153,6 +158,30 @@ describe('CARD-012 income and receipt HTTP/PostgreSQL', () => {
             commitment: { expectedReceiptDate: '2026-10-20', version: 2 },
         });
         expect(received.receipt.id).not.toBe(created.commitment.id);
+        expect(
+            (
+                await b
+                    .post(
+                        receiptPath,
+                        {
+                            expectedCommitmentVersion: 1,
+                            factDate: '2026-10-14',
+                        },
+                        receiptKey,
+                    )
+                    .expect(200)
+            ).body.receipt.id,
+        ).toBe(received.receipt.id);
+        await b
+            .post(
+                receiptPath,
+                {
+                    expectedCommitmentVersion: 1,
+                    factDate: '2026-10-13',
+                },
+                receiptKey,
+            )
+            .expect(409);
         expect(
             (await b.agent.get(`/v2/spaces/${space}/today`).expect(200)).body
                 .finance.data.upcomingCommitments.items,
@@ -344,5 +373,44 @@ describe('CARD-012 income and receipt HTTP/PostgreSQL', () => {
             (await f.a.agent.get(`${base}/incomes?status=RECEIVED`).expect(200))
                 .body.items,
         ).toMatchObject([{ id: pending.commitment.id, status: 'RECEIVED' }]);
+    });
+    it('refuses migration rollback while an income exists without changing any fact', async () => {
+        const b = await browser('Titular rollback');
+        const space = b.context.personalSpace.id as string;
+        const income = (
+            await b
+                .post(`/v2/spaces/${space}/incomes`, {
+                    description: 'Receita preservada',
+                    amountInCents: 5000,
+                    expectedReceiptDate: '2026-10-15',
+                    receipt: null,
+                })
+                .expect(201)
+        ).body;
+        const before = await db.query(
+            'SELECT * FROM financial_commitments WHERE id=$1',
+            [income.commitment.id],
+        );
+        await migrationSource.initialize();
+        try {
+            await expect(migrationSource.undoLastMigration()).rejects.toThrow(
+                'CARD-012 rollback refused',
+            );
+            expect(
+                await db.query(
+                    'SELECT * FROM financial_commitments WHERE id=$1',
+                    [income.commitment.id],
+                ),
+            ).toEqual(before);
+            expect(
+                (
+                    await db.query(
+                        'SELECT name FROM migrations ORDER BY id DESC LIMIT 1',
+                    )
+                )[0].name,
+            ).toBe('RecordIncomeAndReceipt1792022348501');
+        } finally {
+            await migrationSource.destroy();
+        }
     });
 });

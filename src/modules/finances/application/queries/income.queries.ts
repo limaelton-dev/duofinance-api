@@ -146,6 +146,7 @@ export class IncomeQueries {
         const items = rows.slice(0, 20);
         const last = items.at(-1);
         return {
+            spaceId: space.value,
             items,
             nextCursor:
                 rows.length > 20 && last

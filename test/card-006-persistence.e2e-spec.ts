@@ -459,6 +459,7 @@ describe('CARD-006 atomic PostgreSQL persistence', () => {
         try {
             await migrationSource.undoLastMigration();
             await migrationSource.undoLastMigration();
+            await migrationSource.undoLastMigration();
             await expect(migrationSource.undoLastMigration()).rejects.toThrow(
                 'historical expenses without an expected payer exist',
             );
@@ -485,6 +486,7 @@ describe('CARD-006 atomic PostgreSQL persistence', () => {
             await migrationSource.undoLastMigration();
             await migrationSource.undoLastMigration();
             await migrationSource.undoLastMigration();
+            await migrationSource.undoLastMigration();
             await migrationSource.runMigrations();
         } finally {
             await migrationSource.destroy();
@@ -500,6 +502,7 @@ describe('CARD-006 atomic PostgreSQL persistence', () => {
         const prior = await db.query('SELECT * FROM default_settlement_rules');
         await migrationSource.initialize();
         try {
+            await migrationSource.undoLastMigration();
             await migrationSource.undoLastMigration();
             await migrationSource.undoLastMigration();
             await migrationSource.undoLastMigration();

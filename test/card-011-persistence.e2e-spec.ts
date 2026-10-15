@@ -278,6 +278,7 @@ describe('CARD-011 PostgreSQL transaction and migration compatibility', () => {
     it('prevents rollback before changing or discarding any personal data', async () => {
         const r = await handler.execute(command()),
             before = await counts();
+        await migrationSource.undoLastMigration();
         await expect(migrationSource.undoLastMigration()).rejects.toThrow(
             'Personal financial facts prevent schema rollback',
         );
@@ -299,6 +300,7 @@ describe('CARD-011 PostgreSQL transaction and migration compatibility', () => {
         ).toBe(new RecordPersonalExpense1791995573673().name);
     });
     it('upgrades Wave 1 facts without altering identities, snapshots or literal legacy receipt hash and supports safe rollback', async () => {
+        await migrationSource.undoLastMigration();
         await migrationSource.undoLastMigration();
         await db.query('TRUNCATE persons CASCADE');
         await db.query(
@@ -403,8 +405,13 @@ describe('CARD-011 PostgreSQL transaction and migration compatibility', () => {
             disbursement: await db.query(
                 'SELECT id,space_id,commitment_id,version,payer_member_id,amount_in_cents,method,fact_date,registered_at FROM financial_disbursements',
             ),
-            obligations: await db.query(
-                'SELECT * FROM inter_member_obligations',
+            obligations: (
+                await db.query('SELECT * FROM inter_member_obligations')
+            ).map(
+                ({
+                    receipt_id: _receiptId,
+                    ...legacy
+                }: Record<string, unknown>) => legacy,
             ),
             receipts: await db.query(
                 'SELECT * FROM financial_expense_command_receipts',

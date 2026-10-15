@@ -477,7 +477,7 @@ describe('CARD-011 personal expense HTTP and PostgreSQL', () => {
         ].get!.responses!['200'] as {
             content: Record<string, { schema: { oneOf: unknown[] } }>;
         };
-        expect(detail.content['application/json'].schema.oneOf).toHaveLength(2);
+        expect(detail.content['application/json'].schema.oneOf).toHaveLength(3);
         expect(Reflect.getMetadata('path', PersonalExpenseController)).toBe(
             'spaces/:spaceId',
         );

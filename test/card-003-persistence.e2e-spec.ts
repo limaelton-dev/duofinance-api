@@ -135,6 +135,7 @@ describe('CARD-003 — persistência e migration', () => {
                 'OptionalExpectedPayer1791728636456',
                 'RecordManualSettlementTransfer1791850000000',
                 'RecordPersonalExpense1791995573673',
+                'RecordIncomeAndReceipt1792022348501',
             ]);
             expect(await receipts.find(command)).not.toBeNull();
             expect((await repository.findById(legacy.space.id))?.version).toBe(
