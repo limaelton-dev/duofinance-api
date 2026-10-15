@@ -82,11 +82,7 @@ const context = {
     actorMemberId: uuid,
     members: { type: 'array' as const, items: member },
 };
-const origin = object({
-    commitmentId: uuid,
-    disbursementId: uuid,
-    description: { type: 'string' },
-});
+const origin = ref('InterMemberObligationOrigin');
 const transfer = object({
     id: uuid,
     payerMemberId: uuid,
@@ -117,6 +113,7 @@ const option = object({
     debtorMemberId: uuid,
     creditorMemberId: uuid,
     originalAmountInCents: money,
+    recognizedAmountInCents: money,
     remainingAmountInCents: money,
     factDate: date,
     registeredAt: instant,

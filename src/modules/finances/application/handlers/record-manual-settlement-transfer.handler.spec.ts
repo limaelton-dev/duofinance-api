@@ -58,7 +58,10 @@ function setup() {
         lockForFulfillment: vi.fn(async () => context),
     };
     const repo: SettlementTransferRepository = {
-        discover: vi.fn(async () => [{ id, cycleId: null }]),
+        discover: vi.fn(async () => [
+            { id, cycleId: null, commitmentId: obligation.originCommitmentId },
+        ]),
+        lockOrigins: vi.fn(async () => {}),
         lockCycles: vi.fn(async () => {}),
         lockObligations: vi.fn(async () => [obligation]),
         save: vi.fn(async (transfer, _before, after) => {

@@ -425,6 +425,7 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
                 .totals,
         ).toEqual({
             originalAmountInCents: '10000',
+            recognizedAmountInCents: '10000',
             resolvedAmountInCents: '2500',
             remainingAmountInCents: '7500',
             transferredAmountInCents: '2500',
@@ -483,6 +484,7 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
             ).totals,
         ).toEqual({
             originalAmountInCents: '15000',
+            recognizedAmountInCents: '15000',
             remainingAmountInCents: '12000',
             resolvedAmountInCents: '3000',
             transferredAmountInCents: '2000',
@@ -493,6 +495,7 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
             ).totals,
         ).toEqual({
             originalAmountInCents: '3000',
+            recognizedAmountInCents: '3000',
             remainingAmountInCents: '2000',
             resolvedAmountInCents: '1000',
             transferredAmountInCents: '1000',
@@ -568,6 +571,7 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
         ).toMatchObject({
             totals: {
                 originalAmountInCents: '18014398509481983',
+                recognizedAmountInCents: '18014398509481983',
                 remainingAmountInCents: '18014398509481983',
             },
             position: {
@@ -769,6 +773,7 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
                         id: second.settlementCycle.id,
                         totals: {
                             originalAmountInCents: '5000',
+                            recognizedAmountInCents: '5000',
                             remainingAmountInCents: '2500',
                             resolvedAmountInCents: '2500',
                             transferredAmountInCents: '2500',
@@ -780,6 +785,7 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
                 id: next.settlementCycle.id,
                 totals: {
                     originalAmountInCents: '3000',
+                    recognizedAmountInCents: '3000',
                     remainingAmountInCents: '2500',
                     resolvedAmountInCents: '500',
                     transferredAmountInCents: '500',
@@ -812,11 +818,11 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
             [f.space],
         );
         await db.query(
-            `INSERT INTO financial_disbursements(id,space_id,commitment_id,version,payer_member_id,amount_in_cents,method,fact_date,registered_at) SELECT md5('card-010-plan-disbursement-'||n)::uuid,$1,md5('card-010-plan-origin-'||n)::uuid,1,$2,1,'PIX','2026-01-05','2026-10-10T15:00:00Z' FROM generate_series(0,2999) n`,
-            [f.space, f.mb],
+            `INSERT INTO financial_disbursements(id,space_id,commitment_id,version,payer_member_id,amount_in_cents,method,fact_date,registered_at,recorded_by_person_id,sequence) SELECT md5('card-010-plan-disbursement-'||n)::uuid,$1,md5('card-010-plan-origin-'||n)::uuid,1,$2,1,'PIX','2026-01-05','2026-10-10T15:00:00Z',$3,1 FROM generate_series(0,2999) n`,
+            [f.space, f.mb, f.a.context.person.id],
         );
         await db.query(
-            `INSERT INTO inter_member_obligations(id,space_id,commitment_id,disbursement_id,debtor_member_id,creditor_member_id,original_amount_in_cents,remaining_amount_in_cents,status,cycle_id,version,fact_date,registered_at) SELECT md5('card-010-plan-obligation-'||n)::uuid,$1,md5('card-010-plan-origin-'||n)::uuid,md5('card-010-plan-disbursement-'||n)::uuid,$2,$3,1,1,'OPEN',md5('card-010-plan-cycle-'||n)::uuid,1,'2026-01-05','2026-10-10T15:00:00Z' FROM generate_series(0,2999) n`,
+            `INSERT INTO inter_member_obligations(id,space_id,commitment_id,disbursement_id,debtor_member_id,creditor_member_id,original_amount_in_cents,recognized_amount_in_cents,remaining_amount_in_cents,status,cycle_id,version,fact_date,registered_at) SELECT md5('card-010-plan-obligation-'||n)::uuid,$1,md5('card-010-plan-origin-'||n)::uuid,md5('card-010-plan-disbursement-'||n)::uuid,$2,$3,1,1,1,'OPEN',md5('card-010-plan-cycle-'||n)::uuid,1,'2026-01-05','2026-10-10T15:00:00Z' FROM generate_series(0,2999) n`,
             [f.space, f.ma, f.mb],
         );
         await db.query('ANALYZE settlement_cycles');

@@ -40,6 +40,8 @@ export class GetIncomeTodayQuery implements IncomeTodayQueryPort {
                 description: item.description,
                 expectedReceiptDate: item.expectedReceiptDate,
                 amountInCents: item.amountInCents,
+                receivedAmountInCents: item.receivedAmountInCents,
+                remainingAmountInCents: item.remainingAmountInCents,
             })),
             totalCount: result.totalCount,
         };

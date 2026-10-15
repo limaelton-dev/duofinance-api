@@ -393,6 +393,7 @@ describe('CARD-012 income and receipt HTTP/PostgreSQL', () => {
         );
         await migrationSource.initialize();
         try {
+            await migrationSource.undoLastMigration();
             await expect(migrationSource.undoLastMigration()).rejects.toThrow(
                 'CARD-012 rollback refused',
             );
@@ -410,6 +411,7 @@ describe('CARD-012 income and receipt HTTP/PostgreSQL', () => {
                 )[0].name,
             ).toBe('RecordIncomeAndReceipt1792022348501');
         } finally {
+            await migrationSource.runMigrations();
             await migrationSource.destroy();
         }
     });

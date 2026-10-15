@@ -76,7 +76,10 @@ export const incomeInputSchema = z.union([
     z
         .object({
             ...common,
-            receipt: z.object({ factDate: date }).strict().nullable(),
+            receipt: z
+                .object({ factDate: date, amountInCents: positive.optional() })
+                .strict()
+                .nullable(),
         })
         .strict(),
     z
@@ -86,17 +89,29 @@ export const incomeInputSchema = z.union([
             participationSplit: split,
             expectedRecipientMemberId: uuid.nullable(),
             receipt: z
-                .object({ factDate: date, recipientMemberId: uuid, settlement })
+                .object({
+                    factDate: date,
+                    recipientMemberId: uuid,
+                    settlement,
+                    amountInCents: positive.optional(),
+                })
                 .strict()
                 .nullable(),
         })
         .strict(),
 ]);
 export const incomeReceiptInputSchema = z.union([
-    z.object({ expectedCommitmentVersion: version, factDate: date }).strict(),
     z
         .object({
             expectedCommitmentVersion: version,
+            factDate: date,
+            amountInCents: positive.optional(),
+        })
+        .strict(),
+    z
+        .object({
+            expectedCommitmentVersion: version,
+            amountInCents: positive.optional(),
             factDate: date,
             expectedSpaceVersion: version,
             recipientMemberId: uuid,

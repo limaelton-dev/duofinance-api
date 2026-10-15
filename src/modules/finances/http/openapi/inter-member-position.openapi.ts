@@ -119,6 +119,29 @@ export const interMemberPositionOpenApi: Pick<
     },
     components: {
         schemas: {
+            InterMemberObligationOrigin: {
+                oneOf: [
+                    object({
+                        commitmentId: uuid,
+                        disbursementId: uuid,
+                        description: {
+                            type: 'string',
+                            minLength: 1,
+                            maxLength: 160,
+                        },
+                    }),
+                    object({
+                        kind: { type: 'string', enum: ['INCOME'] },
+                        commitmentId: uuid,
+                        receiptId: uuid,
+                        description: {
+                            type: 'string',
+                            minLength: 1,
+                            maxLength: 160,
+                        },
+                    }),
+                ],
+            },
             OpenInterMemberObligation: object({
                 id: uuid,
                 version: { ...money, minimum: 1 },
@@ -126,18 +149,11 @@ export const interMemberPositionOpenApi: Pick<
                 debtorMemberId: uuid,
                 creditorMemberId: uuid,
                 originalAmountInCents: { ...money, minimum: 1 },
+                recognizedAmountInCents: { ...money, minimum: 1 },
                 remainingAmountInCents: { ...money, minimum: 1 },
                 factDate: date,
                 registeredAt: { type: 'string', format: 'date-time' },
-                origin: object({
-                    commitmentId: uuid,
-                    disbursementId: uuid,
-                    description: {
-                        type: 'string',
-                        minLength: 1,
-                        maxLength: 160,
-                    },
-                }),
+                origin: ref('InterMemberObligationOrigin'),
                 settlementCycle: {
                     oneOf: [
                         { type: 'null' },

@@ -53,6 +53,7 @@ describe('settlement cycle exact calculated read values', () => {
             const totals = settlementCycleTotals(original, remaining);
             expect(totals).toEqual({
                 originalAmountInCents: original,
+                recognizedAmountInCents: original,
                 remainingAmountInCents: remaining,
                 transferredAmountInCents: '0',
                 resolvedAmountInCents: resolved,
@@ -61,6 +62,35 @@ describe('settlement cycle exact calculated read values', () => {
                 BigInt(totals.resolvedAmountInCents) +
                     BigInt(totals.remainingAmountInCents),
             );
+        },
+    );
+    it.each([
+        ['10000', '20000', '16000', '4000'],
+        ['20000', '5000', '0', '5000'],
+        ['20000', '0', '0', '0'],
+        [
+            '18014398509481982',
+            '18014398509481984',
+            '9007199254740993',
+            '9007199254740991',
+        ],
+    ])(
+        'separates original %s from recognized %s after reconciliation',
+        (original, recognized, remaining, transferred) => {
+            expect(
+                settlementCycleTotals(
+                    original,
+                    remaining,
+                    transferred,
+                    recognized,
+                ),
+            ).toEqual({
+                originalAmountInCents: original,
+                recognizedAmountInCents: recognized,
+                remainingAmountInCents: remaining,
+                transferredAmountInCents: transferred,
+                resolvedAmountInCents: transferred,
+            });
         },
     );
     it.each([

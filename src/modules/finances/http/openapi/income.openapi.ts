@@ -15,7 +15,13 @@ const amount: SchemaObject = {
     minimum: 1,
     maximum: Number.MAX_SAFE_INTEGER,
 };
-const version: SchemaObject = { type: 'integer', minimum: 1 };
+const version: SchemaObject = {
+    type: 'integer',
+    minimum: 1,
+    maximum: Number.MAX_SAFE_INTEGER,
+};
+const total: SchemaObject = { ...amount, minimum: 0 };
+const instant: SchemaObject = { type: 'string', format: 'date-time' };
 const obj = (
     properties: Record<string, SchemaObject | ReferenceObject>,
 ): SchemaObject => ({
@@ -82,28 +88,57 @@ const common = {
 };
 const input: SchemaObject = {
     oneOf: [
-        obj({ ...common, receipt: nullable(obj({ factDate: date })) }),
+        obj({
+            ...common,
+            receipt: nullable({
+                ...obj({ factDate: date, amountInCents: amount }),
+                required: ['factDate'],
+            }),
+        }),
         obj({
             ...common,
             expectedSpaceVersion: version,
             participationSplit: split,
             expectedRecipientMemberId: nullable(uuid),
-            receipt: nullable(
-                obj({ factDate: date, recipientMemberId: uuid, settlement }),
-            ),
+            receipt: nullable({
+                ...obj({
+                    factDate: date,
+                    amountInCents: amount,
+                    recipientMemberId: uuid,
+                    settlement,
+                }),
+                required: ['factDate', 'recipientMemberId', 'settlement'],
+            }),
         }),
     ],
 };
 const receiptInput: SchemaObject = {
     oneOf: [
-        obj({ expectedCommitmentVersion: version, factDate: date }),
-        obj({
-            expectedCommitmentVersion: version,
-            factDate: date,
-            expectedSpaceVersion: version,
-            recipientMemberId: uuid,
-            settlement,
-        }),
+        {
+            ...obj({
+                expectedCommitmentVersion: version,
+                factDate: date,
+                amountInCents: amount,
+            }),
+            required: ['expectedCommitmentVersion', 'factDate'],
+        },
+        {
+            ...obj({
+                expectedCommitmentVersion: version,
+                factDate: date,
+                amountInCents: amount,
+                expectedSpaceVersion: version,
+                recipientMemberId: uuid,
+                settlement,
+            }),
+            required: [
+                'expectedCommitmentVersion',
+                'factDate',
+                'expectedSpaceVersion',
+                'recipientMemberId',
+                'settlement',
+            ],
+        },
     ],
 };
 const response = (
@@ -161,16 +196,59 @@ const headers = [
 const failures = {
     400: error('VALIDATION_ERROR'),
     401: error('UNAUTHENTICATED'),
-    404: error('SPACE_NOT_FOUND', 'FINANCIAL_COMMITMENT_NOT_FOUND'),
+    404: error(
+        'SPACE_NOT_FOUND',
+        'FINANCIAL_COMMITMENT_NOT_FOUND',
+        'SETTLEMENT_CYCLE_NOT_FOUND',
+    ),
     409: error(
         'SPACE_NOT_ACTIVE',
         'INCOME_OPTIONS_CHANGED',
         'INCOME_ALREADY_RECEIVED',
         'CONCURRENT_MODIFICATION',
         'IDEMPOTENCY_KEY_REUSED',
+        'SETTLEMENT_CYCLE_FINALIZED',
     ),
     429: error('TOO_MANY_REQUESTS'),
     500: error('INTERNAL_ERROR'),
+};
+const member = obj({
+    memberId: uuid,
+    personId: uuid,
+    displayName: { type: 'string' },
+});
+const members: SchemaObject = {
+    type: 'array',
+    minItems: 1,
+    maxItems: 2,
+    items: member,
+};
+const calculatedSplit: SchemaObject = {
+    oneOf: split.oneOf!.map((variant) =>
+        obj({
+            ...(variant as SchemaObject).properties,
+            calculatedShares: {
+                type: 'array',
+                minItems: 1,
+                maxItems: 2,
+                items: obj({ memberId: uuid, amountInCents: total }),
+            },
+        }),
+    ),
+};
+const settlementOptions = {
+    members,
+    defaultSettlementRule: obj({
+        rule: nullable(ref('SettlementRule')),
+        version: total,
+    }),
+    suggestedTargetDate: nullable(date),
+    openCycles: {
+        type: 'array' as const,
+        maxItems: 20,
+        items: obj({ id: uuid, targetDate: date, version }),
+    },
+    nextCursor: nullable({ type: 'string' }),
 };
 
 export const incomeOpenApi: Pick<OpenAPIObject, 'paths' | 'components'> = {
@@ -193,6 +271,8 @@ export const incomeOpenApi: Pick<OpenAPIObject, 'paths' | 'components'> = {
         '/v2/spaces/{spaceId}/incomes': {
             get: {
                 operationId: 'listIncomes',
+                description:
+                    'PENDING inclui todas as receitas com restante positivo, inclusive PARTIALLY_RECEIVED; paginação conta compromissos, preservando o valor original.',
                 tags: ['Finances'],
                 security: [{ sessionCookie: [] }],
                 parameters: [
@@ -218,6 +298,8 @@ export const incomeOpenApi: Pick<OpenAPIObject, 'paths' | 'components'> = {
             },
             post: {
                 operationId: 'recordIncome',
+                description:
+                    'receipt null preserva a previsão sem realização. receipt.amountInCents omitido significa recebimento integral inicial; explícito aceita parcial positiva até o total original. A participação compartilhada permanece original, e o repasse é calculado sobre o recebido acumulado.',
                 tags: ['Finances'],
                 security: [{ sessionCookie: [] }],
                 parameters: [...params, ...headers],
@@ -227,8 +309,16 @@ export const incomeOpenApi: Pick<OpenAPIObject, 'paths' | 'components'> = {
                 },
                 responses: {
                     ...failures,
-                    201: response(ref('IncomeDetail'), 'Receita criada.'),
-                    200: response(ref('IncomeDetail'), 'Replay idempotente.'),
+                    201: response(ref('IncomeResult'), 'Receita criada.'),
+                    200: response(
+                        {
+                            oneOf: [
+                                ref('IncomeResult'),
+                                ref('LegacyIncomeReplay'),
+                            ],
+                        },
+                        'Replay autorizado com o resultado histórico original.',
+                    ),
                     403: error('INVALID_CSRF_TOKEN'),
                 },
             },
@@ -252,6 +342,8 @@ export const incomeOpenApi: Pick<OpenAPIObject, 'paths' | 'components'> = {
         '/v2/spaces/{spaceId}/financial-commitments/{commitmentId}/receipts': {
             post: {
                 operationId: 'recordIncomeReceipt',
+                description:
+                    'Acrescenta fato positivo até o restante e reconcilia somente esta origem considerando acertos anteriores. Valor omitido só é aceito no primeiro recebimento integral legado, sem fatos prévios; após parcial deve ser explícito. Versões capturadas são revalidadas na transação. Mesma chave e conteúdo repetem o resultado histórico original; conteúdo diferente conflita.',
                 tags: ['Finances'],
                 security: [{ sessionCookie: [] }],
                 parameters: [...params, commitmentParam, ...headers],
@@ -262,10 +354,18 @@ export const incomeOpenApi: Pick<OpenAPIObject, 'paths' | 'components'> = {
                 responses: {
                     ...failures,
                     201: response(
-                        ref('IncomeDetail'),
-                        'Recebimento integral criado.',
+                        ref('IncomeResult'),
+                        'Recebimento parcial ou integral criado.',
                     ),
-                    200: response(ref('IncomeDetail'), 'Replay idempotente.'),
+                    200: response(
+                        {
+                            oneOf: [
+                                ref('IncomeResult'),
+                                ref('LegacyIncomeReplay'),
+                            ],
+                        },
+                        'Replay idempotente do resultado original, inclusive formato legado.',
+                    ),
                     403: error('INVALID_CSRF_TOKEN'),
                 },
             },
@@ -275,6 +375,51 @@ export const incomeOpenApi: Pick<OpenAPIObject, 'paths' | 'components'> = {
         schemas: {
             IncomeInput: input,
             IncomeReceiptInput: receiptInput,
+            IncomeReceipt: obj({
+                id: uuid,
+                amountInCents: amount,
+                factDate: date,
+                registeredAt: instant,
+                recordedByPersonId: uuid,
+                recipientPersonId: nullable(uuid),
+                recipientMemberId: nullable(uuid),
+            }),
+            IncomeResult: {
+                allOf: [
+                    ref('IncomeDetail'),
+                    {
+                        type: 'object',
+                        required: ['replayed'],
+                        properties: { replayed: { type: 'boolean' } },
+                    },
+                ],
+            },
+            LegacyIncomeReplay: {
+                type: 'object',
+                required: [
+                    'spaceId',
+                    'spaceType',
+                    'commitment',
+                    'receipt',
+                    'status',
+                    'receivedAmountInCents',
+                    'obligation',
+                    'settlementCycle',
+                    'replayed',
+                ],
+                properties: {
+                    spaceId: uuid,
+                    spaceType: { type: 'string', enum: ['PERSONAL', 'SHARED'] },
+                    commitment: { type: 'object' },
+                    receipt: nullable(ref('IncomeReceipt')),
+                    status: { type: 'string', enum: ['PENDING', 'RECEIVED'] },
+                    receivedAmountInCents: total,
+                    obligation: nullable({ type: 'object' }),
+                    settlementCycle: nullable({ type: 'object' }),
+                    replayed: { type: 'boolean', enum: [true] },
+                },
+                not: { required: ['receipts'] },
+            },
             IncomeDetail: {
                 type: 'object',
                 required: [
@@ -284,6 +429,9 @@ export const incomeOpenApi: Pick<OpenAPIObject, 'paths' | 'components'> = {
                     'receipt',
                     'status',
                     'receivedAmountInCents',
+                    'remainingAmountInCents',
+                    'receipts',
+                    'obligations',
                     'obligation',
                     'settlementCycle',
                 ],
@@ -317,58 +465,93 @@ export const incomeOpenApi: Pick<OpenAPIObject, 'paths' | 'components'> = {
                                 format: 'date-time',
                             },
                             ownerPersonId: uuid,
-                            participationSplit: { type: 'object' },
+                            participationSplit: calculatedSplit,
                             expectedRecipientMemberId: nullable(uuid),
-                            settlementRuleSnapshot: nullable({
-                                type: 'object',
-                            }),
-                            settlementRuleSourceVersion: { type: 'integer' },
+                            settlementRuleSnapshot: nullable(
+                                ref('SettlementRule'),
+                            ),
+                            settlementRuleSourceVersion: total,
                         },
                     },
-                    receipt: nullable(
+                    receipt: nullable(ref('IncomeReceipt')),
+                    receipts: { type: 'array', items: ref('IncomeReceipt') },
+                    status: {
+                        type: 'string',
+                        enum: ['PENDING', 'PARTIALLY_RECEIVED', 'RECEIVED'],
+                    },
+                    receivedAmountInCents: total,
+                    remainingAmountInCents: total,
+                    obligation: nullable(ref('FinancialFulfillmentObligation')),
+                    obligations: {
+                        type: 'array',
+                        items: ref('FinancialFulfillmentObligation'),
+                    },
+                    settlementCycle: nullable(
                         obj({
                             id: uuid,
-                            amountInCents: amount,
-                            factDate: date,
-                            registeredAt: {
+                            targetDate: date,
+                            status: {
                                 type: 'string',
-                                format: 'date-time',
+                                enum: ['OPEN', 'FINALIZED'],
                             },
-                            recordedByPersonId: uuid,
-                            recipientPersonId: nullable(uuid),
-                            recipientMemberId: nullable(uuid),
                         }),
                     ),
-                    status: { type: 'string', enum: ['PENDING', 'RECEIVED'] },
-                    receivedAmountInCents: { type: 'integer', minimum: 0 },
-                    obligation: nullable({ type: 'object' }),
-                    settlementCycle: nullable({ type: 'object' }),
-                    replayed: { type: 'boolean' },
+                    members,
                 },
             },
             IncomeOptions: {
                 type: 'object',
+                required: [
+                    'spaceId',
+                    'spaceType',
+                    'status',
+                    'canCreate',
+                    'referenceDate',
+                ],
                 properties: {
+                    ...settlementOptions,
                     spaceId: uuid,
                     spaceType: { type: 'string', enum: ['PERSONAL', 'SHARED'] },
+                    status: {
+                        type: 'string',
+                        enum: ['ACTIVE', 'CLOSING', 'CLOSED'],
+                    },
+                    version,
                     canCreate: { type: 'boolean' },
                     referenceDate: date,
-                    members: { type: 'array', items: { type: 'object' } },
                 },
             },
             IncomeReceiptOptions: {
                 type: 'object',
+                required: [
+                    'spaceId',
+                    'spaceType',
+                    'commitmentId',
+                    'expectedCommitmentVersion',
+                    'amountInCents',
+                    'receivedAmountInCents',
+                    'remainingAmountInCents',
+                    'canReceive',
+                    'referenceDate',
+                ],
                 properties: {
+                    ...settlementOptions,
                     spaceId: uuid,
                     spaceType: { type: 'string', enum: ['PERSONAL', 'SHARED'] },
                     commitmentId: uuid,
                     expectedCommitmentVersion: version,
                     amountInCents: amount,
+                    receivedAmountInCents: total,
+                    remainingAmountInCents: total,
                     canReceive: { type: 'boolean' },
                     referenceDate: date,
+                    expectedSpaceVersion: version,
+                    participationSplit: calculatedSplit,
+                    expectedRecipientMemberId: nullable(uuid),
                 },
             },
             IncomeList: obj({
+                spaceId: uuid,
                 items: {
                     type: 'array',
                     items: obj({
@@ -379,9 +562,10 @@ export const incomeOpenApi: Pick<OpenAPIObject, 'paths' | 'components'> = {
                         registeredAt: { type: 'string', format: 'date-time' },
                         status: {
                             type: 'string',
-                            enum: ['PENDING', 'RECEIVED'],
+                            enum: ['PENDING', 'PARTIALLY_RECEIVED', 'RECEIVED'],
                         },
                         receivedAmountInCents: { type: 'integer', minimum: 0 },
+                        remainingAmountInCents: total,
                     }),
                 },
                 nextCursor: nullable({ type: 'string' }),

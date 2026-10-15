@@ -3,11 +3,13 @@ export function settlementCycleTotals(
     original: string,
     remaining: string,
     transferred = '0',
+    recognized = original,
 ): SettlementCycleTotals {
     return {
         originalAmountInCents: original,
+        recognizedAmountInCents: recognized,
         resolvedAmountInCents: (
-            BigInt(original) - BigInt(remaining)
+            BigInt(recognized) - BigInt(remaining)
         ).toString(),
         remainingAmountInCents: remaining,
         transferredAmountInCents: transferred,

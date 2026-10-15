@@ -366,7 +366,7 @@ describe('CARD-009 PostgreSQL settlement transfer', () => {
             await vi.waitFor(
                 async () => {
                     const rows = await db.query(
-                        `SELECT pid,wait_event,pg_blocking_pids(pid) AS blockers,left(query,100) AS query FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE '%inter_member_obligations%'`,
+                        `SELECT pid,wait_event,pg_blocking_pids(pid) AS blockers,left(query,100) AS query FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND (query LIKE '%inter_member_obligations%' OR query LIKE '%financial_commitments%')`,
                     );
                     expect(rows.length, JSON.stringify(rows)).toBe(2);
                     expect(
@@ -586,6 +586,7 @@ describe('CARD-009 PostgreSQL settlement transfer', () => {
             await migrationSource.undoLastMigration();
             await migrationSource.undoLastMigration();
             await migrationSource.undoLastMigration();
+            await migrationSource.undoLastMigration();
             await db.query(
                 'UPDATE inter_member_obligations SET remaining_amount_in_cents=4000 WHERE id=$1',
                 [id],
@@ -616,6 +617,7 @@ describe('CARD-009 PostgreSQL settlement transfer', () => {
             ).toBe(0);
             const input = command(id, 1, 4000);
             await record.execute(input);
+            await migrationSource.undoLastMigration();
             await migrationSource.undoLastMigration();
             await migrationSource.undoLastMigration();
             await expect(migrationSource.undoLastMigration()).rejects.toThrow(

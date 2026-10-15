@@ -30,7 +30,7 @@ export class TypeOrmSettlementCycleRepository implements SettlementCycleReposito
             SettlementCycleOrmEntity,
             {
                 where: { id: cycleId, spaceId },
-                lock: { mode: 'pessimistic_write' },
+                lock: { mode: 'pessimistic_read' },
             },
         );
         return row ? this.map(row) : null;
@@ -46,7 +46,7 @@ export class TypeOrmSettlementCycleRepository implements SettlementCycleReposito
         );
         const row = await m.findOneOrFail(SettlementCycleOrmEntity, {
             where: { spaceId, targetDate },
-            lock: { mode: 'pessimistic_write' },
+            lock: { mode: 'pessimistic_read' },
         });
         const cycle = this.map(row);
         cycle.assertOpen();

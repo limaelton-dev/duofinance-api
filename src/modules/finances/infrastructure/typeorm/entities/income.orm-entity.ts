@@ -92,7 +92,8 @@ export class FinancialIncomeShareOrmEntity {
 }
 
 @Entity('financial_receipts')
-@Unique('UQ_financial_receipts_commitment', ['commitmentId'])
+@Unique('UQ_receipt_sequence', ['commitmentId', 'sequence'])
+@Check('CHK_receipt_sequence', 'sequence > 0')
 @Unique('UQ_financial_receipts_origin', ['spaceId', 'commitmentId', 'id'])
 @Check(
     'CHK_financial_receipts_values',
@@ -122,6 +123,7 @@ export class FinancialReceiptOrmEntity {
     @PrimaryColumn('uuid') id!: string;
     @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
     @Column({ name: 'commitment_id', type: 'uuid' }) commitmentId!: string;
+    @Column('integer') sequence!: number;
     @Column({
         name: 'amount_in_cents',
         type: 'bigint',

@@ -19,6 +19,7 @@ export class InterMemberObligation {
     readonly version: number;
     readonly remainingAmountInCents: number;
     readonly appliedAllocationIds: readonly string[];
+    readonly reconciliation: Readonly<ObligationReconciliation> | null;
     readonly history: Readonly<{
         type: 'CREATED';
         version: 1;
@@ -43,7 +44,7 @@ export class InterMemberObligation {
         readonly originKind: 'EXPENSE' | 'INCOME' = 'EXPENSE',
         readonly recognizedAmountInCents = originalAmountInCents,
         readonly reconciled = false,
-        readonly reconciliation: ObligationReconciliation | null = null,
+        reconciliation: ObligationReconciliation | null = null,
     ) {
         if (
             debtorMemberId === creditorMemberId ||
@@ -60,6 +61,9 @@ export class InterMemberObligation {
         this.remainingAmountInCents = remainingAmountInCents;
         this.version = version;
         this.appliedAllocationIds = Object.freeze([...appliedAllocationIds]);
+        this.reconciliation = reconciliation
+            ? Object.freeze({ ...reconciliation })
+            : null;
         this.status =
             remainingAmountInCents === 0
                 ? reconciled

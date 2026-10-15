@@ -14,6 +14,8 @@ export interface IncomeTodayQueryPort {
             description: string;
             expectedReceiptDate: string;
             amountInCents: number;
+            receivedAmountInCents: number;
+            remainingAmountInCents: number;
         }[];
         totalCount: number;
     }>;

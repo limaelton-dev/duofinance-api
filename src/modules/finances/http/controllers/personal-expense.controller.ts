@@ -82,6 +82,7 @@ export class PersonalExpenseController {
             'Location',
             `/v2/spaces/${result.spaceId}/financial-commitments/${result.commitment.id}`,
         );
+        if (result.replayed) response.status(200);
         return result;
     }
 }

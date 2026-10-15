@@ -40,7 +40,12 @@ function fixture() {
             lockForSettlement: vi.fn(),
             lockForFulfillment: vi.fn(),
         },
-        commitments = { save: vi.fn(), detail: vi.fn() };
+        commitments = {
+            save: vi.fn(),
+            detail: vi.fn(),
+            find: vi.fn(),
+            saveDisbursement: vi.fn(),
+        };
     return {
         access,
         reader,
@@ -97,6 +102,9 @@ describe('Personal expense authorized queries', () => {
                 id: SpaceId.create().value,
                 description: 'Consulta',
                 amountInCents: 1,
+                paidAmountInCents: 1,
+                remainingAmountInCents: 0,
+                status: 'PAID' as const,
                 factDate: '2026-10-14',
                 disbursement: { amountInCents: 1, method: 'PIX' as const },
             }));

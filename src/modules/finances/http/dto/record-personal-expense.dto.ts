@@ -18,7 +18,15 @@ export const personalExpenseInputSchema = z
             }
         }, 'Informe uma data civil válida no formato YYYY-MM-DD.'),
         disbursement: z
-            .object({ method: z.enum(['PIX', 'DEBIT', 'CASH']) })
+            .object({
+                method: z.enum(['PIX', 'DEBIT', 'CASH']),
+                amountInCents: z
+                    .number()
+                    .int()
+                    .min(1)
+                    .max(Number.MAX_SAFE_INTEGER)
+                    .optional(),
+            })
             .strict(),
     })
     .strict();

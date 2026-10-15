@@ -72,6 +72,7 @@ export const expenseInputSchema = z
         disbursement: z
             .object({
                 payerMemberId: uuid,
+                amountInCents: integer.min(1).optional(),
                 method: z.enum(['PIX', 'DEBIT', 'CASH'], {
                     error: 'Escolha PIX, débito ou dinheiro.',
                 }),

@@ -15,6 +15,7 @@ interface PositionRow {
     debtor_member_id: string;
     creditor_member_id: string;
     original_amount_in_cents: string;
+    recognized_amount_in_cents: string;
     remaining_amount_in_cents: string;
     fact_date: string;
     registered_at: string;
@@ -58,7 +59,7 @@ export class TypeOrmInterMemberPositionReader implements InterMemberPositionRead
                 ORDER BY registered_at DESC, id DESC LIMIT 21
             )
             SELECT t.payable, t.receivable, p.id, p.version, p.status, p.debtor_member_id, p.creditor_member_id,
-                p.original_amount_in_cents::text, p.remaining_amount_in_cents::text,
+                p.original_amount_in_cents::text, p.recognized_amount_in_cents::text, p.remaining_amount_in_cents::text,
                 to_char(p.fact_date, 'YYYY-MM-DD') AS fact_date,
                 to_char(p.registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS registered_at,
                 p.commitment_id, p.disbursement_id, p.receipt_id, c.description, p.cycle_id,
@@ -85,6 +86,9 @@ export class TypeOrmInterMemberPositionReader implements InterMemberPositionRead
                 debtorMemberId: row.debtor_member_id,
                 creditorMemberId: row.creditor_member_id,
                 originalAmountInCents: safeAmount(row.original_amount_in_cents),
+                recognizedAmountInCents: safeAmount(
+                    row.recognized_amount_in_cents,
+                ),
                 remainingAmountInCents: safeAmount(
                     row.remaining_amount_in_cents,
                 ),

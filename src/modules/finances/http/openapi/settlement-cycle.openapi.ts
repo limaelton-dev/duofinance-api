@@ -26,7 +26,7 @@ const total: SchemaObject = {
     type: 'string',
     pattern: '^(0|[1-9][0-9]*)$',
     description:
-        'Centavos inteiros exatos. Resolvido é original menos restante; não identifica transferência.',
+        'Centavos inteiros exatos. Reconhecido preserva a posição após reconciliação; resolvido é reconhecido menos restante. Dinheiro transferido provém somente das alocações de transferências.',
 };
 const view: SchemaObject = { type: 'string', enum: ['OPEN', 'UPCOMING'] };
 const direction: SchemaObject = {
@@ -110,6 +110,7 @@ const summary = {
     openObligationCount: integer,
     totals: object({
         originalAmountInCents: total,
+        recognizedAmountInCents: total,
         resolvedAmountInCents: total,
         remainingAmountInCents: total,
         transferredAmountInCents: total,
@@ -220,24 +221,22 @@ export const settlementCycleOpenApi: Pick<
                 version: { ...integer, minimum: 1 },
                 status: {
                     type: 'string',
-                    enum: ['OPEN', 'PARTIALLY_SETTLED', 'SETTLED'],
+                    enum: [
+                        'OPEN',
+                        'PARTIALLY_SETTLED',
+                        'SETTLED',
+                        'RECONCILED',
+                    ],
                 },
                 debtorMemberId: uuid,
                 creditorMemberId: uuid,
                 originalAmountInCents: { ...integer, minimum: 1 },
+                recognizedAmountInCents: integer,
                 resolvedAmountInCents: integer,
                 remainingAmountInCents: integer,
                 factDate: date,
                 registeredAt: { type: 'string', format: 'date-time' },
-                origin: object({
-                    commitmentId: uuid,
-                    disbursementId: uuid,
-                    description: {
-                        type: 'string',
-                        minLength: 1,
-                        maxLength: 160,
-                    },
-                }),
+                origin: ref('InterMemberObligationOrigin'),
             }),
             SettlementCyclesResponse: object({
                 ...context,

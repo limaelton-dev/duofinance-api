@@ -23,6 +23,7 @@ interface CycleRow {
     status: 'OPEN' | 'FINALIZED';
     finalized_at: string | null;
     original: string;
+    recognized: string;
     remaining: string;
     transferred: string;
     payable: string;
@@ -33,10 +34,11 @@ interface CycleRow {
 interface DetailRow extends CycleRow {
     obligation_id: string | null;
     obligation_version: number;
-    obligation_status: 'OPEN' | 'PARTIALLY_SETTLED' | 'SETTLED';
+    obligation_status: 'OPEN' | 'PARTIALLY_SETTLED' | 'SETTLED' | 'RECONCILED';
     debtor_member_id: string;
     creditor_member_id: string;
     original_amount_in_cents: string;
+    recognized_amount_in_cents: string;
     remaining_amount_in_cents: string;
     fact_date: string;
     registered_at: string;
@@ -58,6 +60,7 @@ function cycle(row: CycleRow): SettlementCycleRead {
             row.original,
             row.remaining,
             row.transferred,
+            row.recognized,
         ),
         payableAmountInCents: row.payable,
         receivableAmountInCents: row.receivable,
@@ -70,6 +73,7 @@ function amount(value: string): number {
     return result;
 }
 const aggregate = `COALESCE(SUM(o.original_amount_in_cents),0)::text AS original,
+    COALESCE(SUM(o.recognized_amount_in_cents),0)::text AS recognized,
     COALESCE(SUM(o.remaining_amount_in_cents),0)::text AS remaining,
     COALESCE(SUM(o.remaining_amount_in_cents) FILTER (WHERE o.debtor_member_id=$2),0)::text AS payable,
     COALESCE(SUM(o.remaining_amount_in_cents) FILTER (WHERE o.creditor_member_id=$2),0)::text AS receivable,
@@ -198,7 +202,7 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
             SELECT ${cycleColumns},t.*,
                 COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.cycle_id=s.id),0)::text AS transferred,
                 p.id AS obligation_id,p.version AS obligation_version,p.status AS obligation_status,
-                p.debtor_member_id,p.creditor_member_id,p.original_amount_in_cents::text,p.remaining_amount_in_cents::text,
+                p.debtor_member_id,p.creditor_member_id,p.original_amount_in_cents::text,p.recognized_amount_in_cents::text,p.remaining_amount_in_cents::text,
                 to_char(p.fact_date,'YYYY-MM-DD') AS fact_date,
                 to_char(p.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS registered_at,
                 p.commitment_id,p.disbursement_id,p.receipt_id,c.description
@@ -225,9 +229,10 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                 debtorMemberId: row.debtor_member_id,
                 creditorMemberId: row.creditor_member_id,
                 originalAmountInCents: amount(row.original_amount_in_cents),
+                recognizedAmountInCents: amount(row.recognized_amount_in_cents),
                 resolvedAmountInCents: amount(
                     (
-                        BigInt(row.original_amount_in_cents) -
+                        BigInt(row.recognized_amount_in_cents) -
                         BigInt(row.remaining_amount_in_cents)
                     ).toString(),
                 ),

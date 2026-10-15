@@ -34,6 +34,7 @@ export class IncomeCommitment {
     readonly receivedAmountInCents: number;
     readonly remainingAmountInCents: number;
     readonly status: 'PENDING' | 'PARTIALLY_RECEIVED' | 'RECEIVED';
+    readonly participation: IncomeParticipation;
 
     constructor(
         readonly id: string,
@@ -43,7 +44,7 @@ export class IncomeCommitment {
         readonly expectedReceiptDate: string,
         readonly createdByPersonId: string,
         readonly registeredAt: string,
-        readonly participation: IncomeParticipation,
+        participation: IncomeParticipation,
         receipt: IncomeReceipt | readonly IncomeReceipt[] | null = null,
         version = (Array.isArray(receipt) ? receipt.length : receipt ? 1 : 0) +
             1,
@@ -98,6 +99,8 @@ export class IncomeCommitment {
                 (participation.type === 'PERSONAL'
                     ? receipt.recipientPersonId !==
                           participation.ownerPersonId ||
+                      receipt.recordedByPersonId !==
+                          participation.ownerPersonId ||
                       receipt.recipientMemberId !== null
                     : receipt.recipientPersonId !== null ||
                       !participation.split.shares.some(
@@ -111,6 +114,19 @@ export class IncomeCommitment {
         if (total > BigInt(amountInCents))
             throw new FinancesError('VALIDATION_ERROR');
         this.version = version;
+        this.participation = Object.freeze(
+            participation.type === 'PERSONAL'
+                ? { ...participation }
+                : {
+                      ...participation,
+                      settlementRuleSnapshot:
+                          participation.settlementRuleSnapshot
+                              ? Object.freeze({
+                                    ...participation.settlementRuleSnapshot,
+                                })
+                              : null,
+                  },
+        );
         this.receipts = Object.freeze(
             receipts.map((r) => Object.freeze({ ...r })),
         );

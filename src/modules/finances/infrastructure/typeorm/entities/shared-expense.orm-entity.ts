@@ -144,7 +144,8 @@ export class FinancialCommitmentShareOrmEntity {
     basisPoints!: number | null;
 }
 @Entity('financial_disbursements')
-@Unique('UQ_financial_disbursements_commitment', ['commitmentId'])
+@Unique('UQ_disbursement_sequence', ['commitmentId', 'sequence'])
+@Check('CHK_disbursement_sequence', 'sequence > 0')
 @Unique('UQ_financial_disbursements_origin', ['spaceId', 'commitmentId', 'id'])
 @Check(
     'CHK_financial_disbursements_values',
@@ -164,6 +165,13 @@ export class FinancialDisbursementOrmEntity {
     @PrimaryColumn('uuid') id!: string;
     @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
     @Column({ name: 'commitment_id', type: 'uuid' }) commitmentId!: string;
+    @Column('integer') sequence!: number;
+    @Column({ name: 'recorded_by_person_id', type: 'uuid' })
+    @ForeignKey('persons', 'id', {
+        name: 'FK_financial_disbursements_recorder',
+        onDelete: 'RESTRICT',
+    })
+    recordedByPersonId!: string;
     @Column('integer') version!: number;
     @Column({ name: 'payer_member_id', type: 'uuid', nullable: true })
     payerMemberId!: string | null;
@@ -207,16 +215,15 @@ export class SettlementCycleOrmEntity {
 }
 @Entity('inter_member_obligations')
 @Unique('UQ_obligations_space_id', ['spaceId', 'id'])
-@Unique('UQ_obligations_origin_direction', [
-    'commitmentId',
-    'debtorMemberId',
-    'creditorMemberId',
-])
+@Index('UQ_obligations_open_origin', ['spaceId', 'commitmentId'], {
+    unique: true,
+    where: 'remaining_amount_in_cents > 0',
+})
 @Index('IDX_obligations_space_origin', ['spaceId', 'commitmentId'])
 @Index('IDX_obligations_space_cycle', ['spaceId', 'cycleId'])
 @Check(
     'CHK_obligations_state',
-    `${money('original_amount_in_cents', true)} AND ${money('remaining_amount_in_cents')} AND remaining_amount_in_cents <= original_amount_in_cents AND debtor_member_id <> creditor_member_id AND version > 0 AND fact_date <= (registered_at AT TIME ZONE 'America/Sao_Paulo')::date AND ((status = 'OPEN' AND remaining_amount_in_cents = original_amount_in_cents) OR (status = 'PARTIALLY_SETTLED' AND remaining_amount_in_cents > 0 AND remaining_amount_in_cents < original_amount_in_cents) OR (status = 'SETTLED' AND remaining_amount_in_cents = 0))`,
+    `${money('original_amount_in_cents', true)} AND ${money('recognized_amount_in_cents')} AND ${money('remaining_amount_in_cents')} AND remaining_amount_in_cents <= recognized_amount_in_cents AND debtor_member_id <> creditor_member_id AND version > 0 AND fact_date <= (registered_at AT TIME ZONE 'America/Sao_Paulo')::date AND ((status = 'OPEN' AND remaining_amount_in_cents > 0 AND remaining_amount_in_cents = recognized_amount_in_cents) OR (status = 'PARTIALLY_SETTLED' AND remaining_amount_in_cents > 0 AND remaining_amount_in_cents < recognized_amount_in_cents) OR (status IN ('SETTLED','RECONCILED') AND remaining_amount_in_cents = 0))`,
 )
 @Check(
     'CHK_obligations_origin_xor',
@@ -268,6 +275,12 @@ export class InterMemberObligationOrmEntity {
     })
     originalAmountInCents!: number;
     @Column({
+        name: 'recognized_amount_in_cents',
+        type: 'bigint',
+        transformer: safeBigInt,
+    })
+    recognizedAmountInCents!: number;
+    @Column({
         name: 'remaining_amount_in_cents',
         type: 'bigint',
         transformer: safeBigInt,
@@ -283,7 +296,7 @@ export class InterMemberObligationOrmEntity {
 @Entity('inter_member_obligation_changes')
 @Check(
     'CHK_obligation_changes_type',
-    `(version = 1 AND type = 'CREATED' AND allocation_id IS NULL) OR (version > 1 AND type = 'SETTLEMENT_APPLIED' AND allocation_id IS NOT NULL)`,
+    `(version = 1 AND type = 'CREATED' AND allocation_id IS NULL) OR (version > 1 AND type = 'SETTLEMENT_APPLIED' AND allocation_id IS NOT NULL) OR (version > 1 AND type = 'RECONCILED' AND allocation_id IS NULL)`,
 )
 @ForeignKey(
     () => InterMemberObligationOrmEntity,
@@ -311,7 +324,7 @@ export class InterMemberObligationChangeOrmEntity {
 @Entity('financial_expense_command_receipts')
 @Check(
     'CHK_expense_receipt',
-    `operation IN ('RECORD_SHARED_CASH_EXPENSE','RECORD_PERSONAL_EXPENSE') AND status = 'COMPLETED' AND octet_length(request_hash) = 32`,
+    `operation IN ('RECORD_SHARED_CASH_EXPENSE','RECORD_PERSONAL_EXPENSE','RECORD_EXPENSE_DISBURSEMENT') AND status = 'COMPLETED' AND octet_length(request_hash) = 32`,
 )
 export class FinancialExpenseCommandReceiptOrmEntity {
     @PrimaryColumn({ name: 'actor_id', type: 'uuid' })

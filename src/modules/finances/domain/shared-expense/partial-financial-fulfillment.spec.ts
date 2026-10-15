@@ -5,7 +5,10 @@ import {
 } from './financial-commitment.js';
 import { ResponsibilitySplit } from './responsibility-split.js';
 import { Money } from './money.js';
-import { expenseDifference } from './obligation-reconciler.js';
+import {
+    expenseDifference,
+    planObligationReconciliation,
+} from './obligation-reconciler.js';
 import {
     IncomeCommitment,
     incomeDifference,
@@ -78,6 +81,179 @@ function personal() {
     );
 }
 describe('Partial financial fulfillment', () => {
+    it('plans closing the old episode before creating an opposite residual', () => {
+        const old = new InterMemberObligation(
+            'old',
+            'space',
+            'income',
+            'one',
+            a,
+            b,
+            20000,
+            null,
+            today,
+            now,
+            'author',
+        );
+        const difference = {
+            debtorMemberId: b,
+            creditorMemberId: a,
+            amountInCents: 10000,
+        };
+        expect(planObligationReconciliation([old], difference)).toEqual({
+            reusedObligation: null,
+            changes: [{ obligation: old, remainingAmountInCents: 0 }],
+            newDifference: difference,
+        });
+    });
+    it('plans same-direction growth by reusing the original episode', () => {
+        const old = new InterMemberObligation(
+            'old',
+            'space',
+            'income',
+            'one',
+            a,
+            b,
+            10000,
+            'cycle',
+            today,
+            now,
+            'author',
+        );
+        expect(
+            planObligationReconciliation([old], {
+                debtorMemberId: a,
+                creditorMemberId: b,
+                amountInCents: 20000,
+            }),
+        ).toEqual({
+            reusedObligation: old,
+            changes: [{ obligation: old, remainingAmountInCents: 20000 }],
+            newDifference: null,
+        });
+    });
+    it('plans closure when the accumulated position reaches zero', () => {
+        const old = new InterMemberObligation(
+            'old',
+            'space',
+            'income',
+            'one',
+            a,
+            b,
+            10000,
+            null,
+            today,
+            now,
+            'author',
+        );
+        expect(planObligationReconciliation([old], null)).toEqual({
+            reusedObligation: null,
+            changes: [{ obligation: old, remainingAmountInCents: 0 }],
+            newDifference: null,
+        });
+    });
+    it('reuses a settled same-direction episode but preserves a reconciled historical episode', () => {
+        const old = new InterMemberObligation(
+            'old',
+            'space',
+            'income',
+            'one',
+            a,
+            b,
+            10000,
+            null,
+            today,
+            now,
+            'author',
+        );
+        const difference = {
+            debtorMemberId: a,
+            creditorMemberId: b,
+            amountInCents: 5000,
+        };
+        const settled = old.applySettlement('allocation', 10000, 1);
+        expect(
+            planObligationReconciliation([settled], difference)
+                .reusedObligation,
+        ).toBe(settled);
+        const reconciled = old.reconcile(0, 'author', 'two', now);
+        expect(planObligationReconciliation([reconciled], difference)).toEqual({
+            reusedObligation: null,
+            changes: [],
+            newDifference: difference,
+        });
+    });
+    it('refuses to merge different origins or reconcile simultaneous open episodes', () => {
+        const first = new InterMemberObligation(
+            'first',
+            'space',
+            'income',
+            'one',
+            a,
+            b,
+            10000,
+            null,
+            today,
+            now,
+            'author',
+        );
+        const other = new InterMemberObligation(
+            'other',
+            'space',
+            'different',
+            'two',
+            b,
+            a,
+            10000,
+            null,
+            today,
+            now,
+            'author',
+        );
+        expect(() =>
+            planObligationReconciliation([first, other], null),
+        ).toThrow();
+        expect(() =>
+            planObligationReconciliation([first, first], null),
+        ).toThrow();
+        expect(planObligationReconciliation([], null)).toEqual({
+            reusedObligation: null,
+            changes: [],
+            newDifference: null,
+        });
+    });
+    it('preserves the original income participation and rule snapshot independently of mutable input', () => {
+        const snapshot = { kind: 'MONTHLY_DAY' as const, dayOfMonth: 20 };
+        const participation = {
+            type: 'SHARED' as const,
+            split: split(100000),
+            expectedRecipientMemberId: b,
+            settlementRuleSnapshot: snapshot,
+            settlementRuleSourceVersion: 1,
+        };
+        const pending = new IncomeCommitment(
+            'income',
+            'space',
+            'Receita',
+            100000,
+            today,
+            'author',
+            now,
+            participation,
+        );
+        participation.expectedRecipientMemberId = a;
+        snapshot.dayOfMonth = 30;
+        const received = pending.recordReceipt(
+            receipt('one', a, 50000),
+            1,
+            today,
+        );
+        expect(received.participation).toMatchObject({
+            expectedRecipientMemberId: b,
+            settlementRuleSnapshot: { dayOfMonth: 20 },
+        });
+        expect(Object.isFrozen(received.participation)).toBe(true);
+    });
     it('preserves the original commitment while accumulating personal payments and retroactive facts', () => {
         const first = personal();
         const second = first.recordDisbursement(
@@ -364,6 +540,6 @@ describe('Partial financial fulfillment', () => {
             previousRemainingAmountInCents: 25000,
             remainingAmountInCents: 0,
         });
+        expect(Object.isFrozen(closed.reconciliation)).toBe(true);
     });
 });
-

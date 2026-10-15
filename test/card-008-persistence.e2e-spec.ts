@@ -194,6 +194,7 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
             openObligationCount: 2,
             totals: {
                 originalAmountInCents: '43000',
+                recognizedAmountInCents: '43000',
                 resolvedAmountInCents: '0',
                 remainingAmountInCents: '43000',
             },
@@ -240,6 +241,7 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
             openObligationCount: 2,
             totals: {
                 originalAmountInCents: '16000',
+                recognizedAmountInCents: '16000',
                 resolvedAmountInCents: '0',
                 remainingAmountInCents: '16000',
             },
@@ -265,6 +267,7 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
             openObligationCount: 1,
             totals: {
                 originalAmountInCents: '60000',
+                recognizedAmountInCents: '60000',
                 resolvedAmountInCents: '35000',
                 remainingAmountInCents: '25000',
             },
@@ -309,6 +312,7 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
                 openObligationCount: 0,
                 totals: {
                     originalAmountInCents: '0',
+                    recognizedAmountInCents: '0',
                     resolvedAmountInCents: '0',
                     remainingAmountInCents: '0',
                 },
@@ -318,6 +322,7 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
         });
         expect((await detail(zero.settlementCycle!.id)).cycle.totals).toEqual({
             originalAmountInCents: '10000',
+            recognizedAmountInCents: '10000',
             resolvedAmountInCents: '10000',
             remainingAmountInCents: '0',
             transferredAmountInCents: '0',
@@ -483,6 +488,7 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
             openObligationCount: 43,
             totals: {
                 originalAmountInCents: '43',
+                recognizedAmountInCents: '43',
                 resolvedAmountInCents: '0',
                 remainingAmountInCents: '43',
             },
@@ -508,6 +514,7 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
         const result = await detail(recorded.settlementCycle!.id);
         expect(result.cycle.totals).toEqual({
             originalAmountInCents: '18014398509481983',
+            recognizedAmountInCents: '18014398509481983',
             resolvedAmountInCents: '0',
             remainingAmountInCents: '18014398509481983',
             transferredAmountInCents: '0',
@@ -535,6 +542,7 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
             (await detail(recorded.settlementCycle!.id)).cycle.totals,
         ).toEqual({
             originalAmountInCents: '18014398509481983',
+            recognizedAmountInCents: '18014398509481983',
             resolvedAmountInCents: '18014398509481982',
             remainingAmountInCents: '1',
             transferredAmountInCents: '0',
@@ -713,6 +721,7 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
                 const after = await detail(id);
                 expect(after.cycle.totals).toEqual({
                     originalAmountInCents: '50000',
+                    recognizedAmountInCents: '50000',
                     resolvedAmountInCents: '25000',
                     remainingAmountInCents: '25000',
                     transferredAmountInCents: '0',
@@ -747,11 +756,11 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
             [space],
         );
         await db.query(
-            `INSERT INTO financial_disbursements(id,space_id,commitment_id,version,payer_member_id,amount_in_cents,method,fact_date,registered_at) SELECT md5('card-008-plan-disbursement-'||n)::uuid,$1,md5('card-008-plan-origin-'||n)::uuid,1,$2,1,'PIX','2026-01-05','2026-10-10T15:00:00Z' FROM generate_series(0,2999) n`,
-            [space, mb],
+            `INSERT INTO financial_disbursements(id,space_id,commitment_id,version,payer_member_id,amount_in_cents,method,fact_date,registered_at,recorded_by_person_id,sequence) SELECT md5('card-008-plan-disbursement-'||n)::uuid,$1,md5('card-008-plan-origin-'||n)::uuid,1,$2,1,'PIX','2026-01-05','2026-10-10T15:00:00Z',$3,1 FROM generate_series(0,2999) n`,
+            [space, mb, a],
         );
         await db.query(
-            `INSERT INTO inter_member_obligations(id,space_id,commitment_id,disbursement_id,debtor_member_id,creditor_member_id,original_amount_in_cents,remaining_amount_in_cents,status,cycle_id,version,fact_date,registered_at) SELECT md5('card-008-plan-obligation-'||n)::uuid,$1,md5('card-008-plan-origin-'||n)::uuid,md5('card-008-plan-disbursement-'||n)::uuid,$2,$3,1,1,'OPEN',CASE WHEN n<100 THEN $4::uuid ELSE md5('card-008-plan-cycle-'||n)::uuid END,1,'2026-01-05','2026-10-10T15:00:00Z' FROM generate_series(0,2999) n`,
+            `INSERT INTO inter_member_obligations(id,space_id,commitment_id,disbursement_id,debtor_member_id,creditor_member_id,original_amount_in_cents,recognized_amount_in_cents,remaining_amount_in_cents,status,cycle_id,version,fact_date,registered_at) SELECT md5('card-008-plan-obligation-'||n)::uuid,$1,md5('card-008-plan-origin-'||n)::uuid,md5('card-008-plan-disbursement-'||n)::uuid,$2,$3,1,1,1,'OPEN',CASE WHEN n<100 THEN $4::uuid ELSE md5('card-008-plan-cycle-'||n)::uuid END,1,'2026-01-05','2026-10-10T15:00:00Z' FROM generate_series(0,2999) n`,
             [space, ma, mb, selected],
         );
         await db.query('ANALYZE settlement_cycles');

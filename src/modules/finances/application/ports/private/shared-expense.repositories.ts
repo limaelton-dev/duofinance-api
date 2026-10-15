@@ -9,11 +9,22 @@ import type {
     SharedCashExpenseResult,
     SharedCashExpenseView,
 } from '../../models/shared-cash-expense.js';
+import type { OriginSettlement } from '../../../domain/shared-expense/obligation-reconciler.js';
+import type { FulfillmentObligationView } from '../../models/fulfillment-obligation.js';
 export const FINANCIAL_COMMITMENT_REPOSITORY = Symbol(
     'FINANCIAL_COMMITMENT_REPOSITORY',
 );
 export interface FinancialCommitmentRepository {
     save(commitment: FinancialCommitment<ExpenseVersion>): Promise<void>;
+    find(
+        spaceId: string,
+        commitmentId: string,
+        lock?: boolean,
+    ): Promise<FinancialCommitment<ExpenseVersion> | null>;
+    saveDisbursement(
+        commitment: FinancialCommitment<ExpenseVersion>,
+        expectedVersion: number,
+    ): Promise<void>;
     detail(
         spaceId: string,
         commitmentId: string,
@@ -24,6 +35,28 @@ export const INTER_MEMBER_OBLIGATION_REPOSITORY = Symbol(
 );
 export interface InterMemberObligationRepository {
     save(obligation: InterMemberObligation): Promise<void>;
+    lockOrigin(
+        spaceId: string,
+        commitmentId: string,
+    ): Promise<{
+        obligations: InterMemberObligation[];
+        settlements: OriginSettlement[];
+    }>;
+    originState(
+        spaceId: string,
+        commitmentId: string,
+    ): Promise<{
+        obligations: InterMemberObligation[];
+        settlements: OriginSettlement[];
+    }>;
+    saveReconciliation(
+        before: InterMemberObligation,
+        after: InterMemberObligation,
+    ): Promise<void>;
+    history(
+        spaceId: string,
+        commitmentId: string,
+    ): Promise<FulfillmentObligationView[]>;
 }
 export const SETTLEMENT_CYCLE_REPOSITORY = Symbol(
     'SETTLEMENT_CYCLE_REPOSITORY',

@@ -1,11 +1,22 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
 import type { SharedCashExpenseView } from '../../../application/models/shared-cash-expense.js';
-import type { FinancialCommitmentRepository } from '../../../application/ports/private/shared-expense.repositories.js';
+import { expenseView } from '../../../application/models/shared-cash-expense.js';
+import {
+    FINANCES_CLOCK,
+    INTER_MEMBER_OBLIGATION_REPOSITORY,
+    type FinancialCommitmentRepository,
+    type InterMemberObligationRepository,
+    type FinancesClock,
+} from '../../../application/ports/private/shared-expense.repositories.js';
 import {
     FinancialCommitment,
     type ExpenseVersion,
-} from '../../../domain/shared-expense/shared-expense.js';
+    type CommitmentVersion,
+} from '../../../domain/shared-expense/financial-commitment.js';
+import { ResponsibilitySplit } from '../../../domain/shared-expense/responsibility-split.js';
+import { Money } from '../../../domain/shared-expense/money.js';
+import { FinancesError } from '../../../domain/errors/finances.error.js';
 import {
     commitmentRow,
     disbursementRow,
@@ -17,7 +28,6 @@ import {
     FinancialCommitmentShareOrmEntity,
     FinancialCommitmentVersionOrmEntity,
     FinancialDisbursementOrmEntity,
-    InterMemberObligationOrmEntity,
     SettlementCycleOrmEntity,
 } from '../entities/shared-expense.orm-entity.js';
 function transaction(provider: EntityManagerProvider) {
@@ -28,99 +38,144 @@ function transaction(provider: EntityManagerProvider) {
 }
 @Injectable()
 export class TypeOrmFinancialCommitmentRepository implements FinancialCommitmentRepository {
-    constructor(private readonly provider: EntityManagerProvider) {}
+    constructor(
+        private readonly provider: EntityManagerProvider,
+        @Inject(INTER_MEMBER_OBLIGATION_REPOSITORY)
+        private readonly obligations: InterMemberObligationRepository,
+        @Inject(FINANCES_CLOCK) private readonly clock: FinancesClock,
+    ) {}
     async save(c: FinancialCommitment<ExpenseVersion>): Promise<void> {
         const m = transaction(this.provider),
             v = c.initialVersion;
         await m.insert(FinancialCommitmentOrmEntity, commitmentRow(c));
         await m.insert(FinancialCommitmentVersionOrmEntity, versionRow(c));
         if ('split' in v)
-            for (const share of v.split.shares) {
+            for (const share of v.split.shares)
                 await m.insert(
                     FinancialCommitmentShareOrmEntity,
                     shareRow(c as FinancialCommitment, share),
                 );
-            }
-        await m.insert(FinancialDisbursementOrmEntity, disbursementRow(c));
+        for (const fact of c.disbursements)
+            await m.insert(
+                FinancialDisbursementOrmEntity,
+                disbursementRow(c, fact),
+            );
+    }
+    async find(
+        spaceId: string,
+        commitmentId: string,
+        lock = false,
+    ): Promise<FinancialCommitment<ExpenseVersion> | null> {
+        const m = this.provider.get();
+        const query = m
+            .createQueryBuilder(FinancialCommitmentOrmEntity, 'c')
+            .where(
+                'c.space_id=:spaceId AND c.id=:commitmentId AND c.kind=:kind',
+                { spaceId, commitmentId, kind: 'EXPENSE' },
+            );
+        if (lock) query.setLock('pessimistic_write');
+        const c = await query.getOne();
+        if (!c) return null;
+        const v = await m.findOneByOrFail(FinancialCommitmentVersionOrmEntity, {
+            spaceId,
+            commitmentId,
+            version: 1,
+        });
+        const facts = await m.find(FinancialDisbursementOrmEntity, {
+            where: { spaceId, commitmentId },
+            order: { sequence: 'ASC' },
+        });
+        const p = c.personalOwnerPersonId
+            ? {
+                  version: 1 as const,
+                  ownerPersonId: c.personalOwnerPersonId,
+                  amount: Money.from(v.amountInCents),
+                  factDate: v.factDate,
+              }
+            : {
+                  version: 1 as const,
+                  split: ResponsibilitySplit.create(
+                      v.amountInCents,
+                      v.splitInput!.shares.map((s) => s.memberId),
+                      v.splitInput!,
+                  ),
+                  expectedPayerMemberId: v.expectedPayerMemberId,
+                  factDate: v.factDate,
+                  settlementRuleSnapshot: v.ruleSnapshot,
+                  settlementRuleSourceVersion: v.ruleSourceVersion,
+                  suggestedTargetDate: v.suggestedTargetDate,
+              };
+        return new FinancialCommitment(
+            c.id,
+            c.spaceId,
+            c.description,
+            c.createdBy,
+            c.registeredAt.toISOString(),
+            p,
+            facts.map((d) => ({
+                id: d.id,
+                ...(d.payerPersonId
+                    ? { payerPersonId: d.payerPersonId }
+                    : { payerMemberId: d.payerMemberId! }),
+                method: d.method as 'PIX' | 'DEBIT' | 'CASH',
+                amountInCents: d.amountInCents,
+                factDate: d.factDate,
+                registeredAt: d.registeredAt.toISOString(),
+                recordedByPersonId: d.recordedByPersonId,
+            })),
+            this.clock.today(),
+            c.version,
+        );
+    }
+    async saveDisbursement(
+        c: FinancialCommitment<ExpenseVersion>,
+        expectedVersion: number,
+    ): Promise<void> {
+        const m = transaction(this.provider);
+        const updated = await m.update(
+            FinancialCommitmentOrmEntity,
+            {
+                id: c.id,
+                spaceId: c.spaceId,
+                version: expectedVersion,
+                kind: 'EXPENSE',
+            },
+            { version: c.version },
+        );
+        if (updated.affected !== 1)
+            throw new FinancesError('CONCURRENT_MODIFICATION');
+        await m.insert(
+            FinancialDisbursementOrmEntity,
+            disbursementRow(c, c.disbursements.at(-1)!),
+        );
     }
     async detail(
         spaceId: string,
         commitmentId: string,
     ): Promise<SharedCashExpenseView | null> {
-        const m = this.provider.get();
-        const c = await m.findOneBy(FinancialCommitmentOrmEntity, {
-            id: commitmentId,
-            spaceId,
-        });
-        if (!c || c.personalOwnerPersonId !== null) return null;
-        const v = await m.findOneByOrFail(FinancialCommitmentVersionOrmEntity, {
-            commitmentId,
-            version: 1,
-        });
-        const shares = await m.find(FinancialCommitmentShareOrmEntity, {
-            where: { commitmentId, version: 1 },
-            order: { memberId: 'ASC' },
-        });
-        const d = await m.findOneByOrFail(FinancialDisbursementOrmEntity, {
-            commitmentId,
-            spaceId,
-        });
-        const o = await m.findOneBy(InterMemberObligationOrmEntity, {
-            commitmentId,
-            spaceId,
-        });
-        const cycle = o?.cycleId
-            ? await m.findOneByOrFail(SettlementCycleOrmEntity, {
-                  id: o.cycleId,
-                  spaceId,
-              })
+        const c = await this.find(spaceId, commitmentId);
+        if (!c || !('split' in c.initialVersion)) return null;
+        const history = await this.obligations.history(spaceId, commitmentId);
+        const latest = history.at(-1);
+        const current =
+            history.find((o) => o.remainingAmountInCents > 0) ??
+            (latest?.status === 'SETTLED' ? latest : null);
+        const cycle = current?.cycleId
+            ? await this.provider
+                  .get()
+                  .findOneByOrFail(SettlementCycleOrmEntity, {
+                      spaceId,
+                      id: current.cycleId,
+                  })
             : null;
         return {
-            spaceId,
-            commitment: {
-                id: c.id,
-                version: 1,
-                kind: 'EXPENSE',
-                modality: 'ONE_TIME',
-                description: c.description,
-                amountInCents: v.amountInCents,
-                factDate: v.factDate,
-                registeredAt: c.registeredAt.toISOString(),
-                createdByPersonId: c.createdBy,
-                expectedPayerMemberId: v.expectedPayerMemberId,
-                responsibilitySplit: {
-                    ...(v.splitInput as SharedCashExpenseView['commitment']['responsibilitySplit']),
-                    calculatedShares: shares.map((s) => ({
-                        memberId: s.memberId,
-                        amountInCents: s.amountInCents,
-                    })),
-                },
-                settlementRuleSnapshot:
-                    v.ruleSnapshot as SharedCashExpenseView['commitment']['settlementRuleSnapshot'],
-                settlementRuleSourceVersion: v.ruleSourceVersion,
-                suggestedTargetDate: v.suggestedTargetDate,
-            },
-            disbursement: {
-                id: d.id,
-                payerMemberId: d.payerMemberId!,
-                method: d.method as 'PIX' | 'DEBIT' | 'CASH',
-                amountInCents: d.amountInCents,
-                factDate: d.factDate,
-                registeredAt: d.registeredAt.toISOString(),
-            },
-            obligation: o
-                ? {
-                      id: o.id,
-                      originCommitmentId: o.commitmentId,
-                      originDisbursementId: o.disbursementId!,
-                      debtorMemberId: o.debtorMemberId,
-                      creditorMemberId: o.creditorMemberId,
-                      originalAmountInCents: o.originalAmountInCents,
-                      remainingAmountInCents: o.remainingAmountInCents,
-                      status: o.status,
-                      cycleId: o.cycleId,
-                  }
-                : null,
+            ...expenseView(
+                c as FinancialCommitment<CommitmentVersion>,
+                null,
+                null,
+            ),
+            obligations: history,
+            obligation: current,
             settlementCycle: cycle
                 ? {
                       id: cycle.id,
