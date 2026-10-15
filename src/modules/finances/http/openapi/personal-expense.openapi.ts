@@ -4,6 +4,10 @@ import type {
     ReferenceObject,
     ResponseObject,
 } from '@nestjs/swagger';
+import {
+    expenseStatusSchema,
+    expenseSupportProperties,
+} from './credit-card-purchase.openapi.js';
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
 const object = (
     properties: Record<string, SchemaObject | ReferenceObject>,
@@ -53,20 +57,37 @@ const legacyView = object({
 });
 const payment = object({
     ...(legacyView.properties!.disbursement as SchemaObject).properties,
+    sequence: money,
     recordedByPersonId: uuid,
 });
+payment.required = payment.required!.filter((name) => name !== 'sequence');
 const view = object({
     ...legacyView.properties,
+    ...expenseSupportProperties,
     commitment: object({
         ...(legacyView.properties!.commitment as SchemaObject).properties,
         version: money,
     }),
-    disbursement: payment,
-    disbursements: { type: 'array', minItems: 1, items: payment },
-    paidAmountInCents: money,
+    disbursement: { oneOf: [payment, { type: 'null' }] },
+    disbursements: { type: 'array', items: payment },
+    paidAmountInCents: { ...money, minimum: 0 },
     remainingAmountInCents: { ...money, minimum: 0 },
-    status: { type: 'string', enum: ['PARTIALLY_PAID', 'PAID'] },
+    status: expenseStatusSchema,
 });
+view.required = view.required!.filter(
+    (name) => !(name in expenseSupportProperties),
+);
+const result = object({
+    ...view.properties,
+    replayed: { type: 'boolean' },
+});
+result.required = result.required!.filter(
+    (name) => !(name in expenseSupportProperties),
+);
+result.properties = {
+    ...result.properties,
+    externalLiability: ref('ExternalLiability'),
+};
 const response = (
     schema: SchemaObject | ReferenceObject,
     description: string,
@@ -247,10 +268,7 @@ export const personalExpenseOpenApi: Pick<
                 },
             }),
             PersonalExpenseDetail: view,
-            RecordPersonalExpenseResponse: object({
-                ...view.properties,
-                replayed: { type: 'boolean' },
-            }),
+            RecordPersonalExpenseResponse: result,
             LegacyPersonalExpenseReplay: object({
                 ...legacyView.properties,
                 replayed: { type: 'boolean', enum: [true] },
@@ -265,13 +283,16 @@ export const personalExpenseOpenApi: Pick<
                         description,
                         amountInCents: money,
                         factDate: date,
-                        disbursement: object({ amountInCents: money, method }),
-                        paidAmountInCents: money,
-                        remainingAmountInCents: { ...money, minimum: 0 },
-                        status: {
-                            type: 'string',
-                            enum: ['PARTIALLY_PAID', 'PAID'],
+                        ...expenseSupportProperties,
+                        disbursement: {
+                            oneOf: [
+                                object({ amountInCents: money, method }),
+                                { type: 'null' },
+                            ],
                         },
+                        paidAmountInCents: { ...money, minimum: 0 },
+                        remainingAmountInCents: { ...money, minimum: 0 },
+                        status: expenseStatusSchema,
                     }),
                 },
                 nextCursor: { oneOf: [{ type: 'string' }, { type: 'null' }] },

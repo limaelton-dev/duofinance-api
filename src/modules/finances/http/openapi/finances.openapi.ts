@@ -11,6 +11,7 @@ import { settlementTransferOpenApi } from './settlement-transfer.openapi.js';
 import { personalExpenseOpenApi } from './personal-expense.openapi.js';
 import { incomeOpenApi } from './income.openapi.js';
 import { expenseDisbursementOpenApi } from './expense-disbursement.openapi.js';
+import { creditCardPurchaseOpenApi } from './credit-card-purchase.openapi.js';
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
 const object = (
     properties: Record<string, SchemaObject | ReferenceObject>,
@@ -89,6 +90,7 @@ export const financesOpenApi: Pick<
         ...settlementTransferOpenApi.paths,
         ...incomeOpenApi.paths,
         ...expenseDisbursementOpenApi.paths,
+        ...creditCardPurchaseOpenApi.paths,
         '/v2/spaces/{spaceId}/default-settlement-rule': {
             get: {
                 operationId: 'getDefaultSettlementRule',
@@ -199,6 +201,7 @@ export const financesOpenApi: Pick<
             ...settlementTransferOpenApi.components?.schemas,
             ...incomeOpenApi.components?.schemas,
             ...expenseDisbursementOpenApi.components?.schemas,
+            ...creditCardPurchaseOpenApi.components?.schemas,
             SettlementRule: rule,
             DefaultSettlementRuleResponse: view,
             ConfigureDefaultSettlementRuleRequest: object({

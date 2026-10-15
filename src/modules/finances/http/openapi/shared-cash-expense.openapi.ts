@@ -4,6 +4,10 @@ import type {
     ReferenceObject,
     ResponseObject,
 } from '@nestjs/swagger';
+import {
+    expenseStatusSchema,
+    expenseSupportProperties,
+} from './credit-card-purchase.openapi.js';
 const ref = (name: string): ReferenceObject => ({
     $ref: `#/components/schemas/${name}`,
 });
@@ -148,15 +152,18 @@ const legacyResult = object({
 });
 const payment = object({
     ...disbursement.properties,
+    sequence: positive,
     recordedByPersonId: uuid,
 });
+payment.required = payment.required!.filter((name) => name !== 'sequence');
 const initialProperties = {
     ...legacyInitialProperties,
-    disbursement: payment,
-    disbursements: { type: 'array' as const, minItems: 1, items: payment },
-    paidAmountInCents: positive,
+    ...expenseSupportProperties,
+    disbursement: nullable(payment),
+    disbursements: { type: 'array' as const, items: payment },
+    paidAmountInCents: money,
     remainingAmountInCents: money,
-    status: { type: 'string' as const, enum: ['PARTIALLY_PAID', 'PAID'] },
+    status: expenseStatusSchema,
     obligation: nullable(ref('FinancialFulfillmentObligation')),
     obligations: {
         type: 'array' as const,
@@ -170,9 +177,13 @@ const initialProperties = {
     ),
 };
 const result = object({ ...initialProperties, replayed: { type: 'boolean' } });
+result.required = result.required!.filter(
+    (name) => !(name in expenseSupportProperties),
+);
 result.properties = {
     ...result.properties,
     members: financialContextSchema.properties!.members,
+    externalLiability: ref('ExternalLiability'),
 };
 const detail = object({
     ...initialProperties,
@@ -185,6 +196,9 @@ const detail = object({
     ),
     members: financialContextSchema.properties!.members,
 });
+detail.required = detail.required!.filter(
+    (name) => !(name in expenseSupportProperties),
+);
 const input = object({
     expectedSpaceVersion: positive,
     description: { type: 'string', minLength: 1, maxLength: 160 },
@@ -336,7 +350,13 @@ const originalResult = {
 };
 const currentResult = {
     ...originalResult,
-    disbursements: [originalResult.disbursement],
+    disbursement: { ...originalResult.disbursement, sequence: 1 },
+    disbursements: [{ ...originalResult.disbursement, sequence: 1 }],
+    externalLiabilities: [],
+    assumedAmountInCents: 0,
+    externalOutstandingAmountInCents: 0,
+    supportedAmountInCents: 50000,
+    fulfillmentStatus: 'FULFILLED',
     obligations: [originalResult.obligation],
     paidAmountInCents: 50000,
     remainingAmountInCents: 0,

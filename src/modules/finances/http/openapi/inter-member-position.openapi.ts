@@ -122,6 +122,16 @@ export const interMemberPositionOpenApi: Pick<
             InterMemberObligationOrigin: {
                 oneOf: [
                     object({
+                        kind: { type: 'string', enum: ['EXPENSE'] },
+                        commitmentId: uuid,
+                        externalLiabilityId: uuid,
+                        description: {
+                            type: 'string',
+                            minLength: 1,
+                            maxLength: 160,
+                        },
+                    }),
+                    object({
                         commitmentId: uuid,
                         disbursementId: uuid,
                         description: {
