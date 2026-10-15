@@ -54,6 +54,7 @@ export interface SharedCashExpenseView {
     externalLiabilities?: FinancialCommitment['externalLiabilities'];
     assumedAmountInCents?: number;
     externalOutstandingAmountInCents?: number;
+    externalSettledAmountInCents?: number;
     supportedAmountInCents?: number;
     fulfillmentStatus?: 'PARTIALLY_FULFILLED' | 'FULFILLED';
     paidAmountInCents: number;
@@ -126,6 +127,7 @@ export function expenseView(
             ? { ...commitment.disbursement }
             : null,
         externalLiabilities: commitment.externalLiabilities,
+        externalSettledAmountInCents: commitment.externalSettledAmountInCents,
         assumedAmountInCents: commitment.assumedAmountInCents,
         externalOutstandingAmountInCents:
             commitment.externalOutstandingAmountInCents,

@@ -1,3 +1,4 @@
+import { FinancialExternalLiabilitySettlementOrmEntity } from '../entities/external-liability-settlement.orm-entity.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
 import type { SharedCashExpenseView } from '../../../application/models/shared-cash-expense.js';
@@ -118,6 +119,13 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
             where: { spaceId, commitmentId },
             order: { sequence: 'ASC' },
         });
+        const settlements = await m.find(
+            FinancialExternalLiabilitySettlementOrmEntity,
+            {
+                where: { spaceId, commitmentId },
+                order: { sequence: 'ASC' },
+            },
+        );
         const p = c.personalOwnerPersonId
             ? {
                   version: 1 as const,
@@ -167,6 +175,20 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
                     : { holderMemberId: f.holderMemberId! }),
                 amountInCents: f.amountInCents,
                 remainingAmountInCents: f.remainingAmountInCents,
+                settlements: settlements
+                    .filter((s) => s.externalLiabilityId === f.id)
+                    .map((s) => ({
+                        id: s.id,
+                        externalLiabilityId: s.externalLiabilityId,
+                        sequence: s.sequence,
+                        ...(s.holderPersonId
+                            ? { holderPersonId: s.holderPersonId }
+                            : { holderMemberId: s.holderMemberId! }),
+                        amountInCents: s.amountInCents,
+                        factDate: s.factDate,
+                        registeredAt: s.registeredAt.toISOString(),
+                        recordedByPersonId: s.recordedByPersonId,
+                    })),
                 factDate: f.factDate,
                 registeredAt: f.registeredAt.toISOString(),
                 recordedByPersonId: f.recordedByPersonId,

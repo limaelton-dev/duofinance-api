@@ -24,7 +24,19 @@ export interface Disbursement {
     readonly registeredAt: string;
     readonly recordedByPersonId?: string;
 }
+export interface ExternalLiabilitySettlement {
+    readonly id: string;
+    readonly externalLiabilityId: string;
+    readonly sequence: number;
+    readonly holderMemberId?: string;
+    readonly holderPersonId?: string;
+    readonly amountInCents: number;
+    readonly factDate: string;
+    readonly registeredAt: string;
+    readonly recordedByPersonId: string;
+}
 export interface ExternalLiability {
+    readonly settlements?: readonly ExternalLiabilitySettlement[];
     readonly id: string;
     readonly sequence?: number;
     readonly holderMemberId: string;
@@ -69,6 +81,7 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
     )[];
     readonly assumedAmountInCents: number;
     readonly externalOutstandingAmountInCents: number;
+    readonly externalSettledAmountInCents: number;
     readonly supportedAmountInCents: number;
     readonly fulfillmentStatus: 'PARTIALLY_FULFILLED' | 'FULFILLED';
     readonly version: number;
@@ -94,6 +107,10 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
         const all = [...facts, ...liabilities]
             .map((f, index) => ({ ...f, sequence: f.sequence ?? index + 1 }))
             .sort((a, b) => a.sequence - b.sequence);
+        const settlements = liabilities.flatMap((f) => f.settlements ?? []);
+        const events = [...all, ...settlements].sort(
+            (a, b) => a.sequence - b.sequence,
+        );
         const personal = 'ownerPersonId' in initialVersion;
         const original = personal
             ? initialVersion.amount.amountInCents
@@ -113,9 +130,9 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
             all.length < 1 ||
             all[0].factDate !== initialVersion.factDate ||
             all[0].registeredAt !== registeredAt ||
-            new Set(all.map((fact) => fact.id)).size !== all.length ||
-            all.some((f, index) => f.sequence !== index + 1) ||
-            (version ?? all.length) !== all.length
+            new Set(events.map((fact) => fact.id)).size !== events.length ||
+            events.some((f, index) => f.sequence !== index + 1) ||
+            (version ?? events.length) !== events.length
         )
             invalidExpense();
         if (personal) {
@@ -173,13 +190,46 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
             total += BigInt(fact.amountInCents);
         }
         let assumed = 0n;
+        let settled = 0n;
         for (const fact of liabilities) {
             Money.from(fact.amountInCents);
+            let liabilitySettled = 0n;
+            for (const payment of fact.settlements ?? []) {
+                Money.from(payment.amountInCents);
+                if (
+                    !payment.id ||
+                    payment.id === id ||
+                    payment.amountInCents < 1 ||
+                    payment.externalLiabilityId !== fact.id ||
+                    payment.sequence <=
+                        all.find((f) => f.id === fact.id)!.sequence ||
+                    civilDate(payment.factDate) > civilDate(today) ||
+                    !Number.isFinite(Date.parse(payment.registeredAt)) ||
+                    !payment.recordedByPersonId ||
+                    (personal
+                        ? payment.holderPersonId !==
+                              initialVersion.ownerPersonId ||
+                          payment.holderMemberId !== undefined ||
+                          payment.recordedByPersonId !==
+                              initialVersion.ownerPersonId
+                        : !('holderMemberId' in fact) ||
+                          payment.holderMemberId !== fact.holderMemberId ||
+                          payment.holderPersonId !== undefined)
+                )
+                    invalidExpense();
+                liabilitySettled += BigInt(payment.amountInCents);
+            }
+            if (
+                liabilitySettled > BigInt(fact.amountInCents) ||
+                fact.remainingAmountInCents !==
+                    fact.amountInCents - Number(liabilitySettled)
+            )
+                invalidExpense();
+            settled += liabilitySettled;
             if (
                 !fact.id ||
                 fact.id === id ||
                 fact.amountInCents < 1 ||
-                fact.remainingAmountInCents !== fact.amountInCents ||
                 civilDate(fact.factDate) > civilDate(today) ||
                 !Number.isFinite(Date.parse(fact.registeredAt)) ||
                 !fact.recordedByPersonId ||
@@ -228,6 +278,11 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
             liabilities.map((f) =>
                 Object.freeze({
                     ...f,
+                    settlements: Object.freeze(
+                        (f.settlements ?? []).map((s) =>
+                            Object.freeze({ ...s }),
+                        ),
+                    ),
                     sequence: all.find((a) => a.id === f.id)!.sequence,
                 }),
             ),
@@ -238,9 +293,10 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
             ),
         );
         this.disbursement = this.disbursements[0] ?? null;
-        this.version = version ?? all.length;
+        this.version = version ?? events.length;
         this.assumedAmountInCents = Number(assumed);
-        this.externalOutstandingAmountInCents = Number(assumed);
+        this.externalOutstandingAmountInCents = Number(assumed - settled);
+        this.externalSettledAmountInCents = Number(settled);
         this.supportedAmountInCents = Number(total + assumed);
         this.paidAmountInCents = Number(total);
         this.remainingAmountInCents = original - this.supportedAmountInCents;
@@ -254,6 +310,56 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
               ? 'PAID'
               : 'PARTIALLY_PAID';
         Object.freeze(this);
+    }
+    settleExternalLiability(
+        externalLiabilityId: string,
+        payment: Omit<
+            ExternalLiabilitySettlement,
+            | 'sequence'
+            | 'externalLiabilityId'
+            | 'holderMemberId'
+            | 'holderPersonId'
+        >,
+        expectedVersion: number,
+        today: string,
+    ): FinancialCommitment<V> {
+        if (expectedVersion !== this.version)
+            throw new FinancesError('CONCURRENT_MODIFICATION');
+        const liability = this.externalLiabilities.find(
+            (f) => f.id === externalLiabilityId,
+        );
+        if (!liability) throw new FinancesError('EXTERNAL_LIABILITY_NOT_FOUND');
+        if (liability.remainingAmountInCents === 0)
+            throw new FinancesError('EXTERNAL_LIABILITY_ALREADY_SETTLED');
+        const settlement: ExternalLiabilitySettlement = {
+            ...payment,
+            externalLiabilityId,
+            sequence: this.version + 1,
+            ...('holderMemberId' in liability
+                ? { holderMemberId: liability.holderMemberId }
+                : { holderPersonId: liability.holderPersonId }),
+        };
+        return new FinancialCommitment(
+            this.id,
+            this.spaceId,
+            this.description,
+            this.createdByPersonId,
+            this.registeredAt,
+            this.initialVersion,
+            this.disbursements,
+            today,
+            this.version + 1,
+            this.externalLiabilities.map((f) =>
+                f.id === externalLiabilityId
+                    ? {
+                          ...f,
+                          remainingAmountInCents:
+                              f.remainingAmountInCents - payment.amountInCents,
+                          settlements: [...(f.settlements ?? []), settlement],
+                      }
+                    : f,
+            ) as readonly ExpenseExternalLiability<V>[],
+        );
     }
     recordExternalLiability(
         liability: ExpenseExternalLiability<V>,
