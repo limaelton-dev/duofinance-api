@@ -16,6 +16,7 @@ export interface CommitmentVersion {
 }
 export interface Disbursement {
     readonly id: string;
+    readonly sequence?: number;
     readonly payerMemberId: string;
     readonly method: 'PIX' | 'DEBIT' | 'CASH';
     readonly amountInCents: number;
@@ -23,6 +24,24 @@ export interface Disbursement {
     readonly registeredAt: string;
     readonly recordedByPersonId?: string;
 }
+export interface ExternalLiability {
+    readonly id: string;
+    readonly sequence?: number;
+    readonly holderMemberId: string;
+    readonly amountInCents: number;
+    readonly remainingAmountInCents: number;
+    readonly factDate: string;
+    readonly registeredAt: string;
+    readonly recordedByPersonId: string;
+}
+export interface PersonalExternalLiability extends Omit<
+    ExternalLiability,
+    'holderMemberId'
+> {
+    readonly holderPersonId: string;
+}
+export type ExpenseExternalLiability<V extends ExpenseVersion> =
+    V extends CommitmentVersion ? ExternalLiability : PersonalExternalLiability;
 export interface PersonalCommitmentVersion {
     readonly version: 1;
     readonly ownerPersonId: string;
@@ -44,10 +63,19 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
     readonly initialVersion: V;
     readonly disbursement: ExpenseDisbursement<V>;
     readonly disbursements: readonly ExpenseDisbursement<V>[];
+    readonly externalLiabilities: readonly ExpenseExternalLiability<V>[];
+    readonly fulfillments: readonly (
+        ExpenseDisbursement<V> | ExpenseExternalLiability<V>
+    )[];
+    readonly assumedAmountInCents: number;
+    readonly externalOutstandingAmountInCents: number;
+    readonly supportedAmountInCents: number;
+    readonly fulfillmentStatus: 'PARTIALLY_FULFILLED' | 'FULFILLED';
     readonly version: number;
     readonly paidAmountInCents: number;
     readonly remainingAmountInCents: number;
-    readonly status: 'PARTIALLY_PAID' | 'PAID';
+    readonly status:
+        'PARTIALLY_PAID' | 'PAID' | 'PARTIALLY_FULFILLED' | 'FULFILLED';
     constructor(
         readonly id: string,
         readonly spaceId: string,
@@ -58,10 +86,14 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
         payments: ExpenseDisbursement<V> | readonly ExpenseDisbursement<V>[],
         today: string,
         version?: number,
+        liabilities: readonly ExpenseExternalLiability<V>[] = [],
     ) {
         const facts: readonly ExpenseDisbursement<V>[] = Array.isArray(payments)
             ? payments
             : [payments as ExpenseDisbursement<V>];
+        const all = [...facts, ...liabilities]
+            .map((f, index) => ({ ...f, sequence: f.sequence ?? index + 1 }))
+            .sort((a, b) => a.sequence - b.sequence);
         const personal = 'ownerPersonId' in initialVersion;
         const original = personal
             ? initialVersion.amount.amountInCents
@@ -78,11 +110,12 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
             description.length > 160 ||
             !Number.isFinite(Date.parse(registeredAt)) ||
             civilDate(initialVersion.factDate) > civilDate(today) ||
-            facts.length < 1 ||
-            facts[0].factDate !== initialVersion.factDate ||
-            facts[0].registeredAt !== registeredAt ||
-            new Set(facts.map((fact) => fact.id)).size !== facts.length ||
-            (version ?? facts.length) !== facts.length
+            all.length < 1 ||
+            all[0].factDate !== initialVersion.factDate ||
+            all[0].registeredAt !== registeredAt ||
+            new Set(all.map((fact) => fact.id)).size !== all.length ||
+            all.some((f, index) => f.sequence !== index + 1) ||
+            (version ?? all.length) !== all.length
         )
             invalidExpense();
         if (personal) {
@@ -139,7 +172,32 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
                 invalidExpense();
             total += BigInt(fact.amountInCents);
         }
-        if (total > BigInt(original)) invalidExpense();
+        let assumed = 0n;
+        for (const fact of liabilities) {
+            Money.from(fact.amountInCents);
+            if (
+                !fact.id ||
+                fact.id === id ||
+                fact.amountInCents < 1 ||
+                fact.remainingAmountInCents !== fact.amountInCents ||
+                civilDate(fact.factDate) > civilDate(today) ||
+                !Number.isFinite(Date.parse(fact.registeredAt)) ||
+                !fact.recordedByPersonId ||
+                (personal
+                    ? !('holderPersonId' in fact) ||
+                      'holderMemberId' in fact ||
+                      fact.holderPersonId !== initialVersion.ownerPersonId ||
+                      fact.recordedByPersonId !== initialVersion.ownerPersonId
+                    : !('holderMemberId' in fact) ||
+                      'holderPersonId' in fact ||
+                      !initialVersion.split.shares.some(
+                          (s) => s.memberId === fact.holderMemberId,
+                      ))
+            )
+                invalidExpense();
+            assumed += BigInt(fact.amountInCents);
+        }
+        if (total + assumed > BigInt(original)) invalidExpense();
         this.initialVersion = Object.freeze(
             Object.assign(
                 {},
@@ -160,18 +218,67 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
             facts.map((fact) =>
                 Object.freeze({
                     ...fact,
+                    sequence: all.find((f) => f.id === fact.id)!.sequence,
                     recordedByPersonId:
                         fact.recordedByPersonId ?? createdByPersonId,
                 }),
             ),
         ) as unknown as readonly ExpenseDisbursement<V>[];
+        this.externalLiabilities = Object.freeze(
+            liabilities.map((f) =>
+                Object.freeze({
+                    ...f,
+                    sequence: all.find((a) => a.id === f.id)!.sequence,
+                }),
+            ),
+        ) as unknown as readonly ExpenseExternalLiability<V>[];
+        this.fulfillments = Object.freeze(
+            [...this.disbursements, ...this.externalLiabilities].sort(
+                (a, b) => a.sequence! - b.sequence!,
+            ),
+        );
         this.disbursement = this.disbursements[0];
-        this.version = version ?? facts.length;
+        this.version = version ?? all.length;
+        this.assumedAmountInCents = Number(assumed);
+        this.externalOutstandingAmountInCents = Number(assumed);
+        this.supportedAmountInCents = Number(total + assumed);
         this.paidAmountInCents = Number(total);
-        this.remainingAmountInCents = original - this.paidAmountInCents;
-        this.status =
-            this.remainingAmountInCents === 0 ? 'PAID' : 'PARTIALLY_PAID';
+        this.remainingAmountInCents = original - this.supportedAmountInCents;
+        this.fulfillmentStatus =
+            this.remainingAmountInCents === 0
+                ? 'FULFILLED'
+                : 'PARTIALLY_FULFILLED';
+        this.status = liabilities.length
+            ? this.fulfillmentStatus
+            : this.remainingAmountInCents === 0
+              ? 'PAID'
+              : 'PARTIALLY_PAID';
         Object.freeze(this);
+    }
+    recordExternalLiability(
+        liability: ExpenseExternalLiability<V>,
+        expectedVersion: number,
+        today: string,
+    ): FinancialCommitment<V> {
+        if (expectedVersion !== this.version)
+            throw new FinancesError('CONCURRENT_MODIFICATION');
+        if (this.remainingAmountInCents === 0)
+            throw new FinancesError('EXPENSE_ALREADY_PAID');
+        return new FinancialCommitment(
+            this.id,
+            this.spaceId,
+            this.description,
+            this.createdByPersonId,
+            this.registeredAt,
+            this.initialVersion,
+            this.disbursements,
+            today,
+            this.version + 1,
+            [
+                ...this.externalLiabilities,
+                { ...liability, sequence: this.version + 1 },
+            ],
+        );
     }
     recordDisbursement(
         payment: ExpenseDisbursement<V>,
@@ -189,9 +296,10 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
             this.createdByPersonId,
             this.registeredAt,
             this.initialVersion,
-            [...this.disbursements, payment],
+            [...this.disbursements, { ...payment, sequence: this.version + 1 }],
             today,
             this.version + 1,
+            this.externalLiabilities,
         );
     }
 }
