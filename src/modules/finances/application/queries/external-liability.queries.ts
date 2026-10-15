@@ -11,9 +11,7 @@ import type { PersonId } from '../../../spaces/domain/person/person-id.js';
 import type { SpaceId } from '../../../spaces/domain/space/space-id.js';
 import { FinancesError } from '../../domain/errors/finances.error.js';
 import {
-    FINANCIAL_COMMITMENT_REPOSITORY,
     FINANCES_CLOCK,
-    type FinancialCommitmentRepository,
     type FinancesClock,
 } from '../ports/private/shared-expense.repositories.js';
 import {
@@ -30,8 +28,6 @@ export class ExternalLiabilityQueries {
         @Inject(SPACE_ACCESS_PORT) private readonly access: SpaceAccessPort,
         @Inject(SPACE_FINANCIAL_CONTEXT_PORT)
         private readonly context: SpaceFinancialContextPort,
-        @Inject(FINANCIAL_COMMITMENT_REPOSITORY)
-        private readonly commitments: FinancialCommitmentRepository,
         @Inject(EXTERNAL_LIABILITY_SETTLEMENT_REPOSITORY)
         private readonly settlements: ExternalLiabilitySettlementRepository,
         @Inject(FINANCES_CLOCK) private readonly clock: FinancesClock,
@@ -90,14 +86,18 @@ export class ExternalLiabilityQueries {
         externalLiabilityId: string,
     ) {
         const { access, context, common } = await this.authorized(actor, space);
-        const c = await this.commitments.find(space.value, commitmentId);
-        if (!c || (access.type === 'SHARED') !== 'split' in c.initialVersion)
-            throw new FinancesError('FINANCIAL_COMMITMENT_NOT_FOUND');
-        const externalLiability = c.externalLiabilities.find(
-            (f) => f.id === externalLiabilityId,
+        const detail = await this.settlements.findDetail(
+            space.value,
+            commitmentId,
+            externalLiabilityId,
         );
-        if (!externalLiability)
-            throw new FinancesError('EXTERNAL_LIABILITY_NOT_FOUND');
+        if (!detail) throw new FinancesError('EXTERNAL_LIABILITY_NOT_FOUND');
+        const { externalLiability } = detail;
+        if (
+            (access.type === 'SHARED') !==
+            'holderMemberId' in externalLiability
+        )
+            throw new FinancesError('FINANCIAL_COMMITMENT_NOT_FOUND');
         const own =
             'holderMemberId' in externalLiability
                 ? externalLiability.holderMemberId === context?.actorMemberId
@@ -106,8 +106,8 @@ export class ExternalLiabilityQueries {
         return {
             ...common,
             commitmentId,
-            description: c.description,
-            expectedCommitmentVersion: c.version,
+            description: detail.description,
+            expectedCommitmentVersion: detail.commitmentVersion,
             externalLiability,
             canSettle:
                 common.canSettle &&

@@ -24,6 +24,11 @@ export const EXTERNAL_LIABILITY_SETTLEMENT_REPOSITORY = Symbol(
     'EXTERNAL_LIABILITY_SETTLEMENT_REPOSITORY',
 );
 export interface ExternalLiabilitySettlementRepository {
+    findDetail(
+        spaceId: string,
+        commitmentId: string,
+        externalLiabilityId: string,
+    ): Promise<OpenExternalLiability | null>;
     findHolder(
         spaceId: string,
         commitmentId: string,

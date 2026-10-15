@@ -71,6 +71,7 @@ function setup() {
         detail: vi.fn(),
     };
     const settlements = {
+        findDetail: vi.fn(),
         findHolder: vi.fn(async () => ({
             holderPersonId: actor.value,
             holderMemberId: null,

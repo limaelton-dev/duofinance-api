@@ -52,13 +52,6 @@ function setup() {
         lockForSettlement: vi.fn(),
         lockForFulfillment: vi.fn(),
     };
-    const commitments = {
-        find: vi.fn(async () => c),
-        save: vi.fn(),
-        saveDisbursement: vi.fn(),
-        saveExternalLiability: vi.fn(),
-        detail: vi.fn(),
-    };
     const item = {
         commitmentId: c.id,
         commitmentVersion: 1,
@@ -66,21 +59,18 @@ function setup() {
         externalLiability: c.externalLiabilities[0],
     };
     const settlements = {
+        findDetail: vi.fn(async () => item),
         listOpen: vi.fn(async () => [item]),
         findHolder: vi.fn(),
         saveExternalLiabilitySettlement: vi.fn(),
     };
     return {
-        query: new ExternalLiabilityQueries(
-            access,
-            context,
-            commitments,
-            settlements,
-            { today: () => today, now: () => new Date(now) },
-        ),
+        query: new ExternalLiabilityQueries(access, context, settlements, {
+            today: () => today,
+            now: () => new Date(now),
+        }),
         access,
         context,
-        commitments,
         settlements,
         c,
         item,
@@ -145,6 +135,24 @@ describe('External liability queries', () => {
             .mockRejectedValueOnce(new Error('removed'));
         await expect(f.query.list(actor, space)).rejects.toThrow('removed');
     });
+    it('does not disclose options if access is revoked after reading the snapshot', async () => {
+        const f = setup();
+        f.settlements.findDetail.mockImplementationOnce(async () => {
+            f.access.assertCanRead.mockRejectedValueOnce(new Error('removed'));
+            return f.item;
+        });
+        await expect(
+            f.query.options(actor, space, f.c.id, f.item.externalLiability.id),
+        ).rejects.toThrow('removed');
+    });
+    it('rejects an absent origin without falling back to another commitment read', async () => {
+        const f = setup();
+        f.settlements.findDetail.mockResolvedValueOnce(null as never);
+        await expect(
+            f.query.options(actor, space, f.c.id, randomUUID()),
+        ).rejects.toMatchObject({ code: 'EXTERNAL_LIABILITY_NOT_FOUND' });
+        expect(f.settlements.listOpen).not.toHaveBeenCalled();
+    });
     it('offers current version, amount, and history then disables fully settled origin', async () => {
         const f = setup(),
             liability = f.c.externalLiabilities[0];
@@ -155,26 +163,32 @@ describe('External liability queries', () => {
             canSettle: true,
             externalLiability: liability,
         });
-        f.commitments.find.mockResolvedValueOnce(
-            f.c.settleExternalLiability(
-                liability.id,
-                {
-                    id: randomUUID(),
-                    amountInCents: 20000,
-                    factDate: today,
-                    registeredAt: now,
-                    recordedByPersonId: actor.value,
-                },
-                1,
-                today,
-            ),
+        const settled = f.c.settleExternalLiability(
+            liability.id,
+            {
+                id: randomUUID(),
+                amountInCents: 20000,
+                factDate: today,
+                registeredAt: now,
+                recordedByPersonId: actor.value,
+            },
+            1,
+            today,
         );
+        f.settlements.findDetail.mockResolvedValueOnce({
+            ...f.item,
+            commitmentVersion: settled.version,
+            externalLiability: settled.externalLiabilities[0],
+        });
         expect(
             await f.query.options(actor, space, f.c.id, liability.id),
         ).toMatchObject({
             expectedCommitmentVersion: 2,
             canSettle: false,
-            externalLiability: { remainingAmountInCents: 0 },
+            externalLiability: {
+                remainingAmountInCents: 0,
+                settlements: [{ sequence: 2, amountInCents: 20000 }],
+            },
         });
     });
 });

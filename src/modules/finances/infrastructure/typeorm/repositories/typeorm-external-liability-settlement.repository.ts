@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
 import type { ExternalLiabilitySettlementRepository } from '../../../application/ports/private/external-liability-settlement.ports.js';
-import type { SettleExternalLiabilityCommand } from '../../../application/models/external-liability-settlement.js';
+import type {
+    OpenExternalLiability,
+    SettleExternalLiabilityCommand,
+} from '../../../application/models/external-liability-settlement.js';
 import type {
     FinancialCommitment,
     ExpenseVersion,
@@ -12,9 +15,40 @@ import {
     FinancialExternalLiabilityOrmEntity,
 } from '../entities/shared-expense.orm-entity.js';
 import { FinancialExternalLiabilitySettlementOrmEntity } from '../entities/external-liability-settlement.orm-entity.js';
+// Every consumer reads version, balance and settlement history in one snapshot.
+const externalLiabilityProjection = `
+            SELECT c.id AS "commitmentId",c.version AS "commitmentVersion",c.description,
+                jsonb_strip_nulls(jsonb_build_object(
+                    'id',f.id,'sequence',f.sequence,'holderMemberId',f.holder_member_id,'holderPersonId',f.holder_person_id,
+                    'amountInCents',f.amount_in_cents,'remainingAmountInCents',f.remaining_amount_in_cents,
+                    'factDate',f.fact_date,'registeredAt',to_char(f.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+                    'recordedByPersonId',f.recorded_by_person_id,'settlements',COALESCE((
+                        SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+                            'id',s.id,'externalLiabilityId',s.external_liability_id,'sequence',s.sequence,
+                            'holderMemberId',s.holder_member_id,'holderPersonId',s.holder_person_id,
+                            'amountInCents',s.amount_in_cents,'factDate',s.fact_date,
+                            'registeredAt',to_char(s.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+                            'recordedByPersonId',s.recorded_by_person_id)) ORDER BY s.sequence)
+                        FROM financial_external_liability_settlements s WHERE s.space_id=f.space_id AND s.commitment_id=f.commitment_id AND s.external_liability_id=f.id
+                    ),'[]'::jsonb))) AS "externalLiability"
+            FROM financial_external_liabilities f JOIN financial_commitments c ON c.space_id=f.space_id AND c.id=f.commitment_id
+`;
 @Injectable()
 export class TypeOrmExternalLiabilitySettlementRepository implements ExternalLiabilitySettlementRepository {
     constructor(private readonly provider: EntityManagerProvider) {}
+    async findDetail(
+        spaceId: string,
+        commitmentId: string,
+        externalLiabilityId: string,
+    ): Promise<OpenExternalLiability | null> {
+        const rows: OpenExternalLiability[] = await this.provider
+            .get()
+            .query(
+                `${externalLiabilityProjection} WHERE f.space_id=$1 AND f.commitment_id=$2 AND f.id=$3 AND c.kind='EXPENSE'`,
+                [spaceId, commitmentId, externalLiabilityId],
+            );
+        return rows[0] ?? null;
+    }
     async findHolder(
         spaceId: string,
         commitmentId: string,
@@ -87,21 +121,7 @@ export class TypeOrmExternalLiabilitySettlementRepository implements ExternalLia
         // One statement gives a coherent page of version, balance and history.
         return this.provider.get().query(
             `
-            SELECT c.id AS "commitmentId",c.version AS "commitmentVersion",c.description,
-                jsonb_strip_nulls(jsonb_build_object(
-                    'id',f.id,'sequence',f.sequence,'holderMemberId',f.holder_member_id,'holderPersonId',f.holder_person_id,
-                    'amountInCents',f.amount_in_cents,'remainingAmountInCents',f.remaining_amount_in_cents,
-                    'factDate',f.fact_date,'registeredAt',to_char(f.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
-                    'recordedByPersonId',f.recorded_by_person_id,'settlements',COALESCE((
-                        SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
-                            'id',s.id,'externalLiabilityId',s.external_liability_id,'sequence',s.sequence,
-                            'holderMemberId',s.holder_member_id,'holderPersonId',s.holder_person_id,
-                            'amountInCents',s.amount_in_cents,'factDate',s.fact_date,
-                            'registeredAt',to_char(s.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
-                            'recordedByPersonId',s.recorded_by_person_id)) ORDER BY s.sequence)
-                        FROM financial_external_liability_settlements s WHERE s.space_id=f.space_id AND s.commitment_id=f.commitment_id AND s.external_liability_id=f.id
-                    ),'[]'::jsonb))) AS "externalLiability"
-            FROM financial_external_liabilities f JOIN financial_commitments c ON c.space_id=f.space_id AND c.id=f.commitment_id
+            ${externalLiabilityProjection}
             WHERE f.space_id=$1 AND ${'memberId' in holder ? 'f.holder_member_id' : 'f.holder_person_id'}=$2 AND f.remaining_amount_in_cents>0
                 AND ($3::date IS NULL OR (f.fact_date,f.id)<($3::date,$4::uuid))
             ORDER BY f.fact_date DESC,f.id DESC LIMIT 21`,
