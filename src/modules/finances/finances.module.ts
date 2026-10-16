@@ -1,3 +1,7 @@
+import { FinancialReviewController } from './http/controllers/financial-review.controller.js';
+import { FinancialReviewQueries } from './application/queries/financial-review.queries.js';
+import { FINANCIAL_REVIEW_READER } from './application/ports/private/financial-review-reader.js';
+import { TypeOrmFinancialReviewReader } from './infrastructure/typeorm/queries/typeorm-financial-review-reader.js';
 import { ExternalLiabilityController } from './http/controllers/external-liability.controller.js';
 import { SettleExternalLiabilityPipe } from './http/dto/settle-external-liability.dto.js';
 import { SettleExternalLiabilityHandler } from './application/handlers/settle-external-liability.handler.js';
@@ -141,6 +145,7 @@ import {
         ]),
     ],
     controllers: [
+        FinancialReviewController,
         ExternalLiabilityController,
         CreditCardPurchaseController,
         ExpenseDisbursementController,
@@ -153,6 +158,11 @@ import {
         SettlementTransferController,
     ],
     providers: [
+        FinancialReviewQueries,
+        {
+            provide: FINANCIAL_REVIEW_READER,
+            useClass: TypeOrmFinancialReviewReader,
+        },
         SettleExternalLiabilityPipe,
         SettleExternalLiabilityHandler,
         ExternalLiabilityQueries,

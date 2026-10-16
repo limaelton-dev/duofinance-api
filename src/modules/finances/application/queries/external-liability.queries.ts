@@ -53,21 +53,40 @@ export class ExternalLiabilityQueries {
             },
         };
     }
-    async list(actor: PersonId, space: SpaceId, cursor?: string) {
+    async list(
+        actor: PersonId,
+        space: SpaceId,
+        cursor?: string,
+        memberId?: string,
+    ) {
         const { context, common } = await this.authorized(actor, space);
-        const scope = `${space.value}:${actor.value}:external-liabilities`;
+        memberId = memberId?.toLowerCase();
+        if (
+            memberId !== undefined &&
+            (!context || !context.members.some((m) => m.memberId === memberId))
+        )
+            throw new FinancesError('VALIDATION_ERROR', ['memberId']);
+        const scope = `${space.value}:${actor.value}:external-liabilities${memberId ? `:${memberId}` : ''}`;
         const rows = await this.settlements.listOpen(
             space.value,
             context
-                ? { memberId: context.actorMemberId }
+                ? { memberId: memberId ?? context.actorMemberId }
                 : { personId: actor.value },
             decodeExpenseCursor(cursor, scope),
         );
         const items = rows.slice(0, 20),
             last = items.at(-1);
-        await this.authorized(actor, space);
+        const revalidated = await this.authorized(actor, space);
+        if (
+            memberId &&
+            !revalidated.context?.members.some((m) => m.memberId === memberId)
+        )
+            throw new FinancesError('VALIDATION_ERROR', ['memberId']);
         return {
             ...common,
+            canSettle:
+                common.canSettle &&
+                (!memberId || memberId === context?.actorMemberId),
             items,
             nextCursor:
                 rows.length > 20 && last

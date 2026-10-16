@@ -118,6 +118,14 @@ export const externalLiabilitySettlementOpenApi: Pick<
                 parameters: [
                     parameters[0],
                     {
+                        name: 'memberId',
+                        in: 'query',
+                        required: false,
+                        schema: uuid,
+                        description:
+                            'Somente compartilhado: consultar titular autorizado. Sem filtro consulta o ator; leitura alheia retorna canSettle false.',
+                    },
+                    {
                         name: 'cursor',
                         in: 'query',
                         required: false,
@@ -128,7 +136,7 @@ export const externalLiabilitySettlementOpenApi: Pick<
                     ...failures,
                     200: response(
                         'OpenExternalLiabilities',
-                        'P\u00e1gina de at\u00e9 20 obriga\u00e7\u00f5es pr\u00f3prias, ordenada por data e identidade. Cursor vinculado ao espa\u00e7o e titular.',
+                        'Página de até 20 obrigações do titular selecionado, ordenada por data e identidade. Cursor vinculado ao ator, espaço e eventual membro. Somente o próprio titular pode liquidar.',
                     ),
                 },
             },
