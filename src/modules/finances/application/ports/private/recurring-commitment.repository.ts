@@ -1,4 +1,5 @@
 import type { RecurringCommitment } from '../../../domain/recurrence/recurring-commitment.js';
+import type { EconomicShare } from '../../../domain/shared-expense/responsibility-split.js';
 import type {
     FinancialOccurrence,
     OccurrenceFact,
@@ -23,11 +24,18 @@ export interface RecurringCommitmentRepository {
         items: RecurringCommitment[];
         totalCount: number;
         totalAmountInCents: string;
+        unknownAmountCount: number;
     }>;
     occurrence(
         root: RecurringCommitment,
         referenceDate: string,
     ): Promise<FinancialOccurrence | null>;
+    defineValue(
+        root: RecurringCommitment,
+        occurrence: FinancialOccurrence,
+        shares: readonly EconomicShare[] | null,
+        wasProjected: boolean,
+    ): Promise<void>;
     record(
         root: RecurringCommitment,
         occurrence: FinancialOccurrence,

@@ -5,6 +5,7 @@ import {
     Header,
     Param,
     Post,
+    Put,
     Query,
     Res,
 } from '@nestjs/common';
@@ -22,11 +23,13 @@ import { FinancesError } from '../../domain/errors/finances.error.js';
 import { civilDate } from '../../domain/shared-expense/settlement-cycle.js';
 import {
     CreateRecurringCommitmentPipe,
+    SetRecurringValuePipe,
     RecurringDisbursementPipe,
     RecurringReceiptPipe,
     RecurringExternalLiabilityPipe,
     RecurringExternalSettlementPipe,
     type CreateRecurringCommitmentDto,
+    type SetRecurringValueDto,
     type RecurringDisbursementDto,
     type RecurringReceiptDto,
     type RecurringExternalLiabilityDto,
@@ -142,6 +145,28 @@ export class RecurringCommitmentController {
             this.referenceDate(referenceDate),
             cursor,
         );
+    }
+
+    @Put(':id/occurrences/:referenceDate/value')
+    @Header('Cache-Control', 'no-store')
+    async setValue(
+        @CurrentActor() actor: RequestActor,
+        @Param('spaceId') spaceId: string,
+        @Param('id') commitmentId: string,
+        @Param('referenceDate') referenceDate: string,
+        @IdempotencyKey() idempotencyKey: string,
+        @Body(SetRecurringValuePipe) input: SetRecurringValueDto,
+        @Res({ passthrough: true }) response: Response,
+    ) {
+        const result = await this.handler.setValue({
+            ...this.ids(actor, spaceId),
+            ...input,
+            idempotencyKey,
+            commitmentId: commitmentId.toLowerCase(),
+            referenceDate: this.referenceDate(referenceDate),
+        });
+        if (result.replayed) response.status(200);
+        return result;
     }
 
     @Post(':id/occurrences/:referenceDate/disbursements')

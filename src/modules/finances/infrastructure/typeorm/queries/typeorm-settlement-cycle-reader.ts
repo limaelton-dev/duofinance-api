@@ -377,20 +377,25 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                     AND ($5::timestamptz IS NULL OR (registered_at,id)<($5::timestamptz,$6::uuid))
                     ORDER BY registered_at DESC,id DESC LIMIT 21
                 ), origins AS MATERIALIZED (
-                    SELECT c.id,c.kind,c.description,COALESCE(v.amount_in_cents,i.amount_in_cents,r.amount_in_cents) AS amount_in_cents,
+                    SELECT c.id,p0.id AS obligation_id,c.kind,c.description,COALESCE(v.amount_in_cents,i.amount_in_cents,o.amount_in_cents,r.amount_in_cents) AS amount_in_cents,
                         COALESCE((SELECT jsonb_agg(jsonb_build_object('memberId',s.member_id,'amountInCents',s.amount_in_cents) ORDER BY s.member_id)
                             FROM financial_commitment_shares s WHERE s.space_id=$1 AND s.commitment_id=c.id AND s.version=1),
                             (SELECT jsonb_agg(jsonb_build_object('memberId',s.member_id,'amountInCents',s.amount_in_cents) ORDER BY s.member_id)
                             FROM financial_income_shares s WHERE s.space_id=$1 AND s.commitment_id=c.id),
                             (SELECT jsonb_agg(jsonb_build_object('memberId',s.member_id,'amountInCents',s.amount_in_cents) ORDER BY s.member_id)
+                            FROM financial_occurrence_shares s WHERE s.space_id=$1 AND s.occurrence_id=p0.occurrence_id),
+                            (SELECT jsonb_agg(jsonb_build_object('memberId',s.member_id,'amountInCents',s.amount_in_cents) ORDER BY s.member_id)
                             FROM financial_recurrence_shares s WHERE s.space_id=$1 AND s.commitment_id=c.id AND s.version=1),'[]'::jsonb) AS shares,
                         COALESCE((SELECT s.amount_in_cents FROM financial_commitment_shares s WHERE s.space_id=$1 AND s.commitment_id=c.id AND s.version=1 AND s.member_id=$2),
                             (SELECT s.amount_in_cents FROM financial_income_shares s WHERE s.space_id=$1 AND s.commitment_id=c.id AND s.member_id=$2),
+                            (SELECT s.amount_in_cents FROM financial_occurrence_shares s WHERE s.space_id=$1 AND s.occurrence_id=p0.occurrence_id AND s.member_id=$2),
                             (SELECT s.amount_in_cents FROM financial_recurrence_shares s WHERE s.space_id=$1 AND s.commitment_id=c.id AND s.version=1 AND s.member_id=$2),0) AS actor_amount
-                    FROM financial_commitments c LEFT JOIN financial_commitment_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id AND v.version=1
+                    FROM page p0 JOIN financial_commitments c ON c.space_id=p0.space_id AND c.id=p0.commitment_id
+                    LEFT JOIN financial_occurrences o ON o.space_id=c.space_id AND o.id=p0.occurrence_id
+                    LEFT JOIN financial_commitment_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id AND v.version=1
                     LEFT JOIN financial_income_versions i ON i.space_id=c.space_id AND i.commitment_id=c.id
                     LEFT JOIN financial_recurrence_versions r ON r.space_id=c.space_id AND r.commitment_id=c.id AND r.version=1
-                    WHERE c.space_id=$1 AND c.id IN (SELECT commitment_id FROM page)
+                    WHERE c.space_id=$1
                 )
                 SELECT jsonb_build_object('id',p.id,'version',p.version,'status',p.status,'debtorMemberId',p.debtor_member_id,'creditorMemberId',p.creditor_member_id,
                     'originalAmountInCents',p.original_amount_in_cents,'recognizedAmountInCents',p.recognized_amount_in_cents,
@@ -408,7 +413,7 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                         'occurrenceId',p.occurrence_id,'disbursementId',p.disbursement_id,'receiptId',p.receipt_id,'externalLiabilityId',p.external_liability_id,'amountInCents',c.amount_in_cents,
                         'distribution',jsonb_build_object('kind',CASE WHEN c.kind='INCOME' THEN 'PARTICIPATION' ELSE 'RESPONSIBILITY' END,
                             'shares',c.shares,'actorAmountInCents',c.actor_amount)))) AS item
-                FROM page p JOIN origins c ON c.id=p.commitment_id
+                FROM page p JOIN origins c ON c.obligation_id=p.id
                 CROSS JOIN LATERAL (
                     SELECT COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.obligation_id=p.id),0) AS transferred,
                         COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_reversal_applications a WHERE a.space_id=$1 AND a.original_obligation_id=p.id AND a.original_transfer_allocation_id IS NOT NULL),0) AS reversed_transferred,

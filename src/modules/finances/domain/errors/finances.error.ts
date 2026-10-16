@@ -22,6 +22,7 @@ export type FinancesErrorCode =
     | 'INCOME_ALREADY_RECEIVED'
     | 'EXPENSE_ALREADY_PAID'
     | 'OCCURRENCE_ALREADY_RESOLVED'
+    | 'OCCURRENCE_VALUE_REQUIRED'
     | 'INCOME_OPTIONS_CHANGED';
 const messages: Record<FinancesErrorCode, string> = {
     SETTLEMENT_RESOLUTION_ALREADY_REVERSED:
@@ -57,6 +58,8 @@ const messages: Record<FinancesErrorCode, string> = {
     EXPENSE_ALREADY_PAID: 'Esta despesa já foi integralmente realizada.',
     OCCURRENCE_ALREADY_RESOLVED:
         'Esta ocorrência já foi realizada ou cancelada. Atualize e confirme novamente.',
+    OCCURRENCE_VALUE_REQUIRED:
+        'Informe o valor efetivo desta ocorrência antes de registrar a realização.',
     INCOME_OPTIONS_CHANGED: 'As opções mudaram. Atualize e confirme novamente.',
 };
 export class FinancesError extends Error {

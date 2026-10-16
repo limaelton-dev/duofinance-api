@@ -94,27 +94,69 @@ const base = {
         minLength: 1,
         maxLength: 160,
     } as SchemaObject,
-    amountInCents: amount,
     recurrence,
     startsOn: date,
     endsOn: { oneOf: [date, { type: 'null' }] } as SchemaObject,
 };
 const personal = object({
     scope: { type: 'string', enum: ['PERSONAL'] },
+    valueMode: { type: 'string', enum: ['FIXED'] },
+    amountInCents: amount,
     ...base,
 });
 personal.required = personal.required!.filter(
-    (x) => !['startsOn', 'endsOn'].includes(x),
+    (x) => !['startsOn', 'endsOn', 'valueMode'].includes(x),
 );
 const shared = object({
     scope: { type: 'string', enum: ['SHARED'] },
+    valueMode: { type: 'string', enum: ['FIXED'] },
+    amountInCents: amount,
     ...base,
     expectedSpaceVersion: version,
     distribution: ref('ResponsibilitySplit'),
     expectedMemberId: { oneOf: [uuid, { type: 'null' }] },
 });
 shared.required = shared.required!.filter(
-    (x) => !['startsOn', 'endsOn', 'expectedMemberId'].includes(x),
+    (x) => !['startsOn', 'endsOn', 'expectedMemberId', 'valueMode'].includes(x),
+);
+const percentageDistribution: SchemaObject = object({
+    mode: { type: 'string', enum: ['PERCENTAGES'] },
+    shares: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 2,
+        items: object({
+            memberId: uuid,
+            basisPoints: { type: 'integer', minimum: 0, maximum: 10000 },
+        }),
+    },
+});
+const variablePersonal = object({
+    scope: { type: 'string', enum: ['PERSONAL'] },
+    valueMode: { type: 'string', enum: ['VARIABLE'] },
+    expectedAmountInCents: { oneOf: [amount, { type: 'null' }] },
+    ...base,
+});
+variablePersonal.required = variablePersonal.required!.filter(
+    (x) => !['startsOn', 'endsOn', 'expectedAmountInCents'].includes(x),
+);
+const variableShared = object({
+    scope: { type: 'string', enum: ['SHARED'] },
+    valueMode: { type: 'string', enum: ['VARIABLE'] },
+    expectedAmountInCents: { oneOf: [amount, { type: 'null' }] },
+    ...base,
+    expectedSpaceVersion: version,
+    distribution: percentageDistribution,
+    expectedMemberId: { oneOf: [uuid, { type: 'null' }] },
+});
+variableShared.required = variableShared.required!.filter(
+    (x) =>
+        ![
+            'startsOn',
+            'endsOn',
+            'expectedMemberId',
+            'expectedAmountInCents',
+        ].includes(x),
 );
 const factCommon = {
     id: uuid,
@@ -153,13 +195,39 @@ const occurrence = object({
     referenceDate: date,
     economicVersion: version,
     stateVersion: version,
-    amountInCents: amount,
+    amountInCents: { oneOf: [amount, { type: 'null' }] },
+    expectedAmountInCents: { oneOf: [amount, { type: 'null' }] },
+    valuePending: { type: 'boolean' },
+    economicShares: {
+        oneOf: [
+            {
+                type: 'array',
+                items: object({
+                    memberId: uuid,
+                    amountInCents: { type: 'integer', minimum: 0 },
+                }),
+            },
+            { type: 'null' },
+        ],
+    },
+    valueHistory: {
+        type: 'array',
+        items: object({
+            version,
+            previousAmountInCents: { oneOf: [amount, { type: 'null' }] },
+            amountInCents: amount,
+            actorId: uuid,
+            registeredAt: { type: 'string', format: 'date-time' },
+        }),
+    },
     status: {
         type: 'string',
         enum: ['PENDING', 'PARTIALLY_FULFILLED', 'FULFILLED', 'CANCELLED'],
     },
     fulfilledAmountInCents: { type: 'integer', minimum: 0 },
-    remainingAmountInCents: { type: 'integer', minimum: 0 },
+    remainingAmountInCents: {
+        oneOf: [{ type: 'integer', minimum: 0 }, { type: 'null' }],
+    },
     materializedAt: {
         oneOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }],
     },
@@ -263,7 +331,9 @@ const recurringCommitment = object({
     kind: { type: 'string', enum: ['EXPENSE', 'INCOME'] },
     modality: { type: 'string', enum: ['RECURRING'] },
     description: { type: 'string' },
-    amountInCents: amount,
+    valueMode: { type: 'string', enum: ['FIXED', 'VARIABLE'] },
+    amountInCents: { oneOf: [amount, { type: 'null' }] },
+    expectedAmountInCents: { oneOf: [amount, { type: 'null' }] },
     recurrence,
     startsOn: date,
     endsOn: { oneOf: [date, { type: 'null' }] },
@@ -273,8 +343,14 @@ const recurringCommitment = object({
     version,
     scope: { type: 'string', enum: ['PERSONAL', 'SHARED'] },
     nextOccurrence: {
+        description:
+            'Projeção da série a partir de hoje; consulte occurrences para o estado materializado.',
         oneOf: [
-            object({ referenceDate: date, amountInCents: amount }),
+            object({
+                referenceDate: date,
+                amountInCents: { oneOf: [amount, { type: 'null' }] },
+                expectedAmountInCents: { oneOf: [amount, { type: 'null' }] },
+            }),
             { type: 'null' },
         ],
     },
@@ -376,6 +452,7 @@ const command = (operationId: string, request: string) => ({
             'SETTLEMENT_CYCLE_FINALIZED',
             'IDEMPOTENCY_KEY_REUSED',
             'EXPENSE_OPTIONS_CHANGED',
+            'OCCURRENCE_VALUE_REQUIRED',
         ),
     },
 });
@@ -402,7 +479,7 @@ export const recurringCommitmentOpenApi: Pick<
                 responses: {
                     201: response(
                         ref('CreateRecurringCommitmentResponse'),
-                        'Série fixa criada.',
+                        'Série recorrente criada.',
                     ),
                     200: response(
                         ref('CreateRecurringCommitmentResponse'),
@@ -503,6 +580,32 @@ export const recurringCommitmentOpenApi: Pick<
                     },
                 },
             },
+        '/v2/spaces/{spaceId}/recurring-commitments/{id}/occurrences/{referenceDate}/value':
+            {
+                put: {
+                    ...command(
+                        'setRecurringOccurrenceValue',
+                        'SetRecurringOccurrenceValueRequest',
+                    ),
+                    responses: {
+                        200: response(
+                            ref('RecurringFulfillmentResponse'),
+                            'Valor efetivo definido ou resposta reproduzida.',
+                        ),
+                        400: error('VALIDATION_ERROR'),
+                        404: error(
+                            'SPACE_NOT_FOUND',
+                            'FINANCIAL_COMMITMENT_NOT_FOUND',
+                        ),
+                        409: error(
+                            'CONCURRENT_MODIFICATION',
+                            'OCCURRENCE_ALREADY_RESOLVED',
+                            'IDEMPOTENCY_KEY_REUSED',
+                            'EXPENSE_OPTIONS_CHANGED',
+                        ),
+                    },
+                },
+            },
         '/v2/spaces/{spaceId}/recurring-commitments/{id}/occurrences/{referenceDate}/disbursements':
             {
                 post: command(
@@ -548,8 +651,7 @@ export const recurringCommitmentOpenApi: Pick<
     components: {
         schemas: {
             CreateRecurringCommitmentRequest: {
-                oneOf: [personal, shared],
-                discriminator: { propertyName: 'scope' },
+                oneOf: [personal, shared, variablePersonal, variableShared],
             },
             RecurringCommitment: recurringCommitment,
             CreateRecurringCommitmentResponse: object({
@@ -568,6 +670,7 @@ export const recurringCommitmentOpenApi: Pick<
                 },
                 totalCount: { type: 'integer', minimum: 0 },
                 totalAmountInCents: { type: 'string' },
+                unknownAmountCount: { type: 'integer', minimum: 0 },
                 nextCursor: { oneOf: [{ type: 'string' }, { type: 'null' }] },
             }),
             RecurringOccurrenceList: object({
@@ -576,8 +679,24 @@ export const recurringCommitmentOpenApi: Pick<
                 items: { type: 'array', items: ref('FinancialOccurrence') },
                 totalCount: { type: 'integer', minimum: 0 },
                 totalAmountInCents: { type: 'string' },
+                unknownAmountCount: { type: 'integer', minimum: 0 },
             }),
             RecurringOccurrenceOptions: options,
+            SetRecurringOccurrenceValueRequest: {
+                oneOf: [
+                    object({
+                        expectedCommitmentVersion: version,
+                        expectedOccurrenceVersion: version,
+                        amountInCents: amount,
+                    }),
+                    object({
+                        expectedCommitmentVersion: version,
+                        expectedOccurrenceVersion: version,
+                        expectedSpaceVersion: version,
+                        amountInCents: amount,
+                    }),
+                ],
+            },
             RecurringDisbursementRequest: body({
                 method: { type: 'string', enum: ['PIX', 'DEBIT', 'CASH'] },
             }),

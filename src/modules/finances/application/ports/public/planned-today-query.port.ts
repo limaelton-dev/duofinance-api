@@ -14,9 +14,11 @@ export interface PlannedTodayQueryPort {
             kind: 'EXPENSE' | 'INCOME';
             description: string;
             expectedDate: string;
-            amountInCents: number;
+            amountInCents: number | null;
+            expectedAmountInCents: number | null;
+            valuePending: boolean;
             fulfilledAmountInCents: number;
-            remainingAmountInCents: number;
+            remainingAmountInCents: number | null;
             overdue: boolean;
         }[];
         totalCount: number;

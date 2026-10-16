@@ -29,6 +29,7 @@ import { civilDate } from '../../domain/shared-expense/settlement-cycle.js';
 import type { SettlementSelection } from '../../domain/shared-expense/settlement-selection.js';
 import type {
     CreateRecurringCommitmentDto,
+    SetRecurringValueDto,
     RecurringDisbursementDto,
     RecurringReceiptDto,
     RecurringExternalLiabilityDto,
@@ -57,6 +58,8 @@ import { ReconcileFinancialOrigin } from './reconcile-financial-origin.js';
 
 type Base = { actorId: PersonId; spaceId: SpaceId; idempotencyKey: string };
 type Create = Base & CreateRecurringCommitmentDto;
+type SetValue = Base &
+    SetRecurringValueDto & { commitmentId: string; referenceDate: string };
 type Fulfillment = Base & { commitmentId: string; referenceDate: string } & (
         | ({ kind: 'DISBURSEMENT' } & RecurringDisbursementDto)
         | ({ kind: 'RECEIPT' } & RecurringReceiptDto)
@@ -94,11 +97,32 @@ function view(
         referenceDate,
         economicVersion: occurrence?.economicVersion ?? root.economicVersion,
         stateVersion: occurrence?.stateVersion ?? 1,
-        amountInCents: occurrence?.amountInCents ?? root.amountInCents,
+        amountInCents: occurrence
+            ? occurrence.amountInCents
+            : root.valueMode === 'FIXED'
+              ? root.amountInCents
+              : null,
+        expectedAmountInCents: root.amountInCents,
+        valuePending:
+            root.valueMode === 'VARIABLE' && (occurrence?.valuePending ?? true),
+        economicShares:
+            occurrence?.amountInCents !== null &&
+            occurrence?.amountInCents !== undefined
+                ? (root.effectiveSplit(occurrence.amountInCents)?.shares ??
+                  null)
+                : root.valueMode === 'FIXED'
+                  ? root.participation.type === 'SHARED'
+                      ? (root.participation.split?.shares ?? null)
+                      : null
+                  : null,
+        valueHistory: occurrence?.valueHistory ?? [],
         status: occurrence?.status ?? 'PENDING',
         fulfilledAmountInCents: occurrence?.fulfilledAmountInCents ?? 0,
-        remainingAmountInCents:
-            occurrence?.remainingAmountInCents ?? root.amountInCents,
+        remainingAmountInCents: occurrence
+            ? occurrence.remainingAmountInCents
+            : root.valueMode === 'FIXED'
+              ? root.amountInCents
+              : null,
         materializedAt: occurrence?.materializedAt ?? null,
         facts: occurrence?.facts ?? [],
         externalSettlements: occurrence?.externalSettlements ?? [],
@@ -114,7 +138,9 @@ function rootView(root: RecurringCommitment, today: string) {
         kind: root.kind,
         modality: root.modality,
         description: root.description,
-        amountInCents: root.amountInCents,
+        valueMode: root.valueMode,
+        amountInCents: root.valueMode === 'FIXED' ? root.amountInCents : null,
+        expectedAmountInCents: root.amountInCents,
         recurrence: root.rule.pattern,
         startsOn: root.rule.startsOn,
         endsOn: root.rule.endsOn,
@@ -126,10 +152,9 @@ function rootView(root: RecurringCommitment, today: string) {
         ...(p.type === 'PERSONAL'
             ? { ownerPersonId: p.ownerPersonId }
             : {
-                  distribution: {
-                      ...p.split.original,
-                      calculatedShares: p.split.shares,
-                  },
+                  distribution: p.split
+                      ? { ...p.distribution, calculatedShares: p.split.shares }
+                      : p.distribution,
                   expectedMemberId: p.expectedMemberId,
                   settlementRuleSnapshot: p.settlementRuleSnapshot,
                   settlementRuleSourceVersion: p.settlementRuleSourceVersion,
@@ -137,7 +162,9 @@ function rootView(root: RecurringCommitment, today: string) {
         nextOccurrence: nextOccurrenceDate
             ? {
                   referenceDate: nextOccurrenceDate,
-                  amountInCents: root.amountInCents,
+                  amountInCents:
+                      root.valueMode === 'FIXED' ? root.amountInCents : null,
+                  expectedAmountInCents: root.amountInCents,
               }
             : null,
     };
@@ -163,7 +190,7 @@ export class RecurringCommitmentHandler {
     ) {}
 
     async create(c: Create) {
-        const operation = 'CREATE_FIXED_RECURRING_COMMITMENT';
+        const operation = 'CREATE_RECURRING_COMMITMENT';
         const hash = digest(operation, c.spaceId.value, {
             ...c,
             actorId: undefined,
@@ -225,11 +252,15 @@ export class RecurringCommitmentHandler {
                               );
                               return {
                                   type: 'SHARED' as const,
-                                  split: ResponsibilitySplit.create(
-                                      c.amountInCents,
-                                      ids,
-                                      c.distribution,
-                                  ),
+                                  split:
+                                      c.valueMode === 'FIXED'
+                                          ? ResponsibilitySplit.create(
+                                                c.amountInCents,
+                                                ids,
+                                                c.distribution,
+                                            )
+                                          : null,
+                                  distribution: c.distribution,
                                   expectedMemberId: c.expectedMemberId ?? null,
                                   settlementRuleSnapshot:
                                       rule?.rule.snapshot ?? null,
@@ -247,7 +278,9 @@ export class RecurringCommitmentHandler {
                     c.spaceId.value,
                     c.kind,
                     c.description,
-                    c.amountInCents,
+                    c.valueMode === 'FIXED'
+                        ? c.amountInCents
+                        : (c.expectedAmountInCents ?? null),
                     new RecurrenceRule(
                         c.recurrence,
                         c.startsOn ?? this.clock.today(),
@@ -258,6 +291,7 @@ export class RecurringCommitmentHandler {
                     1,
                     1,
                     participation,
+                    c.valueMode,
                 );
                 await this.repository.save(root);
                 const result = {
@@ -350,6 +384,7 @@ export class RecurringCommitmentHandler {
             items,
             totalCount: result.totalCount,
             totalAmountInCents: result.totalAmountInCents,
+            unknownAmountCount: result.unknownAmountCount,
             nextCursor: last
                 ? Buffer.from(
                       JSON.stringify([
@@ -385,8 +420,22 @@ export class RecurringCommitmentHandler {
                 : [],
             totalCount: projection ? 1 : 0,
             totalAmountInCents: projection
-                ? String(projection.amountInCents)
+                ? String(
+                      materialized?.amountInCents ??
+                          projection.amountInCents ??
+                          0,
+                  )
                 : '0',
+            unknownAmountCount:
+                projection &&
+                materialized?.amountInCents === undefined &&
+                projection.amountInCents === null
+                    ? 1
+                    : projection &&
+                        materialized?.amountInCents === null &&
+                        projection.amountInCents === null
+                      ? 1
+                      : 0,
         };
     }
 
@@ -491,6 +540,143 @@ export class RecurringCommitmentHandler {
                       ).toString('base64url')
                     : null,
         };
+    }
+
+    async setValue(c: SetValue) {
+        const operation = 'SET_RECURRING_OCCURRENCE_VALUE';
+        const hash = digest(operation, c.spaceId.value, {
+            ...c,
+            actorId: undefined,
+            spaceId: undefined,
+            idempotencyKey: undefined,
+        });
+        const execute = async () =>
+            this.uow.execute(async () => {
+                const access = await this.access.assertCanRead(
+                    c.actorId,
+                    c.spaceId,
+                );
+                const prior = await this.repository.findReceipt(
+                    c.actorId.value,
+                    operation,
+                    c.idempotencyKey,
+                    hash,
+                );
+                if (prior) return { ...(prior as object), replayed: true };
+                const context =
+                    access.type === 'SHARED'
+                        ? await this.context.lockForFulfillment(
+                              c.actorId,
+                              c.spaceId,
+                          )
+                        : null;
+                if (!context)
+                    await this.access.assertCanWrite(c.actorId, c.spaceId);
+                if ((context !== null) !== 'expectedSpaceVersion' in c)
+                    throw new FinancesError('VALIDATION_ERROR', [
+                        'expectedSpaceVersion',
+                    ]);
+                if (
+                    context &&
+                    context.version !==
+                        ('expectedSpaceVersion' in c
+                            ? c.expectedSpaceVersion
+                            : undefined)
+                )
+                    throw new FinancesError('EXPENSE_OPTIONS_CHANGED');
+                const root = await this.repository.find(
+                    c.spaceId.value,
+                    c.commitmentId,
+                    true,
+                );
+                if (!root || !root.rule.contains(c.referenceDate))
+                    throw new FinancesError('FINANCIAL_COMMITMENT_NOT_FOUND');
+                if (root.valueMode !== 'VARIABLE')
+                    throw new FinancesError('VALIDATION_ERROR', ['valueMode']);
+                if (
+                    (root.participation.type === 'SHARED') !==
+                    (context !== null)
+                )
+                    throw new FinancesError('FINANCIAL_COMMITMENT_NOT_FOUND');
+                const replay = await this.repository.findReceipt(
+                    c.actorId.value,
+                    operation,
+                    c.idempotencyKey,
+                    hash,
+                );
+                if (replay) return { ...(replay as object), replayed: true };
+                if (root.version !== c.expectedCommitmentVersion)
+                    throw new FinancesError('CONCURRENT_MODIFICATION');
+                const now = this.clock.now().toISOString();
+                const existing = await this.repository.occurrence(
+                    root,
+                    c.referenceDate,
+                );
+                const occurrence =
+                    existing ??
+                    new FinancialOccurrence(
+                        randomUUID(),
+                        root.id,
+                        root.spaceId,
+                        c.referenceDate,
+                        root.economicVersion,
+                        1,
+                        null,
+                        [],
+                        now,
+                    );
+                const next = occurrence.defineValue(
+                    c.amountInCents,
+                    c.expectedOccurrenceVersion,
+                    c.actorId.value,
+                    now,
+                );
+                const shares =
+                    root.effectiveSplit(c.amountInCents)?.shares ?? null;
+                await this.repository.defineValue(
+                    root,
+                    next,
+                    shares,
+                    existing === null,
+                );
+                const result = {
+                    commitment: rootView(root, this.clock.today()),
+                    occurrence: view(root, next, c.referenceDate),
+                    replayed: false,
+                };
+                await this.repository.saveReceipt(
+                    c.actorId.value,
+                    c.spaceId.value,
+                    root.id,
+                    next.id,
+                    operation,
+                    c.idempotencyKey,
+                    hash,
+                    result,
+                    now,
+                );
+                return result;
+            });
+        try {
+            return await execute();
+        } catch (error) {
+            if (
+                !(error instanceof QueryFailedError) ||
+                error.driverError.code !== '23505'
+            )
+                throw error;
+            return this.uow.execute(async () => {
+                await this.access.assertCanRead(c.actorId, c.spaceId);
+                const prior = await this.repository.findReceipt(
+                    c.actorId.value,
+                    operation,
+                    c.idempotencyKey,
+                    hash,
+                );
+                if (!prior) throw error;
+                return { ...(prior as object), replayed: true };
+            });
+        }
     }
 
     async record(c: Fulfillment) {
@@ -645,7 +831,7 @@ export class RecurringCommitmentHandler {
                         c.referenceDate,
                         root.economicVersion,
                         1,
-                        root.amountInCents,
+                        root.valueMode === 'FIXED' ? root.amountInCents : null,
                         [],
                         now,
                     );
@@ -786,13 +972,13 @@ export class RecurringCommitmentHandler {
                 root.id,
                 root.spaceId,
                 root.description,
-                occurrence.amountInCents,
+                occurrence.amountInCents!,
                 occurrence.referenceDate,
                 root.createdByPersonId,
                 root.registeredAt,
                 {
                     type: 'SHARED',
-                    split: p.split,
+                    split: root.effectiveSplit(occurrence.amountInCents!)!,
                     expectedRecipientMemberId: p.expectedMemberId,
                     settlementRuleSnapshot: p.settlementRuleSnapshot,
                     settlementRuleSourceVersion: p.settlementRuleSourceVersion,
@@ -851,7 +1037,7 @@ export class RecurringCommitmentHandler {
             root.registeredAt,
             {
                 version: 1,
-                split: p.split,
+                split: root.effectiveSplit(occurrence.amountInCents!)!,
                 expectedPayerMemberId: p.expectedMemberId,
                 factDate: null,
                 expectedPaymentDate: occurrence.referenceDate,

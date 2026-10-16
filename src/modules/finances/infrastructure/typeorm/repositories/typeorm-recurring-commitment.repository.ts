@@ -10,7 +10,10 @@ import {
 } from '../../../domain/recurrence/financial-occurrence.js';
 import { RecurringCommitment } from '../../../domain/recurrence/recurring-commitment.js';
 import { RecurrenceRule } from '../../../domain/recurrence/recurrence-rule.js';
-import { ResponsibilitySplit } from '../../../domain/shared-expense/responsibility-split.js';
+import {
+    ResponsibilitySplit,
+    type EconomicShare,
+} from '../../../domain/shared-expense/responsibility-split.js';
 import {
     FinancialCommitmentOrmEntity,
     FinancialDisbursementOrmEntity,
@@ -53,6 +56,7 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
             spaceId: root.spaceId,
             version: root.economicVersion,
             amountInCents: root.amountInCents,
+            valueMode: root.valueMode,
             frequency: root.rule.pattern.frequency,
             dayOfMonth: root.rule.pattern.dayOfMonth,
             monthOfYear:
@@ -62,14 +66,14 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
             startsOn: root.rule.startsOn,
             endsOn: root.rule.endsOn,
             ownerPersonId: p.type === 'PERSONAL' ? p.ownerPersonId : null,
-            splitInput: p.type === 'SHARED' ? p.split.original : null,
+            splitInput: p.type === 'SHARED' ? p.distribution : null,
             expectedMemberId: p.type === 'SHARED' ? p.expectedMemberId : null,
             ruleSnapshot: p.type === 'SHARED' ? p.settlementRuleSnapshot : null,
             ruleSourceVersion:
                 p.type === 'SHARED' ? p.settlementRuleSourceVersion : 0,
             registeredAt: new Date(root.registeredAt),
         });
-        if (p.type === 'SHARED')
+        if (p.type === 'SHARED' && p.split)
             for (const share of p.split.shares)
                 await m.insert(FinancialRecurrenceShareOrmEntity, {
                     commitmentId: root.id,
@@ -131,11 +135,15 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
             ? { type: 'PERSONAL' as const, ownerPersonId: v.ownerPersonId }
             : {
                   type: 'SHARED' as const,
-                  split: ResponsibilitySplit.create(
-                      v.amountInCents,
-                      v.splitInput!.shares.map((s) => s.memberId),
-                      v.splitInput!,
-                  ),
+                  split:
+                      v.valueMode === 'FIXED'
+                          ? ResponsibilitySplit.create(
+                                v.amountInCents!,
+                                v.splitInput!.shares.map((s) => s.memberId),
+                                v.splitInput!,
+                            )
+                          : null,
+                  distribution: v.splitInput!,
                   expectedMemberId: v.expectedMemberId,
                   settlementRuleSnapshot: v.ruleSnapshot,
                   settlementRuleSourceVersion: v.ruleSourceVersion,
@@ -152,6 +160,7 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
             v.version,
             c.version,
             participation,
+            v.valueMode,
         );
     }
 
@@ -171,10 +180,12 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
         const last = `((date_trunc('month',$2::date)+interval '1 month - 1 day')::date)`;
         const candidate = `make_date(EXTRACT(YEAR FROM $2::date)::integer,EXTRACT(MONTH FROM $2::date)::integer,LEAST(v.day_of_month,EXTRACT(DAY FROM ${last})::integer))`;
         const conditions = `c.space_id=$1 AND c.modality='RECURRING' AND v.version=1 AND (v.frequency='MONTHLY' OR v.month_of_year=EXTRACT(MONTH FROM $2::date)::integer) AND ${candidate}>=v.starts_on AND (v.ends_on IS NULL OR ${candidate}<=v.ends_on)`;
-        const counts: { count: string; amount: string }[] = await m.query(
-            `SELECT COUNT(*)::text AS count,COALESCE(SUM(v.amount_in_cents),0)::text AS amount FROM financial_commitments c JOIN financial_recurrence_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id WHERE ${conditions}`,
-            [spaceId, start],
-        );
+        const effective = `CASE WHEN v.value_mode='VARIABLE' THEN o.amount_in_cents ELSE v.amount_in_cents END`;
+        const counts: { count: string; amount: string; unknown: string }[] =
+            await m.query(
+                `SELECT COUNT(*)::text AS count,COALESCE(SUM(${effective}),0)::text AS amount,COUNT(*) FILTER (WHERE ${effective} IS NULL)::text AS unknown FROM financial_commitments c JOIN financial_recurrence_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id LEFT JOIN financial_occurrences o ON o.space_id=c.space_id AND o.commitment_id=c.id AND o.reference_date=${candidate} WHERE ${conditions}`,
+                [spaceId, start],
+            );
         const ids: { id: string }[] = await m.query(
             `SELECT c.id FROM financial_commitments c JOIN financial_recurrence_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id WHERE ${conditions} AND ($3::uuid IS NULL OR c.id>$3::uuid) ORDER BY c.id LIMIT 21`,
             [spaceId, start, after],
@@ -184,6 +195,7 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
                 items: [],
                 totalCount: Number(counts[0].count),
                 totalAmountInCents: counts[0].amount,
+                unknownAmountCount: Number(counts[0].unknown),
             };
         const keys = ids.map((row) => row.id);
         const [roots, versions] = await Promise.all([
@@ -203,6 +215,7 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
             items,
             totalCount: Number(counts[0].count),
             totalAmountInCents: counts[0].amount,
+            unknownAmountCount: Number(counts[0].unknown),
         };
     }
 
@@ -312,6 +325,16 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
         const facts: OccurrenceFact[] = sequenced
             .sort((a, b) => a.sequence - b.sequence)
             .map((row) => row.fact);
+        const changes: {
+            version: number;
+            previous_amount_in_cents: string | null;
+            amount_in_cents: string;
+            actor_id: string;
+            registered_at: Date;
+        }[] = await m.query(
+            `SELECT version,previous_amount_in_cents,amount_in_cents,actor_id,registered_at FROM financial_occurrence_value_changes WHERE occurrence_id=$1 ORDER BY version`,
+            [row.id],
+        );
         return new FinancialOccurrence(
             row.id,
             row.commitmentId,
@@ -331,7 +354,85 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
                 registeredAt: s.registered_at.toISOString(),
                 recordedByPersonId: s.recorded_by_person_id,
             })),
+            changes.map((change) => ({
+                version: change.version,
+                previousAmountInCents:
+                    change.previous_amount_in_cents === null
+                        ? null
+                        : Number(change.previous_amount_in_cents),
+                amountInCents: Number(change.amount_in_cents),
+                actorId: change.actor_id,
+                registeredAt: change.registered_at.toISOString(),
+            })),
         );
+    }
+
+    async defineValue(
+        root: RecurringCommitment,
+        occurrence: FinancialOccurrence,
+        shares: readonly EconomicShare[] | null,
+        wasProjected: boolean,
+    ): Promise<void> {
+        const m = this.manager();
+        const change = occurrence.valueHistory.at(-1)!;
+        if (wasProjected) {
+            await m.insert(FinancialOccurrenceOrmEntity, {
+                id: occurrence.id,
+                spaceId: root.spaceId,
+                commitmentId: root.id,
+                referenceDate: occurrence.referenceDate,
+                economicVersion: occurrence.economicVersion,
+                stateVersion: occurrence.stateVersion,
+                amountInCents: occurrence.amountInCents,
+                status: occurrence.status,
+                materializedAt: new Date(occurrence.materializedAt),
+            });
+        } else {
+            const changed = await m.update(
+                FinancialOccurrenceOrmEntity,
+                {
+                    id: occurrence.id,
+                    spaceId: root.spaceId,
+                    stateVersion: occurrence.stateVersion - 1,
+                    status: 'PENDING',
+                },
+                {
+                    stateVersion: occurrence.stateVersion,
+                    amountInCents: occurrence.amountInCents,
+                },
+            );
+            if (changed.affected !== 1)
+                throw new FinancesError('CONCURRENT_MODIFICATION');
+        }
+        await m.query(
+            `INSERT INTO financial_occurrence_value_changes (occurrence_id,version,space_id,commitment_id,previous_amount_in_cents,amount_in_cents,shares,actor_id,registered_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+            [
+                occurrence.id,
+                change.version,
+                root.spaceId,
+                root.id,
+                change.previousAmountInCents,
+                change.amountInCents,
+                shares ? JSON.stringify(shares) : null,
+                change.actorId,
+                change.registeredAt,
+            ],
+        );
+        await m.query(
+            `DELETE FROM financial_occurrence_shares WHERE occurrence_id=$1`,
+            [occurrence.id],
+        );
+        for (const share of shares ?? [])
+            await m.query(
+                `INSERT INTO financial_occurrence_shares (occurrence_id,member_id,space_id,commitment_id,amount_in_cents) VALUES ($1,$2,$3,$4,$5)`,
+                [
+                    occurrence.id,
+                    share.memberId,
+                    root.spaceId,
+                    root.id,
+                    share.amountInCents,
+                ],
+            );
     }
 
     private async nextSequence(root: RecurringCommitment): Promise<number> {

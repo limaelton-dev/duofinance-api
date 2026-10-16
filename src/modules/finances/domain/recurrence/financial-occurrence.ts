@@ -45,11 +45,21 @@ export interface OccurrenceExternalSettlement {
     recordedByPersonId: string;
 }
 
+export interface OccurrenceValueChange {
+    version: number;
+    previousAmountInCents: number | null;
+    amountInCents: number;
+    actorId: string;
+    registeredAt: string;
+}
+
 export class FinancialOccurrence {
     readonly facts: readonly OccurrenceFact[];
     readonly externalSettlements: readonly OccurrenceExternalSettlement[];
+    readonly valueHistory: readonly OccurrenceValueChange[];
     readonly fulfilledAmountInCents: number;
-    readonly remainingAmountInCents: number;
+    readonly remainingAmountInCents: number | null;
+    readonly valuePending: boolean;
     readonly status:
         'PENDING' | 'PARTIALLY_FULFILLED' | 'FULFILLED' | 'CANCELLED';
 
@@ -60,19 +70,20 @@ export class FinancialOccurrence {
         readonly referenceDate: string,
         readonly economicVersion: number,
         readonly stateVersion: number,
-        readonly amountInCents: number,
+        readonly amountInCents: number | null,
         facts: readonly OccurrenceFact[],
         readonly materializedAt: string,
         status?: 'PENDING' | 'PARTIALLY_FULFILLED' | 'FULFILLED' | 'CANCELLED',
         settlements: readonly OccurrenceExternalSettlement[] = [],
+        valueHistory: readonly OccurrenceValueChange[] = [],
     ) {
-        Money.from(amountInCents);
+        if (amountInCents !== null) Money.from(amountInCents);
         civilDate(referenceDate);
         if (
             !id ||
             !commitmentId ||
             !spaceId ||
-            amountInCents < 1 ||
+            (amountInCents !== null && amountInCents < 1) ||
             !Number.isInteger(economicVersion) ||
             economicVersion < 1 ||
             !Number.isInteger(stateVersion) ||
@@ -97,8 +108,29 @@ export class FinancialOccurrence {
                 throw new FinancesError('VALIDATION_ERROR');
             fulfilled += BigInt(fact.amountInCents);
         }
-        if (fulfilled > BigInt(amountInCents))
+        if (amountInCents === null && fulfilled > 0n)
+            throw new FinancesError('OCCURRENCE_VALUE_REQUIRED');
+        if (amountInCents !== null && fulfilled > BigInt(amountInCents))
             throw new FinancesError('VALIDATION_ERROR', ['amountInCents']);
+        if (valueHistory.length) {
+            let previous: number | null = null;
+            for (const [index, change] of valueHistory.entries()) {
+                Money.from(change.amountInCents);
+                if (
+                    change.version !== index + 2 ||
+                    change.previousAmountInCents !== previous ||
+                    !change.actorId ||
+                    !Number.isFinite(Date.parse(change.registeredAt))
+                )
+                    throw new FinancesError('VALIDATION_ERROR');
+                previous = change.amountInCents;
+            }
+            if (
+                previous !== amountInCents ||
+                stateVersion < valueHistory.at(-1)!.version
+            )
+                throw new FinancesError('VALIDATION_ERROR');
+        }
         if (
             new Set(settlements.map((item) => item.id)).size !==
             settlements.length
@@ -147,9 +179,15 @@ export class FinancialOccurrence {
         this.externalSettlements = Object.freeze(
             settlements.map((item) => Object.freeze({ ...item })),
         );
+        this.valueHistory = Object.freeze(
+            valueHistory.map((item) => Object.freeze({ ...item })),
+        );
         this.fulfilledAmountInCents = Number(fulfilled);
         this.remainingAmountInCents =
-            amountInCents - this.fulfilledAmountInCents;
+            amountInCents === null
+                ? null
+                : amountInCents - this.fulfilledAmountInCents;
+        this.valuePending = amountInCents === null;
         this.status =
             status ??
             (fulfilled === 0n
@@ -179,6 +217,8 @@ export class FinancialOccurrence {
             throw new FinancesError('CONCURRENT_MODIFICATION');
         if (this.status === 'CANCELLED' || this.remainingAmountInCents === 0)
             throw new FinancesError('OCCURRENCE_ALREADY_RESOLVED');
+        if (this.amountInCents === null)
+            throw new FinancesError('OCCURRENCE_VALUE_REQUIRED');
         if (civilDate(fact.factDate) > civilDate(today))
             throw new FinancesError('VALIDATION_ERROR', ['factDate']);
         return new FinancialOccurrence(
@@ -193,6 +233,49 @@ export class FinancialOccurrence {
             this.materializedAt,
             undefined,
             this.externalSettlements,
+            this.valueHistory,
+        );
+    }
+
+    defineValue(
+        amountInCents: number,
+        expectedStateVersion: number,
+        actorId: string,
+        now: string,
+    ): FinancialOccurrence {
+        Money.from(amountInCents);
+        if (amountInCents < 1)
+            throw new FinancesError('VALIDATION_ERROR', ['amountInCents']);
+        if (this.stateVersion !== expectedStateVersion)
+            throw new FinancesError('CONCURRENT_MODIFICATION');
+        if (
+            this.status === 'CANCELLED' ||
+            this.facts.length ||
+            this.externalSettlements.length
+        )
+            throw new FinancesError('OCCURRENCE_ALREADY_RESOLVED');
+        return new FinancialOccurrence(
+            this.id,
+            this.commitmentId,
+            this.spaceId,
+            this.referenceDate,
+            this.economicVersion,
+            this.stateVersion + 1,
+            amountInCents,
+            this.facts,
+            this.materializedAt,
+            'PENDING',
+            this.externalSettlements,
+            [
+                ...this.valueHistory,
+                {
+                    version: this.stateVersion + 1,
+                    previousAmountInCents: this.amountInCents,
+                    amountInCents,
+                    actorId,
+                    registeredAt: now,
+                },
+            ],
         );
     }
 }

@@ -1,6 +1,9 @@
 import { FinancesError } from '../errors/finances.error.js';
 import { Money } from '../shared-expense/money.js';
-import { ResponsibilitySplit } from '../shared-expense/responsibility-split.js';
+import {
+    ResponsibilitySplit,
+    type SplitInput,
+} from '../shared-expense/responsibility-split.js';
 import type { SettlementRuleSnapshot } from '../settlement-rule/settlement-rule.js';
 import { RecurrenceRule } from './recurrence-rule.js';
 
@@ -8,7 +11,8 @@ export type RecurringParticipation =
     | { type: 'PERSONAL'; ownerPersonId: string }
     | {
           type: 'SHARED';
-          split: ResponsibilitySplit;
+          split: ResponsibilitySplit | null;
+          distribution: SplitInput;
           expectedMemberId: string | null;
           settlementRuleSnapshot: SettlementRuleSnapshot | null;
           settlementRuleSourceVersion: number;
@@ -23,15 +27,16 @@ export class RecurringCommitment {
         readonly spaceId: string,
         readonly kind: 'EXPENSE' | 'INCOME',
         readonly description: string,
-        readonly amountInCents: number,
+        readonly amountInCents: number | null,
         readonly rule: RecurrenceRule,
         readonly createdByPersonId: string,
         readonly registeredAt: string,
         readonly economicVersion: number,
         readonly version: number,
         participation: RecurringParticipation,
+        readonly valueMode: 'FIXED' | 'VARIABLE' = 'FIXED',
     ) {
-        Money.from(amountInCents);
+        if (amountInCents !== null) Money.from(amountInCents);
         if (
             !id ||
             !spaceId ||
@@ -39,7 +44,8 @@ export class RecurringCommitment {
             !description.trim() ||
             description !== description.trim() ||
             description.length > 160 ||
-            amountInCents < 1 ||
+            (amountInCents !== null && amountInCents < 1) ||
+            (valueMode === 'FIXED' && amountInCents === null) ||
             !Number.isFinite(Date.parse(registeredAt)) ||
             !Number.isSafeInteger(economicVersion) ||
             economicVersion < 1 ||
@@ -47,9 +53,35 @@ export class RecurringCommitment {
             version < economicVersion ||
             (participation.type === 'PERSONAL'
                 ? participation.ownerPersonId !== createdByPersonId
-                : participation.split.total.amountInCents !== amountInCents ||
+                : (valueMode === 'FIXED'
+                      ? participation.split === null ||
+                        participation.split.total.amountInCents !==
+                            amountInCents ||
+                        participation.distribution.mode !==
+                            participation.split.original.mode
+                      : participation.split !== null ||
+                        participation.distribution.mode !== 'PERCENTAGES' ||
+                        participation.distribution.shares.length < 1 ||
+                        participation.distribution.shares.length > 2 ||
+                        new Set(
+                            participation.distribution.shares.map(
+                                (s) => s.memberId,
+                            ),
+                        ).size !== participation.distribution.shares.length ||
+                        participation.distribution.shares.some(
+                            (s) =>
+                                !('basisPoints' in s) ||
+                                !Number.isInteger(s.basisPoints) ||
+                                s.basisPoints < 0 ||
+                                s.basisPoints > 10000,
+                        ) ||
+                        participation.distribution.shares.reduce(
+                            (sum, s) =>
+                                sum + ('basisPoints' in s ? s.basisPoints : 0),
+                            0,
+                        ) !== 10000) ||
                   (participation.expectedMemberId !== null &&
-                      !participation.split.shares.some(
+                      !participation.distribution.shares.some(
                           (share) =>
                               share.memberId === participation.expectedMemberId,
                       )) ||
@@ -62,11 +94,22 @@ export class RecurringCommitment {
         Object.freeze(this);
     }
 
+    effectiveSplit(amountInCents: number): ResponsibilitySplit | null {
+        if (this.participation.type !== 'SHARED') return null;
+        return this.valueMode === 'FIXED'
+            ? this.participation.split
+            : ResponsibilitySplit.create(
+                  amountInCents,
+                  this.participation.distribution.shares.map((s) => s.memberId),
+                  this.participation.distribution,
+              );
+    }
+
     project(month: string): {
         commitmentId: string;
         referenceDate: string;
         commitmentVersion: number;
-        amountInCents: number;
+        amountInCents: number | null;
     } | null {
         const referenceDate = this.rule.dateInMonth(month);
         return referenceDate

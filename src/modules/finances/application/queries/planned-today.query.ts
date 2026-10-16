@@ -28,9 +28,11 @@ export class PlannedTodayQuery implements PlannedTodayQueryPort {
                 kind: 'EXPENSE' | 'INCOME';
                 description: string;
                 expectedDate: string;
-                amountInCents: string;
+                amountInCents: string | null;
+                expectedAmountInCents: string | null;
+                valuePending: boolean;
                 fulfilledAmountInCents: string;
-                remainingAmountInCents: string;
+                remainingAmountInCents: string | null;
             }[];
             totalCount: string;
         };
@@ -40,7 +42,7 @@ export class PlannedTodayQuery implements PlannedTodayQueryPort {
                 this.managers.get().query(
                     `WITH one_time AS (
                     SELECT c.id AS commitment_id,NULL::uuid AS occurrence_id,'EXPENSE'::text AS kind,c.description,
-                        v.expected_payment_date AS expected_date,v.amount_in_cents,
+                        v.expected_payment_date AS expected_date,v.amount_in_cents,v.amount_in_cents AS expected_amount_in_cents,
                         COALESCE((SELECT SUM(d.amount_in_cents) FROM financial_disbursements d WHERE d.space_id=c.space_id AND d.commitment_id=c.id),0)
                         +COALESCE((SELECT SUM(l.amount_in_cents) FROM financial_external_liabilities l WHERE l.space_id=c.space_id AND l.commitment_id=c.id),0) AS fulfilled
                     FROM financial_commitments c JOIN financial_commitment_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id
@@ -49,7 +51,8 @@ export class PlannedTodayQuery implements PlannedTodayQueryPort {
                     SELECT c.id AS commitment_id,o.id AS occurrence_id,c.kind,c.description,
                         make_date(EXTRACT(YEAR FROM months.m)::integer,EXTRACT(MONTH FROM months.m)::integer,
                             LEAST(v.day_of_month,EXTRACT(DAY FROM (months.m+interval '1 month - 1 day')::date)::integer)) AS expected_date,
-                        v.amount_in_cents,
+                        CASE WHEN v.value_mode='VARIABLE' THEN o.amount_in_cents ELSE v.amount_in_cents END AS amount_in_cents,
+                        v.amount_in_cents AS expected_amount_in_cents,
                         CASE WHEN c.kind='INCOME'
                             THEN COALESCE((SELECT SUM(r.amount_in_cents) FROM financial_receipts r WHERE r.space_id=c.space_id AND r.occurrence_id=o.id),0)
                             ELSE COALESCE((SELECT SUM(d.amount_in_cents) FROM financial_disbursements d WHERE d.space_id=c.space_id AND d.occurrence_id=o.id),0)
@@ -70,7 +73,7 @@ export class PlannedTodayQuery implements PlannedTodayQueryPort {
                             OR expected_date <= (SELECT ends_on FROM financial_recurrence_versions WHERE commitment_id=scheduled.commitment_id AND version=1))
                 ), ranked AS (
                     SELECT *,ROW_NUMBER() OVER (PARTITION BY commitment_id ORDER BY expected_date) AS rank FROM eligible
-                    WHERE fulfilled<amount_in_cents
+                    WHERE fulfilled<amount_in_cents OR amount_in_cents IS NULL
                 ), selected AS (
                     SELECT * FROM ranked WHERE rank=1
                 ), page AS (
@@ -78,7 +81,9 @@ export class PlannedTodayQuery implements PlannedTodayQueryPort {
                 ) SELECT COALESCE((SELECT jsonb_agg(jsonb_build_object(
                     'commitmentId',commitment_id,'occurrenceId',occurrence_id,'kind',kind,'description',description,
                     'expectedDate',expected_date::text,'amountInCents',amount_in_cents::text,
-                    'fulfilledAmountInCents',fulfilled::text,'remainingAmountInCents',(amount_in_cents-fulfilled)::text
+                    'expectedAmountInCents',expected_amount_in_cents::text,
+                    'fulfilledAmountInCents',fulfilled::text,'remainingAmountInCents',(amount_in_cents-fulfilled)::text,
+                    'valuePending',amount_in_cents IS NULL
                 ) ORDER BY expected_date,commitment_id) FROM page),'[]'::jsonb) AS items,
                 (SELECT COUNT(*)::text FROM selected) AS "totalCount"`,
                     [space.value, referenceDate],
@@ -93,9 +98,19 @@ export class PlannedTodayQuery implements PlannedTodayQueryPort {
         return {
             items: rows[0].items.map((row) => ({
                 ...row,
-                amountInCents: Number(row.amountInCents),
+                amountInCents:
+                    row.amountInCents === null
+                        ? null
+                        : Number(row.amountInCents),
+                expectedAmountInCents:
+                    row.expectedAmountInCents === null
+                        ? null
+                        : Number(row.expectedAmountInCents),
                 fulfilledAmountInCents: Number(row.fulfilledAmountInCents),
-                remainingAmountInCents: Number(row.remainingAmountInCents),
+                remainingAmountInCents:
+                    row.remainingAmountInCents === null
+                        ? null
+                        : Number(row.remainingAmountInCents),
                 overdue: row.expectedDate < referenceDate,
             })),
             totalCount: Number(rows[0].totalCount),

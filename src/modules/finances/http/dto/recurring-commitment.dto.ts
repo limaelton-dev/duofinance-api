@@ -26,7 +26,6 @@ const recurrence = z.discriminatedUnion('frequency', [
 const common = {
     kind: z.enum(['EXPENSE', 'INCOME']),
     description: z.string().trim().min(1).max(160),
-    amountInCents: integer.min(1),
     recurrence,
     startsOn: date.optional(),
     endsOn: date.nullable().optional(),
@@ -52,14 +51,55 @@ const settlement = z.discriminatedUnion('mode', [
         .strict(),
 ]);
 
-export const createRecurringCommitmentSchema = z.discriminatedUnion('scope', [
-    z.object({ scope: z.literal('PERSONAL'), ...common }).strict(),
+const percentages = z
+    .object({
+        mode: z.literal('PERCENTAGES'),
+        shares: z
+            .array(
+                z
+                    .object({ memberId: uuid, basisPoints: integer.max(10000) })
+                    .strict(),
+            )
+            .min(1)
+            .max(2),
+    })
+    .strict();
+export const createRecurringCommitmentSchema = z.union([
+    z
+        .object({
+            scope: z.literal('PERSONAL'),
+            valueMode: z.literal('FIXED').default('FIXED'),
+            amountInCents: integer.min(1),
+            ...common,
+        })
+        .strict(),
     z
         .object({
             scope: z.literal('SHARED'),
+            valueMode: z.literal('FIXED').default('FIXED'),
+            amountInCents: integer.min(1),
             ...common,
             expectedSpaceVersion: integer.min(1),
             distribution: split,
+            expectedMemberId: uuid.nullable().optional(),
+        })
+        .strict(),
+    z
+        .object({
+            scope: z.literal('PERSONAL'),
+            valueMode: z.literal('VARIABLE'),
+            expectedAmountInCents: integer.min(1).nullable().optional(),
+            ...common,
+        })
+        .strict(),
+    z
+        .object({
+            scope: z.literal('SHARED'),
+            valueMode: z.literal('VARIABLE'),
+            expectedAmountInCents: integer.min(1).nullable().optional(),
+            ...common,
+            expectedSpaceVersion: integer.min(1),
+            distribution: percentages,
             expectedMemberId: uuid.nullable().optional(),
         })
         .strict(),
@@ -73,6 +113,31 @@ export type CreateRecurringCommitmentDto = z.infer<
 export class CreateRecurringCommitmentPipe implements PipeTransform {
     transform(input: unknown): CreateRecurringCommitmentDto {
         return parseZodInput(createRecurringCommitmentSchema, input);
+    }
+}
+
+export const setRecurringValueSchema = z.union([
+    z
+        .object({
+            expectedCommitmentVersion: integer.min(1),
+            expectedOccurrenceVersion: integer.min(1),
+            amountInCents: integer.min(1),
+        })
+        .strict(),
+    z
+        .object({
+            expectedCommitmentVersion: integer.min(1),
+            expectedOccurrenceVersion: integer.min(1),
+            expectedSpaceVersion: integer.min(1),
+            amountInCents: integer.min(1),
+        })
+        .strict(),
+]);
+export type SetRecurringValueDto = z.infer<typeof setRecurringValueSchema>;
+@Injectable()
+export class SetRecurringValuePipe implements PipeTransform {
+    transform(input: unknown): SetRecurringValueDto {
+        return parseZodInput(setRecurringValueSchema, input);
     }
 }
 

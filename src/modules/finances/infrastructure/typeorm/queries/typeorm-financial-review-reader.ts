@@ -32,7 +32,7 @@ const facts = `WITH facts AS (
             SELECT d.fact_date FROM financial_disbursements d WHERE d.space_id=o.space_id AND d.occurrence_id=o.id
             UNION ALL SELECT l.fact_date FROM financial_external_liabilities l WHERE l.space_id=o.space_id AND l.occurrence_id=o.id
         ) f),o.materialized_at,c.created_by,NULL,c.personal_owner_person_id,NULL,
-        ARRAY(SELECT s.member_id FROM financial_recurrence_shares s WHERE s.space_id=c.space_id AND s.commitment_id=c.id AND s.version=o.economic_version)
+        ARRAY(SELECT s.member_id FROM financial_recurrence_shares s WHERE s.space_id=c.space_id AND s.commitment_id=c.id AND s.version=o.economic_version) || ARRAY(SELECT s.member_id FROM financial_occurrence_shares s WHERE s.occurrence_id=o.id)
     FROM financial_occurrences o JOIN financial_commitments c ON c.space_id=o.space_id AND c.id=o.commitment_id
     WHERE o.space_id=$1 AND c.kind='EXPENSE'
     UNION ALL
@@ -42,9 +42,9 @@ const facts = `WITH facts AS (
     FROM financial_commitments c JOIN financial_commitment_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id
     WHERE c.space_id=$1 AND c.kind='EXPENSE' AND v.expected_payment_date IS NOT NULL
     UNION ALL
-    SELECT COALESCE(o.id,c.id),'EXPECTED_EXPENSE',c.id,NULL,c.description,v.amount_in_cents,${recurringDate},c.registered_at,c.created_by,
+    SELECT COALESCE(o.id,c.id),'EXPECTED_EXPENSE',c.id,NULL,c.description,CASE WHEN v.value_mode='VARIABLE' THEN o.amount_in_cents ELSE v.amount_in_cents END,${recurringDate},c.registered_at,c.created_by,
         v.expected_member_id,v.owner_person_id,NULL,
-        ARRAY(SELECT s.member_id FROM financial_recurrence_shares s WHERE s.space_id=c.space_id AND s.commitment_id=c.id AND s.version=v.version)
+        ARRAY(SELECT s.member_id FROM financial_recurrence_shares s WHERE s.space_id=c.space_id AND s.commitment_id=c.id AND s.version=v.version) || ARRAY(SELECT (x->>'memberId')::uuid FROM jsonb_array_elements(COALESCE(v.split_input->'shares','[]'::jsonb)) x)
     FROM financial_commitments c JOIN financial_recurrence_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id AND v.version=1
     LEFT JOIN financial_occurrences o ON o.space_id=c.space_id AND o.commitment_id=c.id AND o.reference_date=${recurringDate}
     WHERE c.space_id=$1 AND c.kind='EXPENSE' AND c.modality='RECURRING'
@@ -56,9 +56,9 @@ const facts = `WITH facts AS (
         ARRAY(SELECT s.member_id FROM financial_income_shares s WHERE s.space_id=c.space_id AND s.commitment_id=c.id)
     FROM financial_commitments c JOIN financial_income_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id WHERE c.space_id=$1 AND c.kind='INCOME'
     UNION ALL
-    SELECT COALESCE(o.id,c.id),'EXPECTED_INCOME',c.id,NULL,c.description,v.amount_in_cents,${recurringDate},c.registered_at,c.created_by,
+    SELECT COALESCE(o.id,c.id),'EXPECTED_INCOME',c.id,NULL,c.description,CASE WHEN v.value_mode='VARIABLE' THEN o.amount_in_cents ELSE v.amount_in_cents END,${recurringDate},c.registered_at,c.created_by,
         v.expected_member_id,v.owner_person_id,NULL,
-        ARRAY(SELECT s.member_id FROM financial_recurrence_shares s WHERE s.space_id=c.space_id AND s.commitment_id=c.id AND s.version=v.version)
+        ARRAY(SELECT s.member_id FROM financial_recurrence_shares s WHERE s.space_id=c.space_id AND s.commitment_id=c.id AND s.version=v.version) || ARRAY(SELECT (x->>'memberId')::uuid FROM jsonb_array_elements(COALESCE(v.split_input->'shares','[]'::jsonb)) x)
     FROM financial_commitments c JOIN financial_recurrence_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id AND v.version=1
     LEFT JOIN financial_occurrences o ON o.space_id=c.space_id AND o.commitment_id=c.id AND o.reference_date=${recurringDate}
     WHERE c.space_id=$1 AND c.kind='INCOME' AND c.modality='RECURRING'
@@ -70,6 +70,7 @@ const facts = `WITH facts AS (
     UNION ALL
     SELECT f.id,'RECEIPT',c.id,NULL,c.description,f.amount_in_cents,f.fact_date,f.registered_at,f.recorded_by_person_id,f.recipient_member_id,f.recipient_person_id,NULL,
         ARRAY(SELECT s.member_id FROM financial_income_shares s WHERE s.space_id=c.space_id AND s.commitment_id=c.id)
+            || ARRAY(SELECT s.member_id FROM financial_occurrence_shares s WHERE s.occurrence_id=f.occurrence_id)
             || ARRAY(SELECT s.member_id FROM financial_recurrence_shares s JOIN financial_occurrences o
                 ON o.space_id=s.space_id AND o.commitment_id=s.commitment_id AND o.economic_version=s.version
                 WHERE o.id=f.occurrence_id AND o.space_id=f.space_id)
@@ -107,11 +108,11 @@ const safe = (value: string) => {
     return amount;
 };
 type ItemRow = Omit<FinancialReviewItem, 'amountInCents'> & {
-    amountInCents: string;
+    amountInCents: string | null;
 };
 const item = (row: ItemRow): FinancialReviewItem => ({
     ...row,
-    amountInCents: safe(row.amountInCents),
+    amountInCents: row.amountInCents === null ? null : safe(row.amountInCents),
 });
 const metricNames = [
     'expenseAmountInCents',
@@ -219,7 +220,8 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
         const rows: {
             items: (ItemRow & {
                 receivedAmountInCents: string;
-                remainingAmountInCents: string;
+                remainingAmountInCents: string | null;
+                expectedAmountInCents: string | null;
             })[];
             expected: string;
             received: string;
@@ -227,6 +229,7 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
             expectedExpense: string;
             fulfilledExpense: string;
             remainingExpense: string;
+            unknownCount: string;
         }[] = await this.managers.get().query(
             `${facts}, pending AS (
             SELECT s.*,CASE WHEN s.type='EXPECTED_INCOME'
@@ -235,8 +238,9 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                     + COALESCE((SELECT SUM(l.amount_in_cents) FROM financial_external_liabilities l JOIN financial_commitments c ON c.space_id=l.space_id AND c.id=l.commitment_id WHERE l.space_id=$1 AND l.commitment_id=s.commitment_id AND (c.modality='ONE_TIME' OR l.occurrence_id=s.id)),0)
                 END AS received
             FROM selected s WHERE type='EXPECTED_EXPENSE' OR (type='EXPECTED_INCOME' AND relevant_date >= $5::date)
-        ), outstanding AS (SELECT *,amount_in_cents-received AS remaining FROM pending WHERE received<amount_in_cents), page AS (
-            SELECT ${projection},received::text AS "receivedAmountInCents",remaining::text AS "remainingAmountInCents" FROM outstanding
+        ), outstanding AS (SELECT *,amount_in_cents-received AS remaining FROM pending WHERE received<amount_in_cents OR amount_in_cents IS NULL), page AS (
+            SELECT ${projection},received::text AS "receivedAmountInCents",remaining::text AS "remainingAmountInCents",
+                COALESCE((SELECT v.amount_in_cents::text FROM financial_recurrence_versions v WHERE v.space_id=$1 AND v.commitment_id=outstanding.commitment_id AND v.version=1),amount_in_cents::text) AS "expectedAmountInCents" FROM outstanding
             WHERE ($6::date IS NULL OR (relevant_date,id)>($6::date,$7::uuid)) ORDER BY relevant_date,id LIMIT 21
         ) SELECT COALESCE((SELECT jsonb_agg(p ORDER BY p."relevantDate",p.id) FROM page p),'[]'::jsonb) AS items,
             COALESCE(SUM(amount_in_cents) FILTER (WHERE type='EXPECTED_INCOME'),0)::text AS expected,
@@ -244,7 +248,8 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
             COALESCE(SUM(remaining) FILTER (WHERE type='EXPECTED_INCOME'),0)::text AS remaining,
             COALESCE(SUM(amount_in_cents) FILTER (WHERE type='EXPECTED_EXPENSE'),0)::text AS "expectedExpense",
             COALESCE(SUM(received) FILTER (WHERE type='EXPECTED_EXPENSE'),0)::text AS "fulfilledExpense",
-            COALESCE(SUM(remaining) FILTER (WHERE type='EXPECTED_EXPENSE'),0)::text AS "remainingExpense" FROM outstanding`,
+            COALESCE(SUM(remaining) FILTER (WHERE type='EXPECTED_EXPENSE'),0)::text AS "remainingExpense",
+            COUNT(*) FILTER (WHERE amount_in_cents IS NULL)::text AS "unknownCount" FROM outstanding`,
             [
                 scope.spaceId,
                 scope.start,
@@ -259,6 +264,10 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
             items: rows[0].items.map((row) => ({
                 ...item(row),
                 type: row.type as 'EXPECTED_INCOME' | 'EXPECTED_EXPENSE',
+                expectedAmountInCents:
+                    row.expectedAmountInCents === null
+                        ? null
+                        : safe(row.expectedAmountInCents),
                 receivedAmountInCents: safe(row.receivedAmountInCents),
                 ...(row.type === 'EXPECTED_EXPENSE'
                     ? {
@@ -267,12 +276,16 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                           ),
                       }
                     : {}),
-                remainingAmountInCents: safe(row.remainingAmountInCents),
+                remainingAmountInCents:
+                    row.remainingAmountInCents === null
+                        ? null
+                        : safe(row.remainingAmountInCents),
                 ...(row.type === 'EXPECTED_EXPENSE'
                     ? {
                           overdue:
                               row.relevantDate < scope.referenceDate &&
-                              safe(row.remainingAmountInCents) > 0,
+                              (row.remainingAmountInCents === null ||
+                                  safe(row.remainingAmountInCents) > 0),
                       }
                     : {}),
             })) as FinancialForecastItem[],
@@ -280,6 +293,7 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                 expectedAmountInCents: rows[0].expected,
                 receivedAmountInCents: rows[0].received,
                 remainingAmountInCents: rows[0].remaining,
+                unknownAmountCount: Number(rows[0].unknownCount),
                 ...(rows[0].expectedExpense !== '0'
                     ? {
                           expectedExpenseAmountInCents: rows[0].expectedExpense,
@@ -303,7 +317,7 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
         const rows: Row[] = await this.managers.get().query(
             `WITH
             expenses AS (
-                SELECT v.space_id,v.commitment_id,v.version,v.amount_in_cents,c.personal_owner_person_id,'ONE_TIME'::text AS modality FROM financial_commitment_versions v
+                SELECT v.space_id,v.commitment_id,v.version,v.amount_in_cents,c.personal_owner_person_id,'ONE_TIME'::text AS modality,NULL::uuid AS occurrence_id FROM financial_commitment_versions v
                 JOIN financial_commitments c ON c.space_id=v.space_id AND c.id=v.commitment_id
                 WHERE v.space_id=$1 AND COALESCE(v.fact_date,(
                     SELECT MIN(first_fact.fact_date) FROM (
@@ -317,7 +331,7 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                     ) first_fact
                 )) < $3::date
                 UNION ALL
-                SELECT o.space_id,o.commitment_id,o.economic_version,o.amount_in_cents,c.personal_owner_person_id,'RECURRING'
+                SELECT o.space_id,o.commitment_id,o.economic_version,o.amount_in_cents,c.personal_owner_person_id,'RECURRING',o.id
                 FROM financial_occurrences o JOIN financial_commitments c ON c.space_id=o.space_id AND c.id=o.commitment_id
                 WHERE o.space_id=$1 AND c.kind='EXPENSE' AND (
                     SELECT MIN(f.fact_date) FROM (
@@ -336,6 +350,7 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                 SELECT NULL::uuid AS member_id,'expenseAmountInCents' AS metric,SUM(amount_in_cents)::numeric AS amount FROM expenses
                 UNION ALL SELECT s.member_id,'expenseAmountInCents',SUM(s.amount_in_cents) FROM expenses e JOIN financial_commitment_shares s ON s.space_id=e.space_id AND s.commitment_id=e.commitment_id AND s.version=e.version WHERE e.modality='ONE_TIME' GROUP BY s.member_id
                 UNION ALL SELECT s.member_id,'expenseAmountInCents',SUM(s.amount_in_cents) FROM expenses e JOIN financial_recurrence_shares s ON s.space_id=e.space_id AND s.commitment_id=e.commitment_id AND s.version=e.version WHERE e.modality='RECURRING' GROUP BY s.member_id
+                UNION ALL SELECT s.member_id,'expenseAmountInCents',SUM(s.amount_in_cents) FROM expenses e JOIN financial_occurrence_shares s ON s.occurrence_id=e.occurrence_id WHERE e.modality='RECURRING' GROUP BY s.member_id
                 UNION ALL SELECT NULL,'realizedIncomeAmountInCents',SUM(amount_in_cents) FROM period_receipts WHERE fact_date >= $2::date AND fact_date < $3::date
                 UNION ALL SELECT payer_member_id,'paidAmountInCents',SUM(amount_in_cents) FROM financial_disbursements WHERE space_id=$1 AND fact_date >= $2::date AND fact_date < $3::date GROUP BY GROUPING SETS((),(payer_member_id)) HAVING GROUPING(payer_member_id)=1 OR payer_member_id IS NOT NULL
                 UNION ALL SELECT recipient_member_id,'receivedAmountInCents',SUM(amount_in_cents) FROM period_receipts WHERE fact_date >= $2::date AND fact_date < $3::date GROUP BY GROUPING SETS((),(recipient_member_id)) HAVING GROUPING(recipient_member_id)=1 OR recipient_member_id IS NOT NULL
@@ -349,11 +364,11 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
             income AS (
                 SELECT v.amount_in_cents::text AS amount,COALESCE(SUM(r.amount_in_cents) FILTER (WHERE r.fact_date < $2::date),0)::text AS before,SUM(r.amount_in_cents)::text AS after,v.split_input AS "splitInput" FROM period_receipts r JOIN financial_income_versions v ON v.space_id=r.space_id AND v.commitment_id=r.commitment_id WHERE r.fact_date < $3::date AND v.split_input IS NOT NULL GROUP BY v.commitment_id,v.amount_in_cents,v.split_input HAVING COUNT(*) FILTER (WHERE r.fact_date >= $2::date)>0
                 UNION ALL
-                SELECT v.amount_in_cents::text,COALESCE(SUM(r.amount_in_cents) FILTER (WHERE r.fact_date < $2::date),0)::text,SUM(r.amount_in_cents)::text,v.split_input
+                SELECT o.amount_in_cents::text,COALESCE(SUM(r.amount_in_cents) FILTER (WHERE r.fact_date < $2::date),0)::text,SUM(r.amount_in_cents)::text,v.split_input
                 FROM period_receipts r JOIN financial_occurrences o ON o.space_id=r.space_id AND o.id=r.occurrence_id
                 JOIN financial_recurrence_versions v ON v.space_id=o.space_id AND v.commitment_id=o.commitment_id AND v.version=o.economic_version
                 WHERE r.fact_date < $3::date AND v.split_input IS NOT NULL
-                GROUP BY o.id,v.amount_in_cents,v.split_input HAVING COUNT(*) FILTER (WHERE r.fact_date >= $2::date)>0
+                GROUP BY o.id,o.amount_in_cents,v.split_input HAVING COUNT(*) FILTER (WHERE r.fact_date >= $2::date)>0
             ),
             open AS (SELECT holder_member_id AS "memberId",SUM(remaining_amount_in_cents)::text AS amount FROM financial_external_liabilities WHERE space_id=$1 AND remaining_amount_in_cents>0 GROUP BY GROUPING SETS((),(holder_member_id)) HAVING GROUPING(holder_member_id)=1 OR holder_member_id IS NOT NULL)
             SELECT COALESCE((SELECT jsonb_agg(payload || jsonb_build_object('memberId',member_id)) FROM metrics),'[]'::jsonb) AS metrics,

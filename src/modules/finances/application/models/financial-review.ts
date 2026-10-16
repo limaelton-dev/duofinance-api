@@ -17,7 +17,7 @@ export interface FinancialReviewItem {
     commitmentId: string | null;
     externalLiabilityId: string | null;
     description: string;
-    amountInCents: number;
+    amountInCents: number | null;
     relevantDate: string;
     dateNature: 'EXPECTED' | 'ACTUAL';
     registeredAt: string;
@@ -29,9 +29,10 @@ export interface FinancialReviewItem {
 }
 export interface FinancialForecastItem extends FinancialReviewItem {
     type: 'EXPECTED_INCOME' | 'EXPECTED_EXPENSE';
+    expectedAmountInCents?: number | null;
     receivedAmountInCents: number;
     fulfilledAmountInCents?: number;
-    remainingAmountInCents: number;
+    remainingAmountInCents: number | null;
     overdue?: boolean;
 }
 export interface FinancialReviewMetrics {
@@ -70,6 +71,7 @@ export interface FinancialForecast extends FinancialReviewContext {
         expectedAmountInCents: string;
         receivedAmountInCents: string;
         remainingAmountInCents: string;
+        unknownAmountCount?: number;
         expectedExpenseAmountInCents?: string;
         fulfilledExpenseAmountInCents?: string;
         remainingExpenseAmountInCents?: string;

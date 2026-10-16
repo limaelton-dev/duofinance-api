@@ -18,7 +18,7 @@ import {
 @Unique('UQ_recurrence_versions_space', ['spaceId', 'commitmentId', 'version'])
 @Check(
     'CHK_recurrence_versions_values',
-    `version > 0 AND amount_in_cents BETWEEN 1 AND 9007199254740991 AND frequency IN ('MONTHLY','ANNUAL') AND day_of_month BETWEEN 1 AND 31 AND ((frequency='MONTHLY' AND month_of_year IS NULL) OR (frequency='ANNUAL' AND month_of_year BETWEEN 1 AND 12)) AND (ends_on IS NULL OR ends_on >= starts_on) AND ((owner_person_id IS NOT NULL AND split_input IS NULL AND expected_member_id IS NULL AND rule_snapshot IS NULL AND rule_source_version=0) OR (owner_person_id IS NULL AND split_input IS NOT NULL AND rule_source_version >= 0 AND (rule_snapshot IS NULL)=(rule_source_version=0)))`,
+    `version > 0 AND (amount_in_cents IS NULL OR amount_in_cents BETWEEN 1 AND 9007199254740991) AND value_mode IN ('FIXED','VARIABLE') AND (value_mode='VARIABLE' OR amount_in_cents IS NOT NULL) AND frequency IN ('MONTHLY','ANNUAL') AND day_of_month BETWEEN 1 AND 31 AND ((frequency='MONTHLY' AND month_of_year IS NULL) OR (frequency='ANNUAL' AND month_of_year BETWEEN 1 AND 12)) AND (ends_on IS NULL OR ends_on >= starts_on) AND ((owner_person_id IS NOT NULL AND split_input IS NULL AND expected_member_id IS NULL AND rule_snapshot IS NULL AND rule_source_version=0) OR (owner_person_id IS NULL AND split_input IS NOT NULL AND rule_source_version >= 0 AND (rule_snapshot IS NULL)=(rule_source_version=0) AND (value_mode='FIXED' OR split_input->>'mode'='PERCENTAGES')))`,
 )
 @ForeignKey(
     () => FinancialCommitmentOrmEntity,
@@ -44,9 +44,17 @@ export class FinancialRecurrenceVersionOrmEntity {
     @Column({
         name: 'amount_in_cents',
         type: 'bigint',
+        nullable: true,
         transformer: safeBigInt,
     })
-    amountInCents!: number;
+    amountInCents!: number | null;
+    @Column({
+        name: 'value_mode',
+        type: 'varchar',
+        length: 8,
+        default: 'FIXED',
+    })
+    valueMode!: 'FIXED' | 'VARIABLE';
     @Column({ type: 'varchar', length: 8 }) frequency!: 'MONTHLY' | 'ANNUAL';
     @Column({ name: 'day_of_month', type: 'integer' }) dayOfMonth!: number;
     @Column({ name: 'month_of_year', type: 'integer', nullable: true })
@@ -110,7 +118,7 @@ export class FinancialRecurrenceShareOrmEntity {
 ])
 @Check(
     'CHK_financial_occurrences_state',
-    `economic_version > 0 AND state_version > 0 AND amount_in_cents BETWEEN 1 AND 9007199254740991 AND status IN ('PENDING','PARTIALLY_FULFILLED','FULFILLED','CANCELLED')`,
+    `economic_version > 0 AND state_version > 0 AND (amount_in_cents IS NULL OR amount_in_cents BETWEEN 1 AND 9007199254740991) AND (amount_in_cents IS NOT NULL OR status IN ('PENDING','CANCELLED')) AND status IN ('PENDING','PARTIALLY_FULFILLED','FULFILLED','CANCELLED')`,
 )
 @ForeignKey(
     () => FinancialRecurrenceVersionOrmEntity,
@@ -129,9 +137,10 @@ export class FinancialOccurrenceOrmEntity {
     @Column({
         name: 'amount_in_cents',
         type: 'bigint',
+        nullable: true,
         transformer: safeBigInt,
     })
-    amountInCents!: number;
+    amountInCents!: number | null;
     @Column({ type: 'varchar', length: 24 })
     status!: 'PENDING' | 'PARTIALLY_FULFILLED' | 'FULFILLED' | 'CANCELLED';
     @Column({ name: 'materialized_at', type: 'timestamptz' })
@@ -141,7 +150,7 @@ export class FinancialOccurrenceOrmEntity {
 @Entity('financial_recurrence_command_receipts')
 @Check(
     'CHK_recurrence_command_receipts',
-    `status='COMPLETED' AND octet_length(request_hash)=32 AND operation IN ('CREATE_FIXED_RECURRING_COMMITMENT','RECORD_RECURRING_DISBURSEMENT','RECORD_RECURRING_RECEIPT','RECORD_RECURRING_EXTERNAL_LIABILITY','SETTLE_RECURRING_EXTERNAL_LIABILITY')`,
+    `status='COMPLETED' AND octet_length(request_hash)=32 AND operation IN ('CREATE_FIXED_RECURRING_COMMITMENT','CREATE_RECURRING_COMMITMENT','SET_RECURRING_OCCURRENCE_VALUE','RECORD_RECURRING_DISBURSEMENT','RECORD_RECURRING_RECEIPT','RECORD_RECURRING_EXTERNAL_LIABILITY','SETTLE_RECURRING_EXTERNAL_LIABILITY')`,
 )
 @ForeignKey('persons', ['actorId'], ['id'], {
     name: 'FK_recurrence_receipts_actor',
