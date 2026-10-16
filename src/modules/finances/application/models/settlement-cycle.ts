@@ -17,6 +17,10 @@ export interface SettlementCycleTotals {
     transferredAmountInCents: string;
     compensatedAmountInCents?: string;
     waivedAmountInCents?: string;
+    reversedTransferredAmountInCents?: string;
+    effectiveTransferredAmountInCents?: string;
+    reversedCompensatedAmountInCents?: string;
+    effectiveCompensatedAmountInCents?: string;
 }
 export interface SettlementCycleSummary extends SettlementCycleKey {
     version: number;
@@ -42,7 +46,7 @@ export interface SettlementObligationView extends Omit<
 > {
     status: 'OPEN' | 'PARTIALLY_SETTLED' | 'SETTLED' | 'RECONCILED' | 'WAIVED';
     resolvedAmountInCents: number;
-    compensatedAmountInCents?: number;
+    compensatedAmountInCents?: number | string;
     waivedAmountInCents?: number;
 }
 interface SettlementContext {
@@ -83,6 +87,8 @@ export interface SelectedSettlementObligation extends SettlementObligationView {
 }
 export interface SelectedSettlementTotals extends SettlementCycleTotals {
     transferTotalAmountInCents: string;
+    reversedTransferTotalAmountInCents?: string;
+    effectiveTransferTotalAmountInCents?: string;
     transferCount: number;
     grossPayableAmountInCents: string;
     grossReceivableAmountInCents: string;

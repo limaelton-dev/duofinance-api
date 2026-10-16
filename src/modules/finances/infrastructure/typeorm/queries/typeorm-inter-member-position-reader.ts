@@ -19,6 +19,9 @@ interface PositionRow {
     remaining_amount_in_cents: string;
     compensated_amount_in_cents: string;
     waived_amount_in_cents: string;
+    transferred_amount_in_cents: string;
+    reversed_transferred_amount_in_cents: string;
+    reversed_compensated_amount_in_cents: string;
     fact_date: string;
     registered_at: string;
     commitment_id: string;
@@ -35,6 +38,11 @@ function safeAmount(value: string): number {
     if (!Number.isSafeInteger(amount) || amount < 0)
         throw new Error('Invalid persisted obligation amount');
     return amount;
+}
+function aggregateAmount(value: string): number | string {
+    return BigInt(value) <= BigInt(Number.MAX_SAFE_INTEGER)
+        ? safeAmount(value)
+        : value;
 }
 @Injectable()
 export class TypeOrmInterMemberPositionReader implements InterMemberPositionReader {
@@ -64,6 +72,9 @@ export class TypeOrmInterMemberPositionReader implements InterMemberPositionRead
             SELECT t.payable, t.receivable, p.id, p.version, p.status, p.debtor_member_id, p.creditor_member_id,
                 COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.obligation_id=p.id AND ch.type='OFFSET_APPLIED'),0)::text AS compensated_amount_in_cents,
                 COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.obligation_id=p.id AND ch.type='WAIVED'),0)::text AS waived_amount_in_cents,
+                COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.obligation_id=p.id),0)::text AS transferred_amount_in_cents,
+                COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_reversal_applications a WHERE a.space_id=$1 AND a.original_obligation_id=p.id AND a.original_transfer_allocation_id IS NOT NULL),0)::text AS reversed_transferred_amount_in_cents,
+                COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_reversal_applications a WHERE a.space_id=$1 AND a.original_obligation_id=p.id AND a.original_offset_allocation_id IS NOT NULL),0)::text AS reversed_compensated_amount_in_cents,
                 p.original_amount_in_cents::text, p.recognized_amount_in_cents::text, p.remaining_amount_in_cents::text,
                 to_char(p.fact_date, 'YYYY-MM-DD') AS fact_date,
                 to_char(p.registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS registered_at,
@@ -97,10 +108,23 @@ export class TypeOrmInterMemberPositionReader implements InterMemberPositionRead
                 remainingAmountInCents: safeAmount(
                     row.remaining_amount_in_cents,
                 ),
-                compensatedAmountInCents: safeAmount(
+                compensatedAmountInCents: aggregateAmount(
                     row.compensated_amount_in_cents,
                 ),
                 waivedAmountInCents: safeAmount(row.waived_amount_in_cents),
+                transferredAmountInCents: row.transferred_amount_in_cents,
+                reversedTransferredAmountInCents:
+                    row.reversed_transferred_amount_in_cents,
+                effectiveTransferredAmountInCents: (
+                    BigInt(row.transferred_amount_in_cents) -
+                    BigInt(row.reversed_transferred_amount_in_cents)
+                ).toString(),
+                reversedCompensatedAmountInCents:
+                    row.reversed_compensated_amount_in_cents,
+                effectiveCompensatedAmountInCents: (
+                    BigInt(row.compensated_amount_in_cents) -
+                    BigInt(row.reversed_compensated_amount_in_cents)
+                ).toString(),
                 factDate: row.fact_date,
                 registeredAt: row.registered_at,
                 origin: row.receipt_id

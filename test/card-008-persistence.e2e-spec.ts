@@ -328,6 +328,10 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
             transferredAmountInCents: '0',
             compensatedAmountInCents: '0',
             waivedAmountInCents: '0',
+            reversedTransferredAmountInCents: '0',
+            effectiveTransferredAmountInCents: '0',
+            reversedCompensatedAmountInCents: '0',
+            effectiveCompensatedAmountInCents: '0',
         });
         expect((await list('UPCOMING')).items).toEqual([]);
     });
@@ -522,6 +526,10 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
             transferredAmountInCents: '0',
             compensatedAmountInCents: '0',
             waivedAmountInCents: '0',
+            reversedTransferredAmountInCents: '0',
+            effectiveTransferredAmountInCents: '0',
+            reversedCompensatedAmountInCents: '0',
+            effectiveCompensatedAmountInCents: '0',
         });
         expect(result.cycle.position).toEqual({
             payableAmountInCents: '18014398509481982',
@@ -552,6 +560,10 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
             transferredAmountInCents: '0',
             compensatedAmountInCents: '0',
             waivedAmountInCents: '0',
+            reversedTransferredAmountInCents: '0',
+            effectiveTransferredAmountInCents: '0',
+            reversedCompensatedAmountInCents: '0',
+            effectiveCompensatedAmountInCents: '0',
         });
     });
     it.each(['CLOSING', 'CLOSED'])(
@@ -733,6 +745,10 @@ describe('CARD-008 PostgreSQL settlement cycle snapshots', () => {
                     transferredAmountInCents: '0',
                     compensatedAmountInCents: '0',
                     waivedAmountInCents: '0',
+                    reversedTransferredAmountInCents: '0',
+                    effectiveTransferredAmountInCents: '0',
+                    reversedCompensatedAmountInCents: '0',
+                    effectiveCompensatedAmountInCents: '0',
                 });
                 expect(after.cycle.version).toBe(2);
                 expect(after.items[0]).toMatchObject({

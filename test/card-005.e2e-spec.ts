@@ -687,10 +687,11 @@ describe('CARD-005 — contrato HTTP e persistência PostgreSQL', () => {
             expect(
                 (
                     await source.query(
-                        'SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 13',
+                        'SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 14',
                     )
                 ).map((m: { name: string }) => m.name),
             ).toEqual([
+                'ReverseSettlementResolution1792164211588',
                 'WaiveInterMemberObligation1792163371690',
                 'FinalizeSettlementCycle1792162609967',
                 'RecordSettlementOffset1792162181991',
@@ -744,6 +745,7 @@ describe('CARD-005 — contrato HTTP e persistência PostgreSQL', () => {
                 'RecordSettlementOffset1792162181991',
                 'FinalizeSettlementCycle1792162609967',
                 'WaiveInterMemberObligation1792163371690',
+                'ReverseSettlementResolution1792164211588',
             ]);
         } finally {
             await source.destroy();

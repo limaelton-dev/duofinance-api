@@ -241,4 +241,43 @@ export class InterMemberObligation {
             remaining === 0,
         );
     }
+    reverseResolution(
+        remainingAmountInCents: number,
+        reversedAmountInCents: number,
+        expectedVersion: number,
+    ): InterMemberObligation {
+        if (this.version !== expectedVersion)
+            throw new FinancesError('CONCURRENT_MODIFICATION');
+        Money.from(remainingAmountInCents);
+        Money.from(reversedAmountInCents);
+        const resolved =
+            this.recognizedAmountInCents - this.remainingAmountInCents;
+        if (reversedAmountInCents > resolved)
+            throw new FinancesError('VALIDATION_ERROR', ['applications']);
+        const recognized = Money.from(resolved - reversedAmountInCents).add(
+            Money.from(remainingAmountInCents),
+        ).amountInCents;
+        return new InterMemberObligation(
+            this.id,
+            this.spaceId,
+            this.originCommitmentId,
+            this.originDisbursementId,
+            this.debtorMemberId,
+            this.creditorMemberId,
+            this.originalAmountInCents,
+            this.cycleId,
+            this.factDate,
+            this.registeredAt,
+            this.history.actorId,
+            remainingAmountInCents,
+            this.version + 1,
+            this.appliedAllocationIds,
+            this.originKind,
+            recognized,
+            remainingAmountInCents === 0,
+            null,
+            this.originExternalLiabilityId,
+            this.waived && remainingAmountInCents === 0,
+        );
+    }
 }

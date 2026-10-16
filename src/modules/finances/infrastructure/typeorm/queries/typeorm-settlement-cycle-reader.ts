@@ -31,6 +31,8 @@ interface CycleRow {
     transferred: string;
     compensated: string;
     waived: string;
+    reversed_transferred: string;
+    reversed_compensated: string;
     payable: string;
     receivable: string;
     obligation_count: number;
@@ -55,6 +57,9 @@ interface DetailRow extends CycleRow {
     description: string;
     compensated_amount_in_cents: string;
     waived_amount_in_cents: string;
+    transferred_amount_in_cents: string;
+    reversed_transferred_amount_in_cents: string;
+    reversed_compensated_amount_in_cents: string;
 }
 function cycle(row: CycleRow): SettlementCycleRead {
     return {
@@ -72,6 +77,8 @@ function cycle(row: CycleRow): SettlementCycleRead {
             row.recognized,
             row.compensated,
             row.waived,
+            row.reversed_transferred,
+            row.reversed_compensated,
         ),
         payableAmountInCents: row.payable,
         receivableAmountInCents: row.receivable,
@@ -83,6 +90,11 @@ function amount(value: string): number {
         throw new Error('Invalid persisted obligation amount');
     return result;
 }
+function aggregateAmount(value: string): number | string {
+    return BigInt(value) <= BigInt(Number.MAX_SAFE_INTEGER)
+        ? amount(value)
+        : value;
+}
 const aggregate = `COALESCE(SUM(o.original_amount_in_cents),0)::text AS original,
     COALESCE(SUM(o.recognized_amount_in_cents),0)::text AS recognized,
     COALESCE(SUM(o.remaining_amount_in_cents),0)::text AS remaining,
@@ -92,6 +104,13 @@ const aggregate = `COALESCE(SUM(o.original_amount_in_cents),0)::text AS original
     COUNT(o.id) FILTER (WHERE o.remaining_amount_in_cents>0)::integer AS open_obligation_count`;
 const cycleColumns = `s.id, s.version, to_char(s.target_date,'YYYY-MM-DD') AS target_date, s.status,
     to_char(s.finalized_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS finalized_at`;
+const cycleReversals = `
+    COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_reversal_applications a WHERE a.space_id=$1 AND a.source_cycle_id=s.id AND a.original_transfer_allocation_id IS NOT NULL),0)::text AS reversed_transferred,
+    COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_reversal_applications a WHERE a.space_id=$1 AND a.source_cycle_id=s.id AND a.original_offset_allocation_id IS NOT NULL),0)::text AS reversed_compensated`;
+const obligationResolutions = `
+    COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.obligation_id=p.id),0)::text AS transferred_amount_in_cents,
+    COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_reversal_applications a WHERE a.space_id=$1 AND a.original_obligation_id=p.id AND a.original_transfer_allocation_id IS NOT NULL),0)::text AS reversed_transferred_amount_in_cents,
+    COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_reversal_applications a WHERE a.space_id=$1 AND a.original_obligation_id=p.id AND a.original_offset_allocation_id IS NOT NULL),0)::text AS reversed_compensated_amount_in_cents`;
 @Injectable()
 export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
     constructor(private readonly managers: EntityManagerProvider) {}
@@ -108,7 +127,7 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                     UNION ALL
                     (SELECT s.* FROM settlement_cycles s JOIN overdue d ON d.id=s.id WHERE s.space_id=$1 ORDER BY s.target_date,s.id LIMIT 3)
                 ), summaries AS (
-                    SELECT ${cycleColumns},${aggregate},
+                    SELECT ${cycleColumns},${aggregate},${cycleReversals},
                         COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.cycle_id=s.id),0)::text AS transferred, COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.type='OFFSET_APPLIED' AND ch.snapshot->>'cycleId'=s.id::text),0)::text AS compensated, COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.type='WAIVED' AND ch.snapshot->>'cycleId'=s.id::text),0)::text AS waived
                     FROM selected s LEFT JOIN inter_member_obligations o ON o.space_id=$1 AND o.cycle_id=s.id
                     GROUP BY s.id,s.version,s.target_date,s.status,s.finalized_at
@@ -171,7 +190,7 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                 AND ($5::date IS NULL OR (target_date,id)>($5::date,$6::uuid))
                 ORDER BY target_date ASC,id ASC LIMIT 21
             )
-            SELECT ${cycleColumns}, ${aggregate},
+            SELECT ${cycleColumns}, ${aggregate},${cycleReversals},
                 COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.cycle_id=s.id),0)::text AS transferred, COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.type='OFFSET_APPLIED' AND ch.snapshot->>'cycleId'=s.id::text),0)::text AS compensated, COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.type='WAIVED' AND ch.snapshot->>'cycleId'=s.id::text),0)::text AS waived
             FROM page s LEFT JOIN inter_member_obligations o ON o.space_id=$1 AND o.cycle_id=s.id
             GROUP BY s.id,s.version,s.target_date,s.status,s.finalized_at
@@ -210,7 +229,7 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                 AND ($5::timestamptz IS NULL OR (registered_at,id)<($5::timestamptz,$6::uuid))
                 ORDER BY registered_at DESC,id DESC LIMIT 21
             )
-            SELECT ${cycleColumns},t.*,
+            SELECT ${cycleColumns},t.*,${cycleReversals},${obligationResolutions},
                 COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.cycle_id=s.id),0)::text AS transferred, COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.type='OFFSET_APPLIED' AND ch.snapshot->>'cycleId'=s.id::text),0)::text AS compensated, COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.type='WAIVED' AND ch.snapshot->>'cycleId'=s.id::text),0)::text AS waived,
                 p.id AS obligation_id,p.version AS obligation_version,p.status AS obligation_status,
                 p.debtor_member_id,p.creditor_member_id,p.original_amount_in_cents::text,p.recognized_amount_in_cents::text,p.remaining_amount_in_cents::text,
@@ -250,10 +269,23 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                     ).toString(),
                 ),
                 remainingAmountInCents: amount(row.remaining_amount_in_cents),
-                compensatedAmountInCents: amount(
+                compensatedAmountInCents: aggregateAmount(
                     row.compensated_amount_in_cents,
                 ),
                 waivedAmountInCents: amount(row.waived_amount_in_cents),
+                transferredAmountInCents: row.transferred_amount_in_cents,
+                reversedTransferredAmountInCents:
+                    row.reversed_transferred_amount_in_cents,
+                effectiveTransferredAmountInCents: (
+                    BigInt(row.transferred_amount_in_cents) -
+                    BigInt(row.reversed_transferred_amount_in_cents)
+                ).toString(),
+                reversedCompensatedAmountInCents:
+                    row.reversed_compensated_amount_in_cents,
+                effectiveCompensatedAmountInCents: (
+                    BigInt(row.compensated_amount_in_cents) -
+                    BigInt(row.reversed_compensated_amount_in_cents)
+                ).toString(),
                 factDate: row.fact_date,
                 registeredAt: row.registered_at,
                 origin: row.receipt_id
@@ -288,7 +320,7 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
             const selected: CycleRow[] = await this.managers.get().query(
                 `
                 WITH selected_cycles AS MATERIALIZED (SELECT * FROM settlement_cycles WHERE space_id=$1 AND id=ANY($3::uuid[]))
-                SELECT ${cycleColumns},${aggregate},
+                SELECT ${cycleColumns},${aggregate},${cycleReversals},
                     COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.cycle_id=s.id),0)::text AS transferred, COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.type='OFFSET_APPLIED' AND ch.snapshot->>'cycleId'=s.id::text),0)::text AS compensated, COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.type='WAIVED' AND ch.snapshot->>'cycleId'=s.id::text),0)::text AS waived
                 FROM selected_cycles s LEFT JOIN inter_member_obligations o ON o.space_id=$1 AND o.cycle_id=s.id
                 GROUP BY s.id,s.version,s.target_date,s.status,s.finalized_at ORDER BY s.target_date,s.id`,
@@ -303,6 +335,9 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                 transferred: string;
                 compensated: string;
                 waived: string;
+                reversed_transferred: string;
+                reversed_compensated: string;
+                reversed_transfer_total: string;
                 transfer_total: string;
                 transfer_count: number;
                 gross_payable: string;
@@ -324,6 +359,9 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                     (SELECT COUNT(*)::integer FROM transfers) AS transfer_count
                     ,(SELECT COALESCE(SUM((ch.snapshot->>'appliedAmountInCents')::bigint),0)::text FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.type='OFFSET_APPLIED' AND ch.snapshot->>'cycleId'=ANY($3::text[])) AS compensated
                     ,(SELECT COALESCE(SUM((ch.snapshot->>'appliedAmountInCents')::bigint),0)::text FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.type='WAIVED' AND ch.snapshot->>'cycleId'=ANY($3::text[])) AS waived
+                    ,(SELECT COALESCE(SUM(a.amount_in_cents),0)::text FROM settlement_reversal_applications a WHERE a.space_id=$1 AND a.source_cycle_id=ANY($3::uuid[]) AND a.original_transfer_allocation_id IS NOT NULL) AS reversed_transferred
+                    ,(SELECT COALESCE(SUM(a.amount_in_cents),0)::text FROM settlement_reversal_applications a WHERE a.space_id=$1 AND a.source_cycle_id=ANY($3::uuid[]) AND a.original_offset_allocation_id IS NOT NULL) AS reversed_compensated
+                    ,(SELECT COALESCE(SUM(r.amount_in_cents),0)::text FROM settlement_reversals r WHERE r.space_id=$1 AND EXISTS (SELECT 1 FROM selected_allocations a WHERE a.transfer_id=r.original_transfer_id)) AS reversed_transfer_total
                 FROM obligations`,
                 [spaceId, actorMemberId, cycleIds],
             );
@@ -350,15 +388,26 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                 SELECT jsonb_build_object('id',p.id,'version',p.version,'status',p.status,'debtorMemberId',p.debtor_member_id,'creditorMemberId',p.creditor_member_id,
                     'originalAmountInCents',p.original_amount_in_cents,'recognizedAmountInCents',p.recognized_amount_in_cents,
                     'resolvedAmountInCents',p.recognized_amount_in_cents-p.remaining_amount_in_cents,'remainingAmountInCents',p.remaining_amount_in_cents,
-                    'compensatedAmountInCents',COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.obligation_id=p.id AND ch.type='OFFSET_APPLIED'),0),
+                    'compensatedAmountInCents',COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.obligation_id=p.id AND ch.type='OFFSET_APPLIED'),0)::text,
                     'waivedAmountInCents',COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.obligation_id=p.id AND ch.type='WAIVED'),0),
+                    'transferredAmountInCents',resolution.transferred::text,
+                    'reversedTransferredAmountInCents',resolution.reversed_transferred::text,
+                    'effectiveTransferredAmountInCents',(resolution.transferred-resolution.reversed_transferred)::text,
+                    'reversedCompensatedAmountInCents',resolution.reversed_compensated::text,
+                    'effectiveCompensatedAmountInCents',(resolution.compensated-resolution.reversed_compensated)::text,
                     'cycleId',p.cycle_id,'factDate',to_char(p.fact_date,'YYYY-MM-DD'),
                     'registeredAt',to_char(p.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
                     'origin',jsonb_strip_nulls(jsonb_build_object('kind',c.kind,'commitmentId',c.id,'description',c.description,
                         'disbursementId',p.disbursement_id,'receiptId',p.receipt_id,'externalLiabilityId',p.external_liability_id,'amountInCents',c.amount_in_cents,
                         'distribution',jsonb_build_object('kind',CASE WHEN c.kind='INCOME' THEN 'PARTICIPATION' ELSE 'RESPONSIBILITY' END,
                             'shares',c.shares,'actorAmountInCents',c.actor_amount)))) AS item
-                FROM page p JOIN origins c ON c.id=p.commitment_id ORDER BY p.registered_at DESC,p.id DESC`,
+                FROM page p JOIN origins c ON c.id=p.commitment_id
+                CROSS JOIN LATERAL (
+                    SELECT COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.obligation_id=p.id),0) AS transferred,
+                        COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_reversal_applications a WHERE a.space_id=$1 AND a.original_obligation_id=p.id AND a.original_transfer_allocation_id IS NOT NULL),0) AS reversed_transferred,
+                        COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_reversal_applications a WHERE a.space_id=$1 AND a.original_obligation_id=p.id AND a.original_offset_allocation_id IS NOT NULL),0) AS reversed_compensated,
+                        COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.obligation_id=p.id AND ch.type='OFFSET_APPLIED'),0) AS compensated
+                ) resolution ORDER BY p.registered_at DESC,p.id DESC`,
                     [
                         spaceId,
                         actorMemberId,
@@ -377,8 +426,14 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                     t.recognized,
                     t.compensated,
                     t.waived,
+                    t.reversed_transferred,
+                    t.reversed_compensated,
                 ),
                 transferTotalAmountInCents: t.transfer_total,
+                reversedTransferTotalAmountInCents: t.reversed_transfer_total,
+                effectiveTransferTotalAmountInCents: (
+                    BigInt(t.transfer_total) - BigInt(t.reversed_transfer_total)
+                ).toString(),
                 transferCount: t.transfer_count,
                 grossPayableAmountInCents: t.gross_payable,
                 grossReceivableAmountInCents: t.gross_receivable,
@@ -388,7 +443,12 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                 totals: resultTotals,
                 payableAmountInCents: t.payable,
                 receivableAmountInCents: t.receivable,
-                items: rows.map((r) => r.item),
+                items: rows.map(({ item }) => ({
+                    ...item,
+                    compensatedAmountInCents: aggregateAmount(
+                        String(item.compensatedAmountInCents ?? '0'),
+                    ),
+                })),
             };
         });
     }

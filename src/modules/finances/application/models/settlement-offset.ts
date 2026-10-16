@@ -28,11 +28,16 @@ export interface SettlementOffsetResult {
     spaceId: string;
     offset: PositionKey & {
         amountInCents: number;
+        reversedAmountInCents?: number;
+        effectiveAmountInCents?: number;
+        reversalId?: string | null;
         factDate: string;
         createdByPersonId: string;
     };
     allocations: (SettlementOffsetAllocation & {
         origin: OpenObligationView['origin'];
+        reversedAmountInCents?: number;
+        effectiveAmountInCents?: number;
     })[];
     affectedCycleIds: string[];
     replayed: boolean;

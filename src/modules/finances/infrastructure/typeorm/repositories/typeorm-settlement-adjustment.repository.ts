@@ -53,6 +53,17 @@ function hash(command: AdjustmentCommand) {
         input.expectedCycleVersions = [...input.expectedCycleVersions].sort(
             (a, b) => a.cycleId.localeCompare(b.cycleId),
         );
+    if (
+        'expectedObligationVersions' in input &&
+        Array.isArray(input.expectedObligationVersions)
+    )
+        input.expectedObligationVersions = [
+            ...input.expectedObligationVersions,
+        ].sort((a, b) => a.obligationId.localeCompare(b.obligationId));
+    if ('applications' in input && Array.isArray(input.applications))
+        input.applications = [...input.applications].sort((a, b) =>
+            a.allocationId.localeCompare(b.allocationId),
+        );
     return createHash('sha256').update(canonical(input)).digest();
 }
 @Injectable()
@@ -121,29 +132,37 @@ export class TypeOrmSettlementAdjustmentRepository implements SettlementAdjustme
                 idempotencyKey: c.idempotencyKey,
                 action: operation,
                 targetId:
-                    'commitmentId' in result
-                        ? result.commitmentId
-                        : 'obligation' in result
-                          ? result.obligation.id
-                          : result.cycle.id,
+                    'reversal' in result
+                        ? result.reversal.id
+                        : 'commitmentId' in result
+                          ? result.commitmentId
+                          : 'obligation' in result
+                            ? result.obligation.id
+                            : result.cycle.id,
                 payload:
-                    'commitmentId' in result
+                    'reversal' in result
                         ? {
-                              commitmentVersion: result.commitmentVersion,
-                              ruleVersion: result.settlementRule.version,
+                              originalKind: result.reversal.originalKind,
+                              originalId: result.reversal.originalId,
+                              amountInCents: result.reversal.amountInCents,
                           }
-                        : 'obligation' in result
+                        : 'commitmentId' in result
                           ? {
-                                obligationVersion: result.obligation.version,
-                                affectedCycleIds: result.affectedCycleIds,
-                                ...('waiver' in result
-                                    ? { waiverId: result.waiver.id }
-                                    : {}),
+                                commitmentVersion: result.commitmentVersion,
+                                ruleVersion: result.settlementRule.version,
                             }
-                          : {
-                                cycleVersion: result.cycle.version,
-                                finalizedAt: result.cycle.finalizedAt,
-                            },
+                          : 'obligation' in result
+                            ? {
+                                  obligationVersion: result.obligation.version,
+                                  affectedCycleIds: result.affectedCycleIds,
+                                  ...('waiver' in result
+                                      ? { waiverId: result.waiver.id }
+                                      : {}),
+                              }
+                            : {
+                                  cycleVersion: result.cycle.version,
+                                  finalizedAt: result.cycle.finalizedAt,
+                              },
                 registeredAt: new Date(now),
             });
     }

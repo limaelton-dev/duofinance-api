@@ -15,7 +15,13 @@ const object = (
     type: 'object',
     additionalProperties: false,
     required: Object.keys(properties).filter(
-        (name) => name !== 'compensatedAmountInCents',
+        (name) =>
+            ![
+                'compensatedAmountInCents',
+                'reversedAmountInCents',
+                'effectiveAmountInCents',
+                'reversalId',
+            ].includes(name),
     ),
     properties,
 });
@@ -63,6 +69,8 @@ const allocation = object({
     creditorMemberId: uuid,
     amountInCents: amount,
     origin,
+    reversedAmountInCents: { ...amount, minimum: 0 },
+    effectiveAmountInCents: { ...amount, minimum: 0 },
 });
 const fact = {
     spaceId: uuid,
@@ -76,6 +84,9 @@ const fact = {
         factDate: date,
         registeredAt: { type: 'string' as const, format: 'date-time' },
         createdByPersonId: uuid,
+        reversedAmountInCents: { ...amount, minimum: 0 },
+        effectiveAmountInCents: { ...amount, minimum: 0 },
+        reversalId: nullable(uuid),
     }),
     allocations: {
         type: 'array' as const,

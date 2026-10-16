@@ -89,6 +89,7 @@ export function decodeReviewCursor(
                 'INTERNAL_TRANSFER',
                 'INTERNAL_OFFSET',
                 'INTERNAL_WAIVER',
+                'INTERNAL_REVERSAL',
             ].includes(type)
         )
             throw new Error();

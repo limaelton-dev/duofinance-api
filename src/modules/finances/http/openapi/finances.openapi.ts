@@ -2,6 +2,7 @@ import { externalLiabilitySettlementOpenApi } from './external-liability-settlem
 import { settlementAdjustmentOpenApi } from './settlement-adjustment.openapi.js';
 import { settlementOffsetOpenApi } from './settlement-offset.openapi.js';
 import { obligationWaiverOpenApi } from './obligation-waiver.openapi.js';
+import { settlementReversalOpenApi } from './settlement-reversal.openapi.js';
 import type {
     OpenAPIObject,
     SchemaObject,
@@ -90,6 +91,7 @@ export const financesOpenApi: Pick<
         ...settlementAdjustmentOpenApi.paths,
         ...settlementOffsetOpenApi.paths,
         ...obligationWaiverOpenApi.paths,
+        ...settlementReversalOpenApi.paths,
         ...personalExpenseOpenApi.paths,
         ...sharedCashExpenseOpenApi.paths,
         ...interMemberPositionOpenApi.paths,
@@ -205,6 +207,7 @@ export const financesOpenApi: Pick<
             ...settlementAdjustmentOpenApi.components?.schemas,
             ...settlementOffsetOpenApi.components?.schemas,
             ...obligationWaiverOpenApi.components?.schemas,
+            ...settlementReversalOpenApi.components?.schemas,
             ...personalExpenseOpenApi.components?.schemas,
             ...sharedCashExpenseOpenApi.components?.schemas,
             ...interMemberPositionOpenApi.components?.schemas,

@@ -238,6 +238,10 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
                     transferredAmountInCents: '0',
                     compensatedAmountInCents: '0',
                     waivedAmountInCents: '0',
+                    reversedTransferredAmountInCents: '0',
+                    effectiveTransferredAmountInCents: '0',
+                    reversedCompensatedAmountInCents: '0',
+                    effectiveCompensatedAmountInCents: '0',
                 },
                 position: {
                     payableAmountInCents: '35000',
@@ -404,6 +408,10 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
                         transferredAmountInCents: '0',
                         compensatedAmountInCents: '0',
                         waivedAmountInCents: '0',
+                        reversedTransferredAmountInCents: '0',
+                        effectiveTransferredAmountInCents: '0',
+                        reversedCompensatedAmountInCents: '0',
+                        effectiveCompensatedAmountInCents: '0',
                     },
                 }),
             ]),
@@ -627,6 +635,10 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
             transferredAmountInCents: '0',
             compensatedAmountInCents: '0',
             waivedAmountInCents: '0',
+            reversedTransferredAmountInCents: '0',
+            effectiveTransferredAmountInCents: '0',
+            reversedCompensatedAmountInCents: '0',
+            effectiveCompensatedAmountInCents: '0',
         });
         expect(result.cycle.position.net).toEqual({
             direction: 'PAYABLE',

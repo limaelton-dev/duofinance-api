@@ -368,6 +368,60 @@ describe('ReconcileFinancialOrigin application', () => {
             status: 'OPEN',
         });
     });
+    it('creates a later residual in the explicitly selected open cycle instead of reusing a finalized settled root', async () => {
+        const f = setup();
+        const first = pending().recordReceipt(
+            receipt('one', a, 50000),
+            1,
+            today,
+        );
+        await f.service.execute(
+            first,
+            { mode: 'CYCLE', cycleId: 'closed' },
+            'author',
+            today,
+            now,
+        );
+        const before = f.obligations[0].applySettlement('transfer', 20000, 1);
+        f.obligations[0] = before;
+        f.settlements.push({
+            payerMemberId: a,
+            recipientMemberId: b,
+            amountInCents: 20000,
+        });
+        vi.mocked(f.adjustments.cycle).mockResolvedValue({
+            id: 'closed',
+            version: 2,
+            status: 'FINALIZED',
+            targetDate: today,
+        });
+        vi.mocked(f.cycles.lockExisting).mockImplementation(
+            async (space, id) =>
+                new SettlementCycle(
+                    id,
+                    space,
+                    today,
+                    id === 'closed' ? 'FINALIZED' : 'OPEN',
+                    id === 'closed' ? 2 : 1,
+                ),
+        );
+        const next = first.recordReceipt(receipt('two', a, 25000), 2, today);
+        await expect(
+            f.service.execute(next, { mode: 'NONE' }, 'author', today, now),
+        ).rejects.toMatchObject({ code: 'SETTLEMENT_CYCLE_FINALIZED' });
+        await f.service.execute(
+            next,
+            { mode: 'CYCLE', cycleId: 'correction' },
+            'author',
+            today,
+            now,
+        );
+        expect(f.obligations[0]).toBe(before);
+        expect(f.obligations[1]).toMatchObject({
+            cycleId: 'correction',
+            remainingAmountInCents: 10000,
+        });
+    });
     it('locks existing destination and origin cycles in ID order before obligation writes', async () => {
         const f = setup();
         const first = pending().recordReceipt(

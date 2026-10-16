@@ -15,7 +15,15 @@ const object = (
     additionalProperties: false,
     required: Object.keys(properties).filter(
         (name) =>
-            !['compensatedAmountInCents', 'waivedAmountInCents'].includes(name),
+            ![
+                'compensatedAmountInCents',
+                'waivedAmountInCents',
+                'reversedTransferredAmountInCents',
+                'effectiveTransferredAmountInCents',
+                'reversedCompensatedAmountInCents',
+                'effectiveCompensatedAmountInCents',
+                'reversalIds',
+            ].includes(name),
     ),
     properties,
 });
@@ -118,8 +126,29 @@ const obligation = object({
     originalAmountInCents: positive,
     recognizedAmountInCents: money,
     remainingAmountInCents: money,
-    transferredAmountInCents: money,
-    compensatedAmountInCents: money,
+    transferredAmountInCents: {
+        oneOf: [money, { type: 'string', pattern: '^(0|[1-9][0-9]*)$' }],
+    },
+    compensatedAmountInCents: {
+        oneOf: [money, { type: 'string', pattern: '^(0|[1-9][0-9]*)$' }],
+    },
+    reversedTransferredAmountInCents: {
+        type: 'string',
+        pattern: '^(0|[1-9][0-9]*)$',
+    },
+    effectiveTransferredAmountInCents: {
+        type: 'string',
+        pattern: '^(0|[1-9][0-9]*)$',
+    },
+    reversedCompensatedAmountInCents: {
+        type: 'string',
+        pattern: '^(0|[1-9][0-9]*)$',
+    },
+    effectiveCompensatedAmountInCents: {
+        type: 'string',
+        pattern: '^(0|[1-9][0-9]*)$',
+    },
+    reversalIds: { type: 'array', uniqueItems: true, items: uuid },
     waivedAmountInCents: money,
     status: {
         type: 'string',
@@ -139,6 +168,7 @@ const obligation = object({
                     'ASSIGNMENT_CHANGED',
                     'OFFSET_APPLIED',
                     'WAIVED',
+                    'REVERSED',
                 ],
             },
             actorId: uuid,

@@ -356,7 +356,7 @@ export class InterMemberObligationOrmEntity {
 @Entity('inter_member_obligation_changes')
 @Check(
     'CHK_obligation_changes_type',
-    `(version = 1 AND type = 'CREATED' AND allocation_id IS NULL) OR (version > 1 AND type = 'SETTLEMENT_APPLIED' AND allocation_id IS NOT NULL) OR (version > 1 AND type IN ('RECONCILED','ASSIGNMENT_CHANGED','OFFSET_APPLIED','WAIVED') AND allocation_id IS NULL)`,
+    `(version = 1 AND type = 'CREATED' AND allocation_id IS NULL) OR (version > 1 AND type = 'SETTLEMENT_APPLIED' AND allocation_id IS NOT NULL) OR (version > 1 AND type IN ('RECONCILED','ASSIGNMENT_CHANGED','OFFSET_APPLIED','WAIVED','REVERSED') AND allocation_id IS NULL)`,
 )
 @ForeignKey(
     () => InterMemberObligationOrmEntity,

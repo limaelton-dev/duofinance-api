@@ -6,6 +6,8 @@ export function settlementCycleTotals(
     recognized = original,
     compensated = '0',
     waived = '0',
+    reversedTransferred?: string,
+    reversedCompensated?: string,
 ): SettlementCycleTotals {
     return {
         originalAmountInCents: original,
@@ -17,5 +19,21 @@ export function settlementCycleTotals(
         transferredAmountInCents: transferred,
         compensatedAmountInCents: compensated,
         waivedAmountInCents: waived,
+        ...(reversedTransferred === undefined
+            ? {}
+            : {
+                  reversedTransferredAmountInCents: reversedTransferred,
+                  effectiveTransferredAmountInCents: (
+                      BigInt(transferred) - BigInt(reversedTransferred)
+                  ).toString(),
+              }),
+        ...(reversedCompensated === undefined
+            ? {}
+            : {
+                  reversedCompensatedAmountInCents: reversedCompensated,
+                  effectiveCompensatedAmountInCents: (
+                      BigInt(compensated) - BigInt(reversedCompensated)
+                  ).toString(),
+              }),
     };
 }

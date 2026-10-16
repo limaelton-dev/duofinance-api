@@ -12,7 +12,14 @@ const object = (
 ): SchemaObject => ({
     type: 'object',
     additionalProperties: false,
-    required: Object.keys(properties),
+    required: Object.keys(properties).filter(
+        (name) =>
+            ![
+                'reversedAmountInCents',
+                'effectiveAmountInCents',
+                'reversalId',
+            ].includes(name),
+    ),
     properties,
 });
 const uuid: SchemaObject = { type: 'string', format: 'uuid' };
@@ -88,6 +95,9 @@ const transfer = object({
     payerMemberId: uuid,
     recipientMemberId: uuid,
     amountInCents: money,
+    reversedAmountInCents: { ...money, minimum: 0 },
+    effectiveAmountInCents: { ...money, minimum: 0 },
+    reversalId: nullable(uuid),
     factDate: date,
     registeredAt: instant,
     createdByPersonId: uuid,
@@ -98,6 +108,8 @@ const allocation = object({
     obligationId: uuid,
     cycleId: nullable(uuid),
     amountInCents: money,
+    reversedAmountInCents: { ...money, minimum: 0 },
+    effectiveAmountInCents: { ...money, minimum: 0 },
     origin,
 });
 const fact = {

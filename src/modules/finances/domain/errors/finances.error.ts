@@ -1,4 +1,6 @@
 export type FinancesErrorCode =
+    | 'SETTLEMENT_RESOLUTION_ALREADY_REVERSED'
+    | 'REVERSAL_CORRECTION_CYCLE_REQUIRED'
     | 'OBLIGATION_WAIVER_NOT_FOUND'
     | 'SETTLEMENT_OFFSET_NOT_FOUND'
     | 'EXTERNAL_LIABILITY_NOT_FOUND'
@@ -21,6 +23,10 @@ export type FinancesErrorCode =
     | 'EXPENSE_ALREADY_PAID'
     | 'INCOME_OPTIONS_CHANGED';
 const messages: Record<FinancesErrorCode, string> = {
+    SETTLEMENT_RESOLUTION_ALREADY_REVERSED:
+        'Este acerto já foi integralmente revertido.',
+    REVERSAL_CORRECTION_CYCLE_REQUIRED:
+        'Escolha um ciclo aberto para registrar a correção sem alterar o acerto finalizado.',
     OBLIGATION_WAIVER_NOT_FOUND: 'Dispensa não encontrada.',
     SETTLEMENT_OFFSET_NOT_FOUND: 'Compensação não encontrada.',
     EXTERNAL_LIABILITY_NOT_FOUND:

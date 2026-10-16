@@ -14,7 +14,16 @@ const object = (
     additionalProperties: false,
     required: Object.keys(properties).filter(
         (name) =>
-            !['compensatedAmountInCents', 'waivedAmountInCents'].includes(name),
+            ![
+                'compensatedAmountInCents',
+                'waivedAmountInCents',
+                'reversedTransferredAmountInCents',
+                'effectiveTransferredAmountInCents',
+                'reversedCompensatedAmountInCents',
+                'effectiveCompensatedAmountInCents',
+                'reversedTransferTotalAmountInCents',
+                'effectiveTransferTotalAmountInCents',
+            ].includes(name),
     ),
     properties,
 });
@@ -30,6 +39,21 @@ const total: SchemaObject = {
     pattern: '^(0|[1-9][0-9]*)$',
     description:
         'Centavos inteiros exatos. Reconhecido preserva a posição após reconciliação; resolvido é reconhecido menos restante. Dinheiro transferido provém somente das alocações de transferências.',
+};
+const aggregateAmount: SchemaObject = {
+    oneOf: [integer, { type: 'string', pattern: '^(0|[1-9][0-9]*)$' }],
+    description:
+        'Agregado em centavos: número inteiro seguro; string decimal quando exceder 9007199254740991.',
+};
+const reversalTotals = {
+    reversedTransferredAmountInCents: total,
+    effectiveTransferredAmountInCents: total,
+    reversedCompensatedAmountInCents: total,
+    effectiveCompensatedAmountInCents: total,
+};
+const obligationResolutions = {
+    transferredAmountInCents: aggregateAmount,
+    ...reversalTotals,
 };
 const view: SchemaObject = {
     type: 'string',
@@ -120,6 +144,7 @@ const summary = {
         resolvedAmountInCents: total,
         remainingAmountInCents: total,
         transferredAmountInCents: total,
+        ...reversalTotals,
         compensatedAmountInCents: {
             ...total,
             description:
@@ -386,7 +411,8 @@ export const settlementCycleOpenApi: Pick<
                 recognizedAmountInCents: integer,
                 resolvedAmountInCents: integer,
                 remainingAmountInCents: integer,
-                compensatedAmountInCents: integer,
+                compensatedAmountInCents: aggregateAmount,
+                ...obligationResolutions,
                 waivedAmountInCents: integer,
                 factDate: date,
                 registeredAt: { type: 'string', format: 'date-time' },
@@ -476,7 +502,13 @@ export const settlementCycleOpenApi: Pick<
                 totals: object({
                     ...summary.totals.properties,
                     transferTotalAmountInCents: total,
-                    transferCount: integer,
+                    reversedTransferTotalAmountInCents: total,
+                    effectiveTransferTotalAmountInCents: total,
+                    transferCount: {
+                        ...integer,
+                        description:
+                            'Quantidade de transferências registradas, incluindo as posteriormente revertidas.',
+                    },
                     grossPayableAmountInCents: total,
                     grossReceivableAmountInCents: total,
                 }),
@@ -503,7 +535,8 @@ export const settlementCycleOpenApi: Pick<
                         recognizedAmountInCents: integer,
                         resolvedAmountInCents: integer,
                         remainingAmountInCents: integer,
-                        compensatedAmountInCents: integer,
+                        compensatedAmountInCents: aggregateAmount,
+                        ...obligationResolutions,
                         waivedAmountInCents: integer,
                         factDate: date,
                         registeredAt: { type: 'string', format: 'date-time' },

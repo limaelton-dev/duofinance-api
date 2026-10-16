@@ -431,6 +431,10 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
             transferredAmountInCents: '2500',
             compensatedAmountInCents: '0',
             waivedAmountInCents: '0',
+            reversedTransferredAmountInCents: '0',
+            effectiveTransferredAmountInCents: '2500',
+            reversedCompensatedAmountInCents: '0',
+            effectiveCompensatedAmountInCents: '0',
         });
         await transfer(f, [
             {
@@ -492,6 +496,10 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
             transferredAmountInCents: '2000',
             compensatedAmountInCents: '0',
             waivedAmountInCents: '0',
+            reversedTransferredAmountInCents: '0',
+            effectiveTransferredAmountInCents: '2000',
+            reversedCompensatedAmountInCents: '0',
+            effectiveCompensatedAmountInCents: '0',
         });
         expect(
             result.find(
@@ -505,6 +513,10 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
             transferredAmountInCents: '1000',
             compensatedAmountInCents: '0',
             waivedAmountInCents: '0',
+            reversedTransferredAmountInCents: '0',
+            effectiveTransferredAmountInCents: '1000',
+            reversedCompensatedAmountInCents: '0',
+            effectiveCompensatedAmountInCents: '0',
         });
     });
 
@@ -785,6 +797,10 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
                             transferredAmountInCents: '2500',
                             compensatedAmountInCents: '0',
                             waivedAmountInCents: '0',
+                            reversedTransferredAmountInCents: '0',
+                            effectiveTransferredAmountInCents: '2500',
+                            reversedCompensatedAmountInCents: '0',
+                            effectiveCompensatedAmountInCents: '0',
                         },
                     },
                 ],
@@ -799,6 +815,10 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
                     transferredAmountInCents: '500',
                     compensatedAmountInCents: '0',
                     waivedAmountInCents: '0',
+                    reversedTransferredAmountInCents: '0',
+                    effectiveTransferredAmountInCents: '500',
+                    reversedCompensatedAmountInCents: '0',
+                    effectiveCompensatedAmountInCents: '0',
                 },
             });
             const afterTransfer = await financialState();

@@ -59,7 +59,7 @@ export class FinancialCommitmentSettlementRuleChangeOrmEntity {
 @Entity('financial_settlement_adjustment_receipts')
 @Check(
     'CHK_settlement_adjustment_receipt',
-    `operation IN ('CONFIGURE_COMMITMENT_SETTLEMENT_RULE','MOVE_OBLIGATION','FINALIZE_SETTLEMENT_CYCLE','WAIVE_INTER_MEMBER_OBLIGATION') AND octet_length(request_hash) = 32`,
+    `operation IN ('CONFIGURE_COMMITMENT_SETTLEMENT_RULE','MOVE_OBLIGATION','FINALIZE_SETTLEMENT_CYCLE','WAIVE_INTER_MEMBER_OBLIGATION','REVERSE_SETTLEMENT_TRANSFER','REVERSE_SETTLEMENT_OFFSET') AND octet_length(request_hash) = 32`,
 )
 @ForeignKey('persons', ['actorId'], ['id'], {
     name: 'FK_settlement_adjustment_receipt_actor',

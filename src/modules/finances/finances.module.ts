@@ -2,6 +2,13 @@ import { settlementAdjustmentEntities } from './infrastructure/typeorm/entities/
 import { settlementOffsetEntities } from './infrastructure/typeorm/entities/settlement-offset.orm-entity.js';
 import { SettlementCycleChangeOrmEntity } from './infrastructure/typeorm/entities/settlement-cycle-change.orm-entity.js';
 import { ObligationWaiverOrmEntity } from './infrastructure/typeorm/entities/obligation-waiver.orm-entity.js';
+import { settlementReversalEntities } from './infrastructure/typeorm/entities/settlement-reversal.orm-entity.js';
+import { SETTLEMENT_REVERSAL_REPOSITORY } from './application/ports/private/settlement-reversal.repository.js';
+import { TypeOrmSettlementReversalRepository } from './infrastructure/typeorm/repositories/typeorm-settlement-reversal.repository.js';
+import { ReverseSettlementHandler } from './application/handlers/reverse-settlement.handler.js';
+import { SettlementReversalOptionsQuery } from './application/queries/settlement-reversal-options.query.js';
+import { ReverseSettlementPipe } from './http/dto/settlement-reversal.dto.js';
+import { SettlementReversalController } from './http/controllers/settlement-reversal.controller.js';
 import { OBLIGATION_WAIVER_REPOSITORY } from './application/ports/private/obligation-waiver.repository.js';
 import { TypeOrmObligationWaiverRepository } from './infrastructure/typeorm/repositories/typeorm-obligation-waiver.repository.js';
 import { WaiveObligationHandler } from './application/handlers/waive-obligation.handler.js';
@@ -168,6 +175,7 @@ import {
             ...settlementOffsetEntities,
             SettlementCycleChangeOrmEntity,
             ObligationWaiverOrmEntity,
+            ...settlementReversalEntities,
             FinancialCommandAuditOrmEntity,
             ...sharedExpenseEntities,
             FinancialExternalLiabilitySettlementOrmEntity,
@@ -182,6 +190,7 @@ import {
         ]),
     ],
     controllers: [
+        SettlementReversalController,
         ObligationWaiverController,
         SettlementCycleFinalizationController,
         SettlementOffsetController,
@@ -199,6 +208,13 @@ import {
         SettlementTransferController,
     ],
     providers: [
+        ReverseSettlementHandler,
+        SettlementReversalOptionsQuery,
+        ReverseSettlementPipe,
+        {
+            provide: SETTLEMENT_REVERSAL_REPOSITORY,
+            useClass: TypeOrmSettlementReversalRepository,
+        },
         WaiveObligationHandler,
         ObligationWaiverQueries,
         WaiveObligationPipe,

@@ -2,6 +2,7 @@ import type { CommitmentSettlementRule } from '../../../domain/settlement-rule/c
 import type { SettlementRuleSnapshot } from '../../../domain/settlement-rule/settlement-rule.js';
 import type { InterMemberObligation } from '../../../domain/shared-expense/inter-member-obligation.js';
 import type { ObligationWaiverResult } from '../../models/obligation-waiver.js';
+import type { SettlementReversalResult } from '../../models/settlement-reversal.js';
 import type {
     AdjustmentCommand,
     AssignmentCycle,
@@ -18,12 +19,15 @@ export type AdjustmentResult =
     | ConfigureCommitmentSettlementRuleResult
     | MoveObligationResult
     | FinalizeSettlementCycleResult
-    | ObligationWaiverResult;
+    | ObligationWaiverResult
+    | SettlementReversalResult;
 export type AdjustmentOperation =
     | 'CONFIGURE_COMMITMENT_SETTLEMENT_RULE'
     | 'MOVE_OBLIGATION'
     | 'FINALIZE_SETTLEMENT_CYCLE'
-    | 'WAIVE_INTER_MEMBER_OBLIGATION';
+    | 'WAIVE_INTER_MEMBER_OBLIGATION'
+    | 'REVERSE_SETTLEMENT_TRANSFER'
+    | 'REVERSE_SETTLEMENT_OFFSET';
 export class SettlementAdjustmentReceiptRaceError extends Error {}
 export interface SettlementAdjustmentRepository {
     readSnapshot<T>(work: () => Promise<T>): Promise<T>;

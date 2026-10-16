@@ -14,7 +14,14 @@ const object = (
     additionalProperties: false,
     required: Object.keys(properties).filter(
         (name) =>
-            !['compensatedAmountInCents', 'waivedAmountInCents'].includes(name),
+            ![
+                'compensatedAmountInCents',
+                'waivedAmountInCents',
+                'reversedTransferredAmountInCents',
+                'effectiveTransferredAmountInCents',
+                'reversedCompensatedAmountInCents',
+                'effectiveCompensatedAmountInCents',
+            ].includes(name),
     ),
     properties,
 });
@@ -164,7 +171,12 @@ export const interMemberPositionOpenApi: Pick<
                 originalAmountInCents: { ...money, minimum: 1 },
                 recognizedAmountInCents: { ...money, minimum: 1 },
                 remainingAmountInCents: { ...money, minimum: 1 },
-                compensatedAmountInCents: money,
+                transferredAmountInCents: { oneOf: [money, total] },
+                compensatedAmountInCents: { oneOf: [money, total] },
+                reversedTransferredAmountInCents: total,
+                effectiveTransferredAmountInCents: total,
+                reversedCompensatedAmountInCents: total,
+                effectiveCompensatedAmountInCents: total,
                 waivedAmountInCents: money,
                 factDate: date,
                 registeredAt: { type: 'string', format: 'date-time' },

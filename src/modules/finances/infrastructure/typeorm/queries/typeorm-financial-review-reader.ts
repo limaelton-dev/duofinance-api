@@ -50,6 +50,10 @@ const facts = `WITH facts AS (
     SELECT f.id,'INTERNAL_WAIVER',o.commitment_id,NULL,'Dispensa de pendência',f.amount_in_cents,f.fact_date,f.registered_at,f.created_by,f.creditor_member_id,NULL,NULL,
         ARRAY[o.debtor_member_id,o.creditor_member_id]
     FROM obligation_waivers f JOIN inter_member_obligations o ON o.space_id=f.space_id AND o.id=f.obligation_id WHERE f.space_id=$1
+    UNION ALL
+    SELECT f.id,'INTERNAL_REVERSAL',NULL,NULL,CASE WHEN f.original_kind='TRANSFER' THEN 'Reversão de transferência' ELSE 'Reversão de compensação' END,f.amount_in_cents,f.fact_date,f.registered_at,f.created_by,NULL,NULL,NULL,
+        ARRAY(SELECT DISTINCT a.debtor_member_id FROM settlement_reversal_applications a WHERE a.space_id=f.space_id AND a.reversal_id=f.id UNION SELECT DISTINCT a.creditor_member_id FROM settlement_reversal_applications a WHERE a.space_id=f.space_id AND a.reversal_id=f.id)
+    FROM settlement_reversals f WHERE f.space_id=$1
 ), selected AS (
     SELECT * FROM facts WHERE relevant_date >= $2::date AND relevant_date < $3::date AND ($4::uuid IS NULL OR $4::uuid=ANY(member_ids))
 )`;
@@ -80,6 +84,10 @@ const metricNames = [
     'supportedAmountInCents',
     'internalTransfersSentAmountInCents',
     'internalTransfersReceivedAmountInCents',
+    'internalTransfersSentReversedAmountInCents',
+    'internalTransfersReceivedReversedAmountInCents',
+    'internalTransfersSentEffectiveAmountInCents',
+    'internalTransfersReceivedEffectiveAmountInCents',
 ] as const;
 export function reviewMetrics(
     values: Partial<FinancialReviewMetrics> = {},
@@ -97,6 +105,14 @@ export function reviewMetrics(
     ).toString();
     result.supportedAmountInCents = (
         BigInt(result.paidAmountInCents) + BigInt(result.assumedAmountInCents)
+    ).toString();
+    result.internalTransfersSentEffectiveAmountInCents = (
+        BigInt(result.internalTransfersSentAmountInCents) -
+        BigInt(result.internalTransfersSentReversedAmountInCents ?? '0')
+    ).toString();
+    result.internalTransfersReceivedEffectiveAmountInCents = (
+        BigInt(result.internalTransfersReceivedAmountInCents) -
+        BigInt(result.internalTransfersReceivedReversedAmountInCents ?? '0')
     ).toString();
     return result;
 }
@@ -222,6 +238,8 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                 UNION ALL SELECT holder_member_id,'externalSettledAmountInCents',SUM(amount_in_cents) FROM financial_external_liability_settlements WHERE space_id=$1 AND fact_date >= $2::date AND fact_date < $3::date GROUP BY GROUPING SETS((),(holder_member_id)) HAVING GROUPING(holder_member_id)=1 OR holder_member_id IS NOT NULL
                 UNION ALL SELECT payer_member_id,'internalTransfersSentAmountInCents',SUM(amount_in_cents) FROM settlement_transfers WHERE space_id=$1 AND fact_date >= $2::date AND fact_date < $3::date GROUP BY GROUPING SETS((),(payer_member_id)) HAVING GROUPING(payer_member_id)=1 OR payer_member_id IS NOT NULL
                 UNION ALL SELECT recipient_member_id,'internalTransfersReceivedAmountInCents',SUM(amount_in_cents) FROM settlement_transfers WHERE space_id=$1 AND fact_date >= $2::date AND fact_date < $3::date GROUP BY GROUPING SETS((),(recipient_member_id)) HAVING GROUPING(recipient_member_id)=1 OR recipient_member_id IS NOT NULL
+                UNION ALL SELECT t.payer_member_id,'internalTransfersSentReversedAmountInCents',SUM(r.amount_in_cents) FROM settlement_reversals r JOIN settlement_transfers t ON t.space_id=r.space_id AND t.id=r.original_transfer_id WHERE r.space_id=$1 AND t.fact_date >= $2::date AND t.fact_date < $3::date GROUP BY GROUPING SETS((),(t.payer_member_id)) HAVING GROUPING(t.payer_member_id)=1 OR t.payer_member_id IS NOT NULL
+                UNION ALL SELECT t.recipient_member_id,'internalTransfersReceivedReversedAmountInCents',SUM(r.amount_in_cents) FROM settlement_reversals r JOIN settlement_transfers t ON t.space_id=r.space_id AND t.id=r.original_transfer_id WHERE r.space_id=$1 AND t.fact_date >= $2::date AND t.fact_date < $3::date GROUP BY GROUPING SETS((),(t.recipient_member_id)) HAVING GROUPING(t.recipient_member_id)=1 OR t.recipient_member_id IS NOT NULL
             ), metrics AS (SELECT member_id,jsonb_object_agg(metric,COALESCE(amount,0)::text) AS payload FROM contributions GROUP BY member_id),
             income AS (SELECT v.amount_in_cents::text AS amount,COALESCE(SUM(r.amount_in_cents) FILTER (WHERE r.fact_date < $2::date),0)::text AS before,SUM(r.amount_in_cents)::text AS after,v.split_input AS "splitInput" FROM period_receipts r JOIN financial_income_versions v ON v.space_id=r.space_id AND v.commitment_id=r.commitment_id WHERE r.fact_date < $3::date AND v.split_input IS NOT NULL GROUP BY v.commitment_id,v.amount_in_cents,v.split_input HAVING COUNT(*) FILTER (WHERE r.fact_date >= $2::date)>0),
             open AS (SELECT holder_member_id AS "memberId",SUM(remaining_amount_in_cents)::text AS amount FROM financial_external_liabilities WHERE space_id=$1 AND remaining_amount_in_cents>0 GROUP BY GROUPING SETS((),(holder_member_id)) HAVING GROUPING(holder_member_id)=1 OR holder_member_id IS NOT NULL)

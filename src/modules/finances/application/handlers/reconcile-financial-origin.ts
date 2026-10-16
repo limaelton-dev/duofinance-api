@@ -69,9 +69,21 @@ export class ReconcileFinancialOrigin {
         const fact = income
             ? origin.receipts.at(-1)!
             : origin.fulfillments.at(-1)!;
+        const latest = state.obligations.at(-1);
+        const latestCycle =
+            latest?.status === 'SETTLED' && latest.cycleId
+                ? await this.adjustments?.cycle(origin.spaceId, latest.cycleId)
+                : null;
+        if (
+            latestCycle?.status === 'FINALIZED' &&
+            difference &&
+            selection.mode === 'NONE'
+        )
+            throw new FinancesError('SETTLEMENT_CYCLE_FINALIZED');
         const plan = planObligationReconciliation(
             state.obligations,
             difference,
+            latestCycle?.status === 'FINALIZED' ? [latestCycle.id] : [],
         );
         const matching = plan.reusedObligation;
         let cycleId: string | null = matching?.cycleId ?? null;

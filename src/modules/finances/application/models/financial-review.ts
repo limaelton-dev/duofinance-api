@@ -8,7 +8,8 @@ export type FinancialReviewItemType =
     | 'EXTERNAL_SETTLEMENT'
     | 'INTERNAL_TRANSFER'
     | 'INTERNAL_OFFSET'
-    | 'INTERNAL_WAIVER';
+    | 'INTERNAL_WAIVER'
+    | 'INTERNAL_REVERSAL';
 export interface FinancialReviewItem {
     id: string;
     type: FinancialReviewItemType;
@@ -42,6 +43,10 @@ export interface FinancialReviewMetrics {
     supportedAmountInCents: string;
     internalTransfersSentAmountInCents: string;
     internalTransfersReceivedAmountInCents: string;
+    internalTransfersSentReversedAmountInCents?: string;
+    internalTransfersReceivedReversedAmountInCents?: string;
+    internalTransfersSentEffectiveAmountInCents?: string;
+    internalTransfersReceivedEffectiveAmountInCents?: string;
 }
 export interface FinancialReviewContext {
     spaceId: string;
