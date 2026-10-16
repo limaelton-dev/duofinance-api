@@ -55,6 +55,8 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
             commitmentId: root.id,
             spaceId: root.spaceId,
             version: root.economicVersion,
+            effectiveFrom: root.effectiveFrom,
+            description: root.description,
             amountInCents: root.amountInCents,
             valueMode: root.valueMode,
             frequency: root.rule.pattern.frequency,
@@ -111,12 +113,44 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
         if (lock) q.setLock('pessimistic_write');
         const c = await q.getOne();
         if (!c) return null;
-        const v = await m.findOneByOrFail(FinancialRecurrenceVersionOrmEntity, {
-            spaceId,
-            commitmentId,
-            version: 1,
+        const versions = await m.find(FinancialRecurrenceVersionOrmEntity, {
+            where: { spaceId, commitmentId },
+            order: { version: 'ASC' },
         });
-        return this.hydrate(c, v);
+        const [termination]: { ends_on: string }[] = await m.query(
+            `SELECT ends_on::text AS ends_on FROM financial_recurrence_terminations WHERE commitment_id=$1`,
+            [commitmentId],
+        );
+        return this.hydrateSeries(c, versions, termination?.ends_on ?? null);
+    }
+
+    private hydrateSeries(
+        c: FinancialCommitmentOrmEntity,
+        versions: FinancialRecurrenceVersionOrmEntity[],
+        terminatedOn: string | null,
+    ): RecurringCommitment {
+        const snapshots = versions.map((v) => ({
+            effectiveFrom: v.effectiveFrom,
+            configuration: this.hydrate(c, v),
+        }));
+        const latest = snapshots.at(-1)!.configuration;
+        return new RecurringCommitment(
+            latest.id,
+            latest.spaceId,
+            latest.kind,
+            latest.description,
+            latest.amountInCents,
+            latest.rule,
+            latest.createdByPersonId,
+            latest.registeredAt,
+            latest.economicVersion,
+            c.version,
+            latest.participation,
+            latest.valueMode,
+            latest.effectiveFrom,
+            snapshots,
+            terminatedOn,
+        );
     }
 
     private hydrate(
@@ -152,7 +186,7 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
             c.id,
             c.spaceId,
             c.kind as 'EXPENSE' | 'INCOME',
-            c.description,
+            v.description,
             v.amountInCents,
             new RecurrenceRule(pattern, v.startsOn, v.endsOn),
             c.createdBy,
@@ -161,6 +195,145 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
             c.version,
             participation,
             v.valueMode,
+            v.effectiveFrom,
+        );
+    }
+
+    async saveVersion(
+        root: RecurringCommitment,
+        next: RecurringCommitment,
+        effectiveFrom: string,
+    ): Promise<void> {
+        const m = this.manager();
+        const updated = await m.update(
+            FinancialCommitmentOrmEntity,
+            { id: root.id, spaceId: root.spaceId, version: root.version },
+            { version: root.version + 1 },
+        );
+        if (updated.affected !== 1)
+            throw new FinancesError('CONCURRENT_MODIFICATION');
+        const p = next.participation;
+        await m.insert(FinancialRecurrenceVersionOrmEntity, {
+            commitmentId: root.id,
+            spaceId: root.spaceId,
+            version: next.economicVersion,
+            effectiveFrom,
+            description: next.description,
+            amountInCents: next.amountInCents,
+            valueMode: next.valueMode,
+            frequency: next.rule.pattern.frequency,
+            dayOfMonth: next.rule.pattern.dayOfMonth,
+            monthOfYear:
+                next.rule.pattern.frequency === 'ANNUAL'
+                    ? next.rule.pattern.monthOfYear
+                    : null,
+            startsOn: next.rule.startsOn,
+            endsOn: next.rule.endsOn,
+            ownerPersonId: p.type === 'PERSONAL' ? p.ownerPersonId : null,
+            splitInput: p.type === 'SHARED' ? p.distribution : null,
+            expectedMemberId: p.type === 'SHARED' ? p.expectedMemberId : null,
+            ruleSnapshot: p.type === 'SHARED' ? p.settlementRuleSnapshot : null,
+            ruleSourceVersion:
+                p.type === 'SHARED' ? p.settlementRuleSourceVersion : 0,
+            registeredAt: new Date(next.registeredAt),
+        });
+        if (p.type === 'SHARED' && p.split)
+            for (const share of p.split.shares)
+                await m.insert(FinancialRecurrenceShareOrmEntity, {
+                    commitmentId: root.id,
+                    spaceId: root.spaceId,
+                    version: next.economicVersion,
+                    memberId: share.memberId,
+                    amountInCents: share.amountInCents,
+                });
+    }
+
+    async terminate(
+        root: RecurringCommitment,
+        endsOn: string,
+        actorId: string,
+        now: string,
+    ): Promise<void> {
+        const m = this.manager();
+        const updated = await m.update(
+            FinancialCommitmentOrmEntity,
+            { id: root.id, spaceId: root.spaceId, version: root.version },
+            { version: root.version + 1 },
+        );
+        if (updated.affected !== 1)
+            throw new FinancesError('CONCURRENT_MODIFICATION');
+        await m.query(
+            `INSERT INTO financial_recurrence_terminations (space_id,commitment_id,ends_on,actor_id,registered_at,commitment_version) VALUES ($1,$2,$3,$4,$5,$6)`,
+            [root.spaceId, root.id, endsOn, actorId, now, root.version + 1],
+        );
+    }
+
+    async materializedAfter(root: RecurringCommitment, date: string) {
+        return this.provider.readSnapshot(async () =>
+            this.manager().query(
+                `SELECT reference_date::text AS "referenceDate",status,economic_version AS "economicVersion" FROM financial_occurrences WHERE space_id=$1 AND commitment_id=$2 AND reference_date>=$3 ORDER BY reference_date`,
+                [root.spaceId, root.id, date],
+            ),
+        );
+    }
+
+    async occurrencesInMonth(root: RecurringCommitment, month: string) {
+        const rows: { reference_date: string }[] =
+            await this.provider.readSnapshot(async () =>
+                this.manager().query(
+                    `SELECT reference_date::text AS reference_date FROM financial_occurrences WHERE space_id=$1 AND commitment_id=$2 AND reference_date>=($3::date) AND reference_date<($3::date+interval '1 month') ORDER BY reference_date`,
+                    [root.spaceId, root.id, `${month}-01`],
+                ),
+            );
+        const occurrences: FinancialOccurrence[] = [];
+        for (const row of rows)
+            occurrences.push(
+                (await this.occurrence(root, row.reference_date))!,
+            );
+        return occurrences;
+    }
+
+    async cancel(
+        root: RecurringCommitment,
+        occurrence: FinancialOccurrence,
+        wasProjected: boolean,
+    ) {
+        const m = this.manager();
+        if (wasProjected)
+            await m.insert(FinancialOccurrenceOrmEntity, {
+                id: occurrence.id,
+                spaceId: root.spaceId,
+                commitmentId: root.id,
+                referenceDate: occurrence.referenceDate,
+                economicVersion: occurrence.economicVersion,
+                stateVersion: occurrence.stateVersion,
+                amountInCents: occurrence.amountInCents,
+                status: occurrence.status,
+                materializedAt: new Date(occurrence.materializedAt),
+            });
+        else {
+            const updated = await m.update(
+                FinancialOccurrenceOrmEntity,
+                {
+                    id: occurrence.id,
+                    spaceId: root.spaceId,
+                    stateVersion: occurrence.stateVersion - 1,
+                    status: 'PENDING',
+                },
+                { stateVersion: occurrence.stateVersion, status: 'CANCELLED' },
+            );
+            if (updated.affected !== 1)
+                throw new FinancesError('CONCURRENT_MODIFICATION');
+        }
+        await m.query(
+            `INSERT INTO financial_occurrence_cancellations (occurrence_id,space_id,commitment_id,actor_id,registered_at) VALUES ($1,$2,$3,$4,$5)`,
+            [
+                occurrence.id,
+                root.spaceId,
+                root.id,
+                occurrence.cancellation!.actorId,
+                occurrence.cancellation!.registeredAt,
+            ],
         );
     }
 
@@ -179,15 +352,38 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
         const start = `${month}-01`;
         const last = `((date_trunc('month',$2::date)+interval '1 month - 1 day')::date)`;
         const candidate = `make_date(EXTRACT(YEAR FROM $2::date)::integer,EXTRACT(MONTH FROM $2::date)::integer,LEAST(v.day_of_month,EXTRACT(DAY FROM ${last})::integer))`;
-        const conditions = `c.space_id=$1 AND c.modality='RECURRING' AND v.version=1 AND (v.frequency='MONTHLY' OR v.month_of_year=EXTRACT(MONTH FROM $2::date)::integer) AND ${candidate}>=v.starts_on AND (v.ends_on IS NULL OR ${candidate}<=v.ends_on)`;
-        const effective = `CASE WHEN v.value_mode='VARIABLE' THEN o.amount_in_cents ELSE v.amount_in_cents END`;
+        const rows = `WITH versions AS (
+            SELECT v.*,LEAD(v.effective_from) OVER (PARTITION BY v.commitment_id ORDER BY v.effective_from) AS next_from
+            FROM financial_recurrence_versions v WHERE v.space_id=$1
+        ), eligible_projection AS (
+            SELECT c.id,${candidate} AS reference_date,CASE WHEN v.value_mode='VARIABLE' THEN o.amount_in_cents ELSE COALESCE(o.amount_in_cents,v.amount_in_cents) END AS amount
+            FROM financial_commitments c JOIN versions v ON v.space_id=c.space_id AND v.commitment_id=c.id
+            LEFT JOIN financial_recurrence_terminations t ON t.space_id=c.space_id AND t.commitment_id=c.id
+            LEFT JOIN financial_occurrences o ON o.space_id=c.space_id AND o.commitment_id=c.id AND o.reference_date=${candidate}
+            WHERE c.space_id=$1 AND c.modality='RECURRING' AND (v.frequency='MONTHLY' OR v.month_of_year=EXTRACT(MONTH FROM $2::date)::integer)
+                AND ${candidate}>=v.starts_on AND (v.ends_on IS NULL OR ${candidate}<=v.ends_on)
+                AND ${candidate}>=v.effective_from AND (v.next_from IS NULL OR ${candidate}<v.next_from)
+                AND (t.ends_on IS NULL OR ${candidate}<=t.ends_on) AND (o.status IS NULL OR o.status<>'CANCELLED')
+                AND NOT EXISTS (SELECT 1 FROM financial_occurrences existing WHERE existing.space_id=c.space_id AND existing.commitment_id=c.id AND existing.reference_date>=($2::date) AND existing.reference_date<($2::date+interval '1 month') AND existing.reference_date<>${candidate})
+        ), projected AS (
+            SELECT id,reference_date,amount FROM (
+                SELECT eligible_projection.*,ROW_NUMBER() OVER (PARTITION BY id ORDER BY reference_date) AS position
+                FROM eligible_projection
+            ) ranked WHERE position=1
+        ), actual AS (
+            SELECT c.id,o.reference_date,o.amount_in_cents AS amount FROM financial_occurrences o
+            JOIN financial_commitments c ON c.space_id=o.space_id AND c.id=o.commitment_id
+            WHERE o.space_id=$1 AND c.modality='RECURRING' AND o.reference_date>=($2::date)
+                AND o.reference_date<($2::date+interval '1 month') AND o.status<>'CANCELLED'
+                AND NOT EXISTS (SELECT 1 FROM projected p WHERE p.id=c.id AND p.reference_date=o.reference_date)
+        ), rows AS (SELECT * FROM projected UNION ALL SELECT * FROM actual)`;
         const counts: { count: string; amount: string; unknown: string }[] =
             await m.query(
-                `SELECT COUNT(*)::text AS count,COALESCE(SUM(${effective}),0)::text AS amount,COUNT(*) FILTER (WHERE ${effective} IS NULL)::text AS unknown FROM financial_commitments c JOIN financial_recurrence_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id LEFT JOIN financial_occurrences o ON o.space_id=c.space_id AND o.commitment_id=c.id AND o.reference_date=${candidate} WHERE ${conditions}`,
+                `${rows} SELECT COUNT(DISTINCT id)::text AS count,COALESCE(SUM(amount),0)::text AS amount,COUNT(*) FILTER (WHERE amount IS NULL)::text AS unknown FROM rows`,
                 [spaceId, start],
             );
-        const ids: { id: string }[] = await m.query(
-            `SELECT c.id FROM financial_commitments c JOIN financial_recurrence_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id WHERE ${conditions} AND ($3::uuid IS NULL OR c.id>$3::uuid) ORDER BY c.id LIMIT 21`,
+        const ids: { id: string; reference_date: string }[] = await m.query(
+            `${rows} SELECT id,MIN(reference_date)::text AS reference_date FROM rows WHERE ($3::uuid IS NULL OR id>$3::uuid) GROUP BY id ORDER BY id LIMIT 21`,
             [spaceId, start, after],
         );
         if (ids.length === 0)
@@ -203,14 +399,26 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
                 where: { spaceId, id: In(keys) },
             }),
             m.find(FinancialRecurrenceVersionOrmEntity, {
-                where: { spaceId, commitmentId: In(keys), version: 1 },
+                where: { spaceId, commitmentId: In(keys) },
             }),
         ]);
         const rootById = new Map(roots.map((root) => [root.id, root]));
-        const versionById = new Map(versions.map((v) => [v.commitmentId, v]));
-        const items = ids.map((row) =>
-            this.hydrate(rootById.get(row.id)!, versionById.get(row.id)!),
-        );
+        const terminations: { commitment_id: string; ends_on: string }[] =
+            await m.query(
+                `SELECT commitment_id,ends_on::text AS ends_on FROM financial_recurrence_terminations WHERE space_id=$1 AND commitment_id=ANY($2::uuid[])`,
+                [spaceId, keys],
+            );
+        const items = ids.map((row) => ({
+            commitment: this.hydrateSeries(
+                rootById.get(row.id)!,
+                versions
+                    .filter((v) => v.commitmentId === row.id)
+                    .sort((a, b) => a.version - b.version),
+                terminations.find((t) => t.commitment_id === row.id)?.ends_on ??
+                    null,
+            ),
+            referenceDate: row.reference_date,
+        }));
         return {
             items,
             totalCount: Number(counts[0].count),
@@ -335,6 +543,11 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
             `SELECT version,previous_amount_in_cents,amount_in_cents,actor_id,registered_at FROM financial_occurrence_value_changes WHERE occurrence_id=$1 ORDER BY version`,
             [row.id],
         );
+        const [cancellation]: { actor_id: string; registered_at: Date }[] =
+            await m.query(
+                `SELECT actor_id,registered_at FROM financial_occurrence_cancellations WHERE occurrence_id=$1`,
+                [row.id],
+            );
         return new FinancialOccurrence(
             row.id,
             row.commitmentId,
@@ -364,6 +577,12 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
                 actorId: change.actor_id,
                 registeredAt: change.registered_at.toISOString(),
             })),
+            cancellation
+                ? {
+                      actorId: cancellation.actor_id,
+                      registeredAt: cancellation.registered_at.toISOString(),
+                  }
+                : null,
         );
     }
 

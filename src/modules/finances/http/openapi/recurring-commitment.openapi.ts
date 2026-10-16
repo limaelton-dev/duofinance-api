@@ -243,6 +243,15 @@ const occurrence = object({
             recordedByPersonId: uuid,
         }),
     },
+    cancellation: {
+        oneOf: [
+            object({
+                actorId: uuid,
+                registeredAt: { type: 'string', format: 'date-time' },
+            }),
+            { type: 'null' },
+        ],
+    },
 });
 const result = object({
     commitment: ref('RecurringCommitment'),
@@ -340,6 +349,22 @@ const recurringCommitment = object({
     createdByPersonId: uuid,
     registeredAt: { type: 'string', format: 'date-time' },
     economicVersion: version,
+    currentEconomicVersion: { oneOf: [version, { type: 'null' }] },
+    effectiveFrom: date,
+    terminatedOn: { oneOf: [date, { type: 'null' }] },
+    versions: {
+        type: 'array',
+        items: object({
+            version,
+            effectiveFrom: date,
+            description: { type: 'string' },
+            valueMode: { type: 'string', enum: ['FIXED', 'VARIABLE'] },
+            amountInCents: { oneOf: [amount, { type: 'null' }] },
+            expectedAmountInCents: { oneOf: [amount, { type: 'null' }] },
+            recurrence,
+            endsOn: { oneOf: [date, { type: 'null' }] },
+        }),
+    },
     version,
     scope: { type: 'string', enum: ['PERSONAL', 'SHARED'] },
     nextOccurrence: {
@@ -348,6 +373,7 @@ const recurringCommitment = object({
         oneOf: [
             object({
                 referenceDate: date,
+                economicVersion: version,
                 amountInCents: { oneOf: [amount, { type: 'null' }] },
                 expectedAmountInCents: { oneOf: [amount, { type: 'null' }] },
             }),
@@ -456,6 +482,69 @@ const command = (operationId: string, request: string) => ({
         ),
     },
 });
+const changeSchema = (source: SchemaObject): SchemaObject => {
+    const properties: Record<string, SchemaObject | ReferenceObject> = {
+        ...source.properties,
+        effectiveFrom: date,
+        expectedCommitmentVersion: version,
+    };
+    delete properties.startsOn;
+    return {
+        ...source,
+        properties,
+        required: [
+            ...new Set([
+                ...(source.required ?? []).filter(
+                    (field) => field !== 'startsOn',
+                ),
+                'effectiveFrom',
+                'expectedCommitmentVersion',
+                'valueMode',
+            ]),
+        ],
+    };
+};
+const changeRequest: SchemaObject = {
+    oneOf: [personal, shared, variablePersonal, variableShared].map(
+        changeSchema,
+    ),
+};
+const preserved: SchemaObject = {
+    type: 'array',
+    items: object({
+        referenceDate: date,
+        status: {
+            type: 'string',
+            enum: ['PENDING', 'PARTIALLY_FULFILLED', 'FULFILLED', 'CANCELLED'],
+        },
+        economicVersion: version,
+    }),
+};
+const changeImpact = object({
+    effectiveFrom: date,
+    assessmentThrough: date,
+    currentVersion: version,
+    proposedVersion: version,
+    currentOccurrences: { type: 'array', items: date },
+    proposedOccurrences: { type: 'array', items: date },
+    impactByMember: {
+        type: 'array',
+        items: object({
+            memberId: uuid,
+            currentFixedAmountInCents: { type: 'string' },
+            proposedFixedAmountInCents: { type: 'string' },
+            fixedDeltaInCents: { type: 'string' },
+            currentVariableWeight: { type: 'integer' },
+            proposedVariableWeight: { type: 'integer' },
+            variableWeightDelta: { type: 'integer' },
+            currentOccurrenceCount: { type: 'integer' },
+            proposedOccurrenceCount: { type: 'integer' },
+            requiresAcceptance: { type: 'boolean' },
+        }),
+    },
+    requiresAcceptance: { type: 'boolean' },
+    materializedOccurrencesPreserved: preserved,
+});
 
 export const recurringCommitmentOpenApi: Pick<
     OpenAPIObject,
@@ -533,6 +622,210 @@ export const recurringCommitmentOpenApi: Pick<
                 },
             },
         },
+        '/v2/spaces/{spaceId}/recurring-commitments/{id}/change-preview': {
+            post: {
+                operationId: 'previewRecurringCommitmentChange',
+                tags: ['Finances'],
+                security: [{ sessionCookie: [] }],
+                parameters: [
+                    path('spaceId'),
+                    path('id'),
+                    {
+                        name: 'X-CSRF-Token',
+                        in: 'header',
+                        required: true,
+                        schema: { type: 'string' },
+                    },
+                ],
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: ref('ChangeRecurringCommitmentRequest'),
+                        },
+                    },
+                },
+                responses: {
+                    200: response(
+                        ref('RecurringChangePreview'),
+                        'Prévia sem gravação dos impactos e fatos preservados.',
+                    ),
+                    400: error('VALIDATION_ERROR'),
+                    404: error(
+                        'SPACE_NOT_FOUND',
+                        'FINANCIAL_COMMITMENT_NOT_FOUND',
+                    ),
+                    409: error(
+                        'CONCURRENT_MODIFICATION',
+                        'EXPENSE_OPTIONS_CHANGED',
+                        'RECURRENCE_ALREADY_TERMINATED',
+                    ),
+                },
+            },
+        },
+        '/v2/spaces/{spaceId}/recurring-commitments/{id}/versions': {
+            post: {
+                operationId: 'changeRecurringCommitment',
+                tags: ['Finances'],
+                security: [{ sessionCookie: [] }],
+                parameters: [...write, path('id')],
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: ref('ChangeRecurringCommitmentRequest'),
+                        },
+                    },
+                },
+                responses: {
+                    201: response(
+                        ref('RecurringVersionChangeResponse'),
+                        'Versão futura imutável registrada.',
+                    ),
+                    200: response(
+                        ref('RecurringVersionChangeResponse'),
+                        'Replay autorizado.',
+                    ),
+                    400: error('VALIDATION_ERROR'),
+                    404: error(
+                        'SPACE_NOT_FOUND',
+                        'FINANCIAL_COMMITMENT_NOT_FOUND',
+                    ),
+                    409: error(
+                        'CONCURRENT_MODIFICATION',
+                        'EXPENSE_OPTIONS_CHANGED',
+                        'IDEMPOTENCY_KEY_REUSED',
+                        'RECURRENCE_ACCEPTANCE_REQUIRED',
+                        'RECURRENCE_ALREADY_TERMINATED',
+                    ),
+                },
+            },
+        },
+        '/v2/spaces/{spaceId}/recurring-commitments/{id}/termination': {
+            post: {
+                operationId: 'terminateRecurringCommitment',
+                tags: ['Finances'],
+                security: [{ sessionCookie: [] }],
+                parameters: [...write, path('id')],
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: ref('TerminateRecurringCommitmentRequest'),
+                        },
+                    },
+                },
+                responses: {
+                    201: response(
+                        ref('RecurringTerminationResponse'),
+                        'Recorrência encerrada com ocorrências anteriores preservadas.',
+                    ),
+                    200: response(
+                        ref('RecurringTerminationResponse'),
+                        'Replay autorizado.',
+                    ),
+                    400: error('VALIDATION_ERROR'),
+                    404: error(
+                        'SPACE_NOT_FOUND',
+                        'FINANCIAL_COMMITMENT_NOT_FOUND',
+                    ),
+                    409: error(
+                        'CONCURRENT_MODIFICATION',
+                        'EXPENSE_OPTIONS_CHANGED',
+                        'IDEMPOTENCY_KEY_REUSED',
+                        'RECURRENCE_ALREADY_TERMINATED',
+                    ),
+                },
+            },
+        },
+        '/v2/spaces/{spaceId}/recurring-commitments/{id}/termination-preview': {
+            post: {
+                operationId: 'previewRecurringTermination',
+                tags: ['Finances'],
+                security: [{ sessionCookie: [] }],
+                parameters: [
+                    path('spaceId'),
+                    path('id'),
+                    {
+                        name: 'X-CSRF-Token',
+                        in: 'header',
+                        required: true,
+                        schema: { type: 'string' },
+                    },
+                ],
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: ref('TerminateRecurringCommitmentRequest'),
+                        },
+                    },
+                },
+                responses: {
+                    200: response(
+                        ref('RecurringTerminationPreview'),
+                        'Prévia do corte e ocorrências materializadas preservadas.',
+                    ),
+                    400: error('VALIDATION_ERROR'),
+                    404: error(
+                        'SPACE_NOT_FOUND',
+                        'FINANCIAL_COMMITMENT_NOT_FOUND',
+                    ),
+                    409: error(
+                        'CONCURRENT_MODIFICATION',
+                        'EXPENSE_OPTIONS_CHANGED',
+                        'RECURRENCE_ALREADY_TERMINATED',
+                    ),
+                },
+            },
+        },
+        '/v2/spaces/{spaceId}/recurring-commitments/{id}/occurrences/{referenceDate}/cancellation':
+            {
+                post: {
+                    operationId: 'cancelRecurringOccurrence',
+                    tags: ['Finances'],
+                    security: [{ sessionCookie: [] }],
+                    parameters: [
+                        ...write,
+                        path('id'),
+                        {
+                            name: 'referenceDate',
+                            in: 'path',
+                            required: true,
+                            schema: date,
+                        },
+                    ],
+                    requestBody: {
+                        required: true,
+                        content: {
+                            'application/json': {
+                                schema: ref('CancelRecurringOccurrenceRequest'),
+                            },
+                        },
+                    },
+                    responses: {
+                        201: response(
+                            ref('RecurringFulfillmentResponse'),
+                            'Ocorrência cancelada sem encerrar a série.',
+                        ),
+                        200: response(
+                            ref('RecurringFulfillmentResponse'),
+                            'Replay autorizado.',
+                        ),
+                        400: error('VALIDATION_ERROR'),
+                        404: error(
+                            'SPACE_NOT_FOUND',
+                            'FINANCIAL_COMMITMENT_NOT_FOUND',
+                        ),
+                        409: error(
+                            'CONCURRENT_MODIFICATION',
+                            'OCCURRENCE_ALREADY_RESOLVED',
+                            'EXPENSE_OPTIONS_CHANGED',
+                            'IDEMPOTENCY_KEY_REUSED',
+                        ),
+                    },
+                },
+            },
         '/v2/spaces/{spaceId}/recurring-commitments/{id}/occurrences': {
             get: {
                 operationId: 'listRecurringOccurrences',
@@ -652,6 +945,46 @@ export const recurringCommitmentOpenApi: Pick<
         schemas: {
             CreateRecurringCommitmentRequest: {
                 oneOf: [personal, shared, variablePersonal, variableShared],
+            },
+            ChangeRecurringCommitmentRequest: changeRequest,
+            RecurringChangePreview: object({
+                commitmentId: uuid,
+                ...changeImpact.properties!,
+            }),
+            RecurringVersionChangeResponse: object({
+                commitment: ref('RecurringCommitment'),
+                impact: changeImpact,
+                replayed: { type: 'boolean' },
+            }),
+            TerminateRecurringCommitmentRequest: {
+                ...object({
+                    expectedCommitmentVersion: version,
+                    expectedSpaceVersion: version,
+                    endsOn: date,
+                }),
+                required: ['expectedCommitmentVersion', 'endsOn'],
+            },
+            RecurringTerminationResponse: object({
+                commitment: ref('RecurringCommitment'),
+                materializedOccurrencesPreserved: preserved,
+                replayed: { type: 'boolean' },
+            }),
+            RecurringTerminationPreview: object({
+                commitmentId: uuid,
+                currentVersion: version,
+                endsOn: date,
+                materializedOccurrencesPreserved: preserved,
+            }),
+            CancelRecurringOccurrenceRequest: {
+                ...object({
+                    expectedCommitmentVersion: version,
+                    expectedOccurrenceVersion: version,
+                    expectedSpaceVersion: version,
+                }),
+                required: [
+                    'expectedCommitmentVersion',
+                    'expectedOccurrenceVersion',
+                ],
             },
             RecurringCommitment: recurringCommitment,
             CreateRecurringCommitmentResponse: object({

@@ -16,6 +16,9 @@ describe('financial occurrence value', () => {
             [],
             '2026-10-14T15:00:00Z',
             'CANCELLED',
+            [],
+            [],
+            { actorId: randomUUID(), registeredAt: '2026-10-14T15:00:00Z' },
         );
         expect(() =>
             occurrence.defineValue(

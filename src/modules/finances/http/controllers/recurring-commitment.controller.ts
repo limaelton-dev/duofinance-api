@@ -3,6 +3,7 @@ import {
     Controller,
     Get,
     Header,
+    HttpCode,
     Param,
     Post,
     Put,
@@ -34,6 +35,12 @@ import {
     type RecurringReceiptDto,
     type RecurringExternalLiabilityDto,
     type RecurringExternalSettlementDto,
+    ChangeRecurringCommitmentPipe,
+    TerminateRecurringCommitmentPipe,
+    CancelRecurringOccurrencePipe,
+    type ChangeRecurringCommitmentDto,
+    type TerminateRecurringCommitmentDto,
+    type CancelRecurringOccurrenceDto,
 } from '../dto/recurring-commitment.dto.js';
 
 class MonthQuery {
@@ -127,6 +134,109 @@ export class RecurringCommitmentController {
             id.toLowerCase(),
             query.month,
         );
+    }
+
+    @Post(':id/change-preview')
+    @HttpCode(200)
+    @Header('Cache-Control', 'no-store')
+    changePreview(
+        @CurrentActor() actor: RequestActor,
+        @Param('spaceId') spaceId: string,
+        @Param('id') id: string,
+        @Body(ChangeRecurringCommitmentPipe)
+        input: ChangeRecurringCommitmentDto,
+    ) {
+        const ids = this.ids(actor, spaceId);
+        return this.handler.changePreview(
+            ids.actorId,
+            ids.spaceId,
+            id.toLowerCase(),
+            input,
+        );
+    }
+
+    @Post(':id/versions')
+    @Header('Cache-Control', 'no-store')
+    async changeVersion(
+        @CurrentActor() actor: RequestActor,
+        @Param('spaceId') spaceId: string,
+        @Param('id') commitmentId: string,
+        @IdempotencyKey() idempotencyKey: string,
+        @Body(ChangeRecurringCommitmentPipe)
+        input: ChangeRecurringCommitmentDto,
+        @Res({ passthrough: true }) response: Response,
+    ) {
+        const result = await this.handler.changeVersion({
+            ...this.ids(actor, spaceId),
+            ...input,
+            commitmentId: commitmentId.toLowerCase(),
+            idempotencyKey,
+        });
+        if (result.replayed) response.status(200);
+        return result;
+    }
+
+    @Post(':id/termination')
+    @Header('Cache-Control', 'no-store')
+    async terminate(
+        @CurrentActor() actor: RequestActor,
+        @Param('spaceId') spaceId: string,
+        @Param('id') commitmentId: string,
+        @IdempotencyKey() idempotencyKey: string,
+        @Body(TerminateRecurringCommitmentPipe)
+        input: TerminateRecurringCommitmentDto,
+        @Res({ passthrough: true }) response: Response,
+    ) {
+        const result = await this.handler.terminate({
+            ...this.ids(actor, spaceId),
+            ...input,
+            commitmentId: commitmentId.toLowerCase(),
+            idempotencyKey,
+        });
+        if (result.replayed) response.status(200);
+        return result;
+    }
+
+    @Post(':id/termination-preview')
+    @HttpCode(200)
+    @Header('Cache-Control', 'no-store')
+    terminationPreview(
+        @CurrentActor() actor: RequestActor,
+        @Param('spaceId') spaceId: string,
+        @Param('id') id: string,
+        @Body(TerminateRecurringCommitmentPipe)
+        input: TerminateRecurringCommitmentDto,
+    ) {
+        const ids = this.ids(actor, spaceId);
+        return this.handler.terminationPreview(
+            ids.actorId,
+            ids.spaceId,
+            id.toLowerCase(),
+            input,
+        );
+    }
+
+    @Post(':id/occurrences/:referenceDate/cancellation')
+    @Header('Cache-Control', 'no-store')
+    async cancelOccurrence(
+        @CurrentActor() actor: RequestActor,
+        @Param('spaceId') spaceId: string,
+        @Param('id') commitmentId: string,
+        @Param('referenceDate') referenceDate: string,
+        @IdempotencyKey() idempotencyKey: string,
+        @Body(CancelRecurringOccurrencePipe)
+        input: CancelRecurringOccurrenceDto,
+        @Res({ passthrough: true }) response: Response,
+    ) {
+        const result = await this.handler.cancelOccurrence({
+            ...this.ids(actor, spaceId),
+            ...input,
+            commitmentId: commitmentId.toLowerCase(),
+            referenceDate: this.referenceDate(referenceDate),
+            idempotencyKey,
+        });
+        if (result.replayed) response.status(200);
+        return result;
     }
 
     @Get(':id/occurrences/:referenceDate/options')

@@ -48,7 +48,7 @@ export class PlannedTodayQuery implements PlannedTodayQueryPort {
                     FROM financial_commitments c JOIN financial_commitment_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id
                     WHERE c.space_id=$1 AND c.modality='ONE_TIME' AND v.expected_payment_date IS NOT NULL
                 ), scheduled AS (
-                    SELECT c.id AS commitment_id,o.id AS occurrence_id,c.kind,c.description,
+                    SELECT c.id AS commitment_id,o.id AS occurrence_id,c.kind,v.description,
                         make_date(EXTRACT(YEAR FROM months.m)::integer,EXTRACT(MONTH FROM months.m)::integer,
                             LEAST(v.day_of_month,EXTRACT(DAY FROM (months.m+interval '1 month - 1 day')::date)::integer)) AS expected_date,
                         CASE WHEN v.value_mode='VARIABLE' THEN o.amount_in_cents ELSE v.amount_in_cents END AS amount_in_cents,
@@ -58,19 +58,37 @@ export class PlannedTodayQuery implements PlannedTodayQueryPort {
                             ELSE COALESCE((SELECT SUM(d.amount_in_cents) FROM financial_disbursements d WHERE d.space_id=c.space_id AND d.occurrence_id=o.id),0)
                                 +COALESCE((SELECT SUM(l.amount_in_cents) FROM financial_external_liabilities l WHERE l.space_id=c.space_id AND l.occurrence_id=o.id),0)
                         END AS fulfilled
-                    FROM financial_commitments c JOIN financial_recurrence_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id AND v.version=1
+                    FROM financial_commitments c JOIN financial_recurrence_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id
                     CROSS JOIN LATERAL generate_series(date_trunc('month',$2::date)-interval '12 months',date_trunc('month',$2::date)+interval '13 months',interval '1 month') AS months(m)
+                    LEFT JOIN financial_recurrence_terminations t ON t.space_id=c.space_id AND t.commitment_id=c.id
                     LEFT JOIN financial_occurrences o ON o.space_id=c.space_id AND o.commitment_id=c.id AND o.reference_date=
                         make_date(EXTRACT(YEAR FROM months.m)::integer,EXTRACT(MONTH FROM months.m)::integer,
                             LEAST(v.day_of_month,EXTRACT(DAY FROM (months.m+interval '1 month - 1 day')::date)::integer))
                     WHERE c.space_id=$1 AND c.modality='RECURRING'
                         AND (v.frequency='MONTHLY' OR v.month_of_year=EXTRACT(MONTH FROM months.m)::integer)
+                        AND o.id IS NULL
+                        AND make_date(EXTRACT(YEAR FROM months.m)::integer,EXTRACT(MONTH FROM months.m)::integer,LEAST(v.day_of_month,EXTRACT(DAY FROM (months.m+interval '1 month - 1 day')::date)::integer)) >= v.starts_on
+                        AND (v.ends_on IS NULL OR make_date(EXTRACT(YEAR FROM months.m)::integer,EXTRACT(MONTH FROM months.m)::integer,LEAST(v.day_of_month,EXTRACT(DAY FROM (months.m+interval '1 month - 1 day')::date)::integer)) <= v.ends_on)
+                        AND make_date(EXTRACT(YEAR FROM months.m)::integer,EXTRACT(MONTH FROM months.m)::integer,LEAST(v.day_of_month,EXTRACT(DAY FROM (months.m+interval '1 month - 1 day')::date)::integer)) >= v.effective_from
+                        AND NOT EXISTS (SELECT 1 FROM financial_recurrence_versions later WHERE later.commitment_id=v.commitment_id AND later.effective_from>v.effective_from AND later.effective_from<=make_date(EXTRACT(YEAR FROM months.m)::integer,EXTRACT(MONTH FROM months.m)::integer,LEAST(v.day_of_month,EXTRACT(DAY FROM (months.m+interval '1 month - 1 day')::date)::integer)))
+                        AND (t.ends_on IS NULL OR make_date(EXTRACT(YEAR FROM months.m)::integer,EXTRACT(MONTH FROM months.m)::integer,LEAST(v.day_of_month,EXTRACT(DAY FROM (months.m+interval '1 month - 1 day')::date)::integer)) <= t.ends_on)
+                        AND NOT EXISTS (SELECT 1 FROM financial_occurrences existing WHERE existing.space_id=c.space_id AND existing.commitment_id=c.id AND existing.reference_date>=months.m::date AND existing.reference_date<(months.m+interval '1 month')::date)
+                ), materialized AS (
+                    SELECT c.id AS commitment_id,o.id AS occurrence_id,c.kind,v.description,o.reference_date AS expected_date,
+                        o.amount_in_cents,v.amount_in_cents AS expected_amount_in_cents,
+                        CASE WHEN c.kind='INCOME'
+                            THEN COALESCE((SELECT SUM(r.amount_in_cents) FROM financial_receipts r WHERE r.space_id=c.space_id AND r.occurrence_id=o.id),0)
+                            ELSE COALESCE((SELECT SUM(d.amount_in_cents) FROM financial_disbursements d WHERE d.space_id=c.space_id AND d.occurrence_id=o.id),0)
+                                +COALESCE((SELECT SUM(l.amount_in_cents) FROM financial_external_liabilities l WHERE l.space_id=c.space_id AND l.occurrence_id=o.id),0)
+                        END AS fulfilled
+                    FROM financial_occurrences o JOIN financial_commitments c ON c.space_id=o.space_id AND c.id=o.commitment_id
+                    JOIN financial_recurrence_versions v ON v.space_id=o.space_id AND v.commitment_id=o.commitment_id AND v.version=o.economic_version
+                    WHERE o.space_id=$1 AND o.status<>'CANCELLED'
                 ), eligible AS (
                     SELECT * FROM one_time WHERE fulfilled<amount_in_cents
                     UNION ALL
-                    SELECT * FROM scheduled WHERE expected_date>= (SELECT starts_on FROM financial_recurrence_versions WHERE commitment_id=scheduled.commitment_id AND version=1)
-                        AND ((SELECT ends_on FROM financial_recurrence_versions WHERE commitment_id=scheduled.commitment_id AND version=1) IS NULL
-                            OR expected_date <= (SELECT ends_on FROM financial_recurrence_versions WHERE commitment_id=scheduled.commitment_id AND version=1))
+                    SELECT * FROM scheduled
+                    UNION ALL SELECT * FROM materialized
                 ), ranked AS (
                     SELECT *,ROW_NUMBER() OVER (PARTITION BY commitment_id ORDER BY expected_date) AS rank FROM eligible
                     WHERE fulfilled<amount_in_cents OR amount_in_cents IS NULL

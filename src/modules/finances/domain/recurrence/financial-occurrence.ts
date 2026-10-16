@@ -53,6 +53,11 @@ export interface OccurrenceValueChange {
     registeredAt: string;
 }
 
+export interface OccurrenceCancellation {
+    actorId: string;
+    registeredAt: string;
+}
+
 export class FinancialOccurrence {
     readonly facts: readonly OccurrenceFact[];
     readonly externalSettlements: readonly OccurrenceExternalSettlement[];
@@ -76,6 +81,7 @@ export class FinancialOccurrence {
         status?: 'PENDING' | 'PARTIALLY_FULFILLED' | 'FULFILLED' | 'CANCELLED',
         settlements: readonly OccurrenceExternalSettlement[] = [],
         valueHistory: readonly OccurrenceValueChange[] = [],
+        readonly cancellation: OccurrenceCancellation | null = null,
     ) {
         if (amountInCents !== null) Money.from(amountInCents);
         civilDate(referenceDate);
@@ -205,7 +211,37 @@ export class FinancialOccurrence {
                       : 'PARTIALLY_FULFILLED')
         )
             throw new FinancesError('VALIDATION_ERROR');
+        if ((this.status === 'CANCELLED') !== (cancellation !== null))
+            throw new FinancesError('VALIDATION_ERROR');
+        if (this.status === 'CANCELLED' && (facts.length || settlements.length))
+            throw new FinancesError('VALIDATION_ERROR');
         Object.freeze(this);
+    }
+
+    cancel(expectedStateVersion: number, actorId: string, now: string) {
+        if (this.stateVersion !== expectedStateVersion)
+            throw new FinancesError('CONCURRENT_MODIFICATION');
+        if (
+            this.status !== 'PENDING' ||
+            this.facts.length ||
+            this.externalSettlements.length
+        )
+            throw new FinancesError('OCCURRENCE_ALREADY_RESOLVED');
+        return new FinancialOccurrence(
+            this.id,
+            this.commitmentId,
+            this.spaceId,
+            this.referenceDate,
+            this.economicVersion,
+            this.stateVersion + 1,
+            this.amountInCents,
+            this.facts,
+            this.materializedAt,
+            'CANCELLED',
+            this.externalSettlements,
+            this.valueHistory,
+            { actorId, registeredAt: now },
+        );
     }
 
     record(

@@ -109,6 +109,98 @@ export type CreateRecurringCommitmentDto = z.infer<
     typeof createRecurringCommitmentSchema
 >;
 
+const changeCommon = {
+    effectiveFrom: date,
+    expectedCommitmentVersion: integer.min(1),
+    kind: z.enum(['EXPENSE', 'INCOME']),
+    description: z.string().trim().min(1).max(160),
+    recurrence,
+    endsOn: date.nullable().optional(),
+};
+export const changeRecurringCommitmentSchema = z.union([
+    z
+        .object({
+            ...changeCommon,
+            scope: z.literal('PERSONAL'),
+            valueMode: z.literal('FIXED'),
+            amountInCents: amount,
+        })
+        .strict(),
+    z
+        .object({
+            ...changeCommon,
+            scope: z.literal('PERSONAL'),
+            valueMode: z.literal('VARIABLE'),
+            expectedAmountInCents: amount.nullable().optional(),
+        })
+        .strict(),
+    z
+        .object({
+            ...changeCommon,
+            scope: z.literal('SHARED'),
+            valueMode: z.literal('FIXED'),
+            amountInCents: amount,
+            distribution: split,
+            expectedMemberId: uuid.nullable().optional(),
+            expectedSpaceVersion: integer.min(1),
+        })
+        .strict(),
+    z
+        .object({
+            ...changeCommon,
+            scope: z.literal('SHARED'),
+            valueMode: z.literal('VARIABLE'),
+            expectedAmountInCents: amount.nullable().optional(),
+            distribution: percentages,
+            expectedMemberId: uuid.nullable().optional(),
+            expectedSpaceVersion: integer.min(1),
+        })
+        .strict(),
+]);
+export type ChangeRecurringCommitmentDto = z.infer<
+    typeof changeRecurringCommitmentSchema
+>;
+@Injectable()
+export class ChangeRecurringCommitmentPipe implements PipeTransform {
+    transform(input: unknown): ChangeRecurringCommitmentDto {
+        return parseZodInput(changeRecurringCommitmentSchema, input);
+    }
+}
+
+export const terminateRecurringCommitmentSchema = z
+    .object({
+        expectedCommitmentVersion: integer.min(1),
+        expectedSpaceVersion: integer.min(1).optional(),
+        endsOn: date,
+    })
+    .strict();
+export type TerminateRecurringCommitmentDto = z.infer<
+    typeof terminateRecurringCommitmentSchema
+>;
+@Injectable()
+export class TerminateRecurringCommitmentPipe implements PipeTransform {
+    transform(input: unknown): TerminateRecurringCommitmentDto {
+        return parseZodInput(terminateRecurringCommitmentSchema, input);
+    }
+}
+
+export const cancelRecurringOccurrenceSchema = z
+    .object({
+        expectedCommitmentVersion: integer.min(1),
+        expectedOccurrenceVersion: integer.min(1),
+        expectedSpaceVersion: integer.min(1).optional(),
+    })
+    .strict();
+export type CancelRecurringOccurrenceDto = z.infer<
+    typeof cancelRecurringOccurrenceSchema
+>;
+@Injectable()
+export class CancelRecurringOccurrencePipe implements PipeTransform {
+    transform(input: unknown): CancelRecurringOccurrenceDto {
+        return parseZodInput(cancelRecurringOccurrenceSchema, input);
+    }
+}
+
 @Injectable()
 export class CreateRecurringCommitmentPipe implements PipeTransform {
     transform(input: unknown): CreateRecurringCommitmentDto {

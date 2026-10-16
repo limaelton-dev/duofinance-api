@@ -18,6 +18,11 @@ export type RecurringParticipation =
           settlementRuleSourceVersion: number;
       };
 
+export interface RecurringVersion {
+    effectiveFrom: string;
+    configuration: RecurringCommitment;
+}
+
 export class RecurringCommitment {
     readonly modality = 'RECURRING';
     readonly participation: RecurringParticipation;
@@ -35,6 +40,9 @@ export class RecurringCommitment {
         readonly version: number,
         participation: RecurringParticipation,
         readonly valueMode: 'FIXED' | 'VARIABLE' = 'FIXED',
+        readonly effectiveFrom: string = rule.startsOn,
+        readonly versions: readonly RecurringVersion[] = [],
+        readonly terminatedOn: string | null = null,
     ) {
         if (amountInCents !== null) Money.from(amountInCents);
         if (
@@ -51,6 +59,8 @@ export class RecurringCommitment {
             economicVersion < 1 ||
             !Number.isSafeInteger(version) ||
             version < economicVersion ||
+            (terminatedOn !== null &&
+                !/^\d{4}-\d{2}-\d{2}$/.test(terminatedOn)) ||
             (participation.type === 'PERSONAL'
                 ? participation.ownerPersonId !== createdByPersonId
                 : (valueMode === 'FIXED'
@@ -91,7 +101,57 @@ export class RecurringCommitment {
         )
             throw new FinancesError('VALIDATION_ERROR');
         this.participation = Object.freeze({ ...participation });
+        this.versions = Object.freeze([...versions]);
         Object.freeze(this);
+    }
+
+    effectiveVersionAt(referenceDate: string): RecurringCommitment | null {
+        if (this.terminatedOn && referenceDate > this.terminatedOn) return null;
+        const versions = this.versions.length
+            ? this.versions
+            : [{ effectiveFrom: this.effectiveFrom, configuration: this }];
+        const selected = [...versions]
+            .reverse()
+            .find((v) => v.effectiveFrom <= referenceDate);
+        return selected?.configuration ?? null;
+    }
+
+    configurationAt(referenceDate: string): RecurringCommitment | null {
+        const selected = this.effectiveVersionAt(referenceDate);
+        return selected?.rule.contains(referenceDate) ? selected : null;
+    }
+
+    configurationForVersion(version: number): RecurringCommitment | null {
+        return (
+            this.versions.find(
+                (v) => v.configuration.economicVersion === version,
+            )?.configuration ?? (this.economicVersion === version ? this : null)
+        );
+    }
+
+    projections(month: string) {
+        const versions = this.versions.length
+            ? this.versions
+            : [{ effectiveFrom: this.effectiveFrom, configuration: this }];
+        const eligible = versions
+            .map((v) => v.configuration.project(month))
+            .filter(
+                (p): p is NonNullable<typeof p> =>
+                    p !== null &&
+                    this.configurationAt(p.referenceDate)?.economicVersion ===
+                        p.commitmentVersion,
+            )
+            .sort((a, b) => a.referenceDate.localeCompare(b.referenceDate));
+        return eligible.slice(0, 1);
+    }
+
+    projectedConfigurationAt(
+        referenceDate: string,
+    ): RecurringCommitment | null {
+        const projection = this.projections(referenceDate.slice(0, 7))[0];
+        return projection?.referenceDate === referenceDate
+            ? this.configurationForVersion(projection.commitmentVersion)
+            : null;
     }
 
     effectiveSplit(amountInCents: number): ResponsibilitySplit | null {

@@ -27,7 +27,7 @@ const facts = `WITH facts AS (
         ARRAY(SELECT s.member_id FROM financial_commitment_shares s WHERE s.space_id=c.space_id AND s.commitment_id=c.id AND s.version=v.version) AS member_ids
     FROM financial_commitments c JOIN financial_commitment_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id WHERE c.space_id=$1 AND c.kind='EXPENSE'
     UNION ALL
-    SELECT o.id,'EXPENSE',c.id,NULL,c.description,o.amount_in_cents,
+    SELECT o.id,'EXPENSE',c.id,NULL,(SELECT v.description FROM financial_recurrence_versions v WHERE v.commitment_id=o.commitment_id AND v.version=o.economic_version),o.amount_in_cents,
         (SELECT MIN(f.fact_date) FROM (
             SELECT d.fact_date FROM financial_disbursements d WHERE d.space_id=o.space_id AND d.occurrence_id=o.id
             UNION ALL SELECT l.fact_date FROM financial_external_liabilities l WHERE l.space_id=o.space_id AND l.occurrence_id=o.id
@@ -42,33 +42,48 @@ const facts = `WITH facts AS (
     FROM financial_commitments c JOIN financial_commitment_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id
     WHERE c.space_id=$1 AND c.kind='EXPENSE' AND v.expected_payment_date IS NOT NULL
     UNION ALL
-    SELECT COALESCE(o.id,c.id),'EXPECTED_EXPENSE',c.id,NULL,c.description,CASE WHEN v.value_mode='VARIABLE' THEN o.amount_in_cents ELSE v.amount_in_cents END,${recurringDate},c.registered_at,c.created_by,
+    SELECT COALESCE(o.id,c.id),'EXPECTED_EXPENSE',c.id,NULL,v.description,CASE WHEN v.value_mode='VARIABLE' THEN o.amount_in_cents ELSE COALESCE(o.amount_in_cents,v.amount_in_cents) END,${recurringDate},c.registered_at,c.created_by,
         v.expected_member_id,v.owner_person_id,NULL,
         ARRAY(SELECT s.member_id FROM financial_recurrence_shares s WHERE s.space_id=c.space_id AND s.commitment_id=c.id AND s.version=v.version) || ARRAY(SELECT (x->>'memberId')::uuid FROM jsonb_array_elements(COALESCE(v.split_input->'shares','[]'::jsonb)) x)
-    FROM financial_commitments c JOIN financial_recurrence_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id AND v.version=1
+    FROM financial_commitments c JOIN financial_recurrence_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id
     LEFT JOIN financial_occurrences o ON o.space_id=c.space_id AND o.commitment_id=c.id AND o.reference_date=${recurringDate}
+    LEFT JOIN financial_recurrence_terminations t ON t.space_id=c.space_id AND t.commitment_id=c.id
     WHERE c.space_id=$1 AND c.kind='EXPENSE' AND c.modality='RECURRING'
         AND (v.frequency='MONTHLY' OR v.month_of_year=EXTRACT(MONTH FROM $2::date)::integer)
         AND ${recurringDate}>=v.starts_on AND (v.ends_on IS NULL OR ${recurringDate}<=v.ends_on)
+        AND ${recurringDate}>=v.effective_from AND NOT EXISTS (SELECT 1 FROM financial_recurrence_versions later WHERE later.commitment_id=v.commitment_id AND later.effective_from>v.effective_from AND later.effective_from<=${recurringDate})
+        AND (t.ends_on IS NULL OR ${recurringDate}<=t.ends_on) AND o.id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM financial_occurrences materialized WHERE materialized.space_id=c.space_id AND materialized.commitment_id=c.id AND materialized.reference_date>=date_trunc('month',${recurringDate})::date AND materialized.reference_date<(date_trunc('month',${recurringDate})+interval '1 month')::date)
     UNION ALL
     SELECT c.id,'EXPECTED_INCOME',c.id,NULL,c.description,v.amount_in_cents,v.expected_receipt_date,c.registered_at,c.created_by,
         v.expected_recipient_member_id,v.owner_person_id,NULL,
         ARRAY(SELECT s.member_id FROM financial_income_shares s WHERE s.space_id=c.space_id AND s.commitment_id=c.id)
     FROM financial_commitments c JOIN financial_income_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id WHERE c.space_id=$1 AND c.kind='INCOME'
     UNION ALL
-    SELECT COALESCE(o.id,c.id),'EXPECTED_INCOME',c.id,NULL,c.description,CASE WHEN v.value_mode='VARIABLE' THEN o.amount_in_cents ELSE v.amount_in_cents END,${recurringDate},c.registered_at,c.created_by,
+    SELECT COALESCE(o.id,c.id),'EXPECTED_INCOME',c.id,NULL,v.description,CASE WHEN v.value_mode='VARIABLE' THEN o.amount_in_cents ELSE COALESCE(o.amount_in_cents,v.amount_in_cents) END,${recurringDate},c.registered_at,c.created_by,
         v.expected_member_id,v.owner_person_id,NULL,
         ARRAY(SELECT s.member_id FROM financial_recurrence_shares s WHERE s.space_id=c.space_id AND s.commitment_id=c.id AND s.version=v.version) || ARRAY(SELECT (x->>'memberId')::uuid FROM jsonb_array_elements(COALESCE(v.split_input->'shares','[]'::jsonb)) x)
-    FROM financial_commitments c JOIN financial_recurrence_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id AND v.version=1
+    FROM financial_commitments c JOIN financial_recurrence_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id
     LEFT JOIN financial_occurrences o ON o.space_id=c.space_id AND o.commitment_id=c.id AND o.reference_date=${recurringDate}
+    LEFT JOIN financial_recurrence_terminations t ON t.space_id=c.space_id AND t.commitment_id=c.id
     WHERE c.space_id=$1 AND c.kind='INCOME' AND c.modality='RECURRING'
         AND (v.frequency='MONTHLY' OR v.month_of_year=EXTRACT(MONTH FROM $2::date)::integer)
         AND ${recurringDate}>=v.starts_on AND (v.ends_on IS NULL OR ${recurringDate}<=v.ends_on)
+        AND ${recurringDate}>=v.effective_from AND NOT EXISTS (SELECT 1 FROM financial_recurrence_versions later WHERE later.commitment_id=v.commitment_id AND later.effective_from>v.effective_from AND later.effective_from<=${recurringDate})
+        AND (t.ends_on IS NULL OR ${recurringDate}<=t.ends_on) AND o.id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM financial_occurrences materialized WHERE materialized.space_id=c.space_id AND materialized.commitment_id=c.id AND materialized.reference_date>=date_trunc('month',${recurringDate})::date AND materialized.reference_date<(date_trunc('month',${recurringDate})+interval '1 month')::date)
     UNION ALL
-    SELECT f.id,'DISBURSEMENT',c.id,NULL,c.description,f.amount_in_cents,f.fact_date,f.registered_at,f.recorded_by_person_id,f.payer_member_id,f.payer_person_id,NULL,ARRAY[f.payer_member_id]
+    SELECT o.id,CASE WHEN c.kind='EXPENSE' THEN 'EXPECTED_EXPENSE' ELSE 'EXPECTED_INCOME' END,c.id,NULL,v.description,o.amount_in_cents,o.reference_date,c.registered_at,c.created_by,
+        v.expected_member_id,v.owner_person_id,NULL,
+        ARRAY(SELECT s.member_id FROM financial_recurrence_shares s WHERE s.space_id=c.space_id AND s.commitment_id=c.id AND s.version=v.version) || ARRAY(SELECT (x->>'memberId')::uuid FROM jsonb_array_elements(COALESCE(v.split_input->'shares','[]'::jsonb)) x)
+    FROM financial_occurrences o JOIN financial_commitments c ON c.space_id=o.space_id AND c.id=o.commitment_id
+    JOIN financial_recurrence_versions v ON v.space_id=o.space_id AND v.commitment_id=o.commitment_id AND v.version=o.economic_version
+    WHERE o.space_id=$1 AND o.status<>'CANCELLED'
+    UNION ALL
+    SELECT f.id,'DISBURSEMENT',c.id,NULL,COALESCE((SELECT v.description FROM financial_occurrences o JOIN financial_recurrence_versions v ON v.commitment_id=o.commitment_id AND v.version=o.economic_version WHERE o.id=f.occurrence_id),c.description),f.amount_in_cents,f.fact_date,f.registered_at,f.recorded_by_person_id,f.payer_member_id,f.payer_person_id,NULL,ARRAY[f.payer_member_id]
     FROM financial_disbursements f JOIN financial_commitments c ON c.space_id=f.space_id AND c.id=f.commitment_id WHERE f.space_id=$1
     UNION ALL
-    SELECT f.id,'RECEIPT',c.id,NULL,c.description,f.amount_in_cents,f.fact_date,f.registered_at,f.recorded_by_person_id,f.recipient_member_id,f.recipient_person_id,NULL,
+    SELECT f.id,'RECEIPT',c.id,NULL,COALESCE((SELECT v.description FROM financial_occurrences o JOIN financial_recurrence_versions v ON v.commitment_id=o.commitment_id AND v.version=o.economic_version WHERE o.id=f.occurrence_id),c.description),f.amount_in_cents,f.fact_date,f.registered_at,f.recorded_by_person_id,f.recipient_member_id,f.recipient_person_id,NULL,
         ARRAY(SELECT s.member_id FROM financial_income_shares s WHERE s.space_id=c.space_id AND s.commitment_id=c.id)
             || ARRAY(SELECT s.member_id FROM financial_occurrence_shares s WHERE s.occurrence_id=f.occurrence_id)
             || ARRAY(SELECT s.member_id FROM financial_recurrence_shares s JOIN financial_occurrences o
@@ -76,10 +91,10 @@ const facts = `WITH facts AS (
                 WHERE o.id=f.occurrence_id AND o.space_id=f.space_id)
     FROM financial_receipts f JOIN financial_commitments c ON c.space_id=f.space_id AND c.id=f.commitment_id WHERE f.space_id=$1
     UNION ALL
-    SELECT f.id,'EXTERNAL_LIABILITY',c.id,f.id,c.description,f.amount_in_cents,f.fact_date,f.registered_at,f.recorded_by_person_id,f.holder_member_id,f.holder_person_id,NULL,ARRAY[f.holder_member_id]
+    SELECT f.id,'EXTERNAL_LIABILITY',c.id,f.id,COALESCE((SELECT v.description FROM financial_occurrences o JOIN financial_recurrence_versions v ON v.commitment_id=o.commitment_id AND v.version=o.economic_version WHERE o.id=f.occurrence_id),c.description),f.amount_in_cents,f.fact_date,f.registered_at,f.recorded_by_person_id,f.holder_member_id,f.holder_person_id,NULL,ARRAY[f.holder_member_id]
     FROM financial_external_liabilities f JOIN financial_commitments c ON c.space_id=f.space_id AND c.id=f.commitment_id WHERE f.space_id=$1
     UNION ALL
-    SELECT f.id,'EXTERNAL_SETTLEMENT',c.id,f.external_liability_id,c.description,f.amount_in_cents,f.fact_date,f.registered_at,f.recorded_by_person_id,f.holder_member_id,f.holder_person_id,NULL,ARRAY[f.holder_member_id]
+    SELECT f.id,'EXTERNAL_SETTLEMENT',c.id,f.external_liability_id,COALESCE((SELECT v.description FROM financial_external_liabilities l JOIN financial_occurrences o ON o.id=l.occurrence_id JOIN financial_recurrence_versions v ON v.commitment_id=o.commitment_id AND v.version=o.economic_version WHERE l.id=f.external_liability_id),c.description),f.amount_in_cents,f.fact_date,f.registered_at,f.recorded_by_person_id,f.holder_member_id,f.holder_person_id,NULL,ARRAY[f.holder_member_id]
     FROM financial_external_liability_settlements f JOIN financial_commitments c ON c.space_id=f.space_id AND c.id=f.commitment_id WHERE f.space_id=$1
     UNION ALL
     SELECT f.id,'INTERNAL_TRANSFER',NULL,NULL,'Transferência interna',f.amount_in_cents,f.fact_date,f.registered_at,f.created_by,f.payer_member_id,NULL,f.recipient_member_id,ARRAY[f.payer_member_id,f.recipient_member_id]
@@ -97,7 +112,10 @@ const facts = `WITH facts AS (
         ARRAY(SELECT DISTINCT a.debtor_member_id FROM settlement_reversal_applications a WHERE a.space_id=f.space_id AND a.reversal_id=f.id UNION SELECT DISTINCT a.creditor_member_id FROM settlement_reversal_applications a WHERE a.space_id=f.space_id AND a.reversal_id=f.id)
     FROM settlement_reversals f WHERE f.space_id=$1
 ), selected AS (
-    SELECT * FROM facts WHERE relevant_date >= $2::date AND relevant_date < $3::date AND ($4::uuid IS NULL OR $4::uuid=ANY(member_ids))
+    SELECT * FROM (
+        SELECT facts.*,ROW_NUMBER() OVER (PARTITION BY type,commitment_id,date_trunc('month',relevant_date) ORDER BY relevant_date,id) AS occurrence_rank
+        FROM facts WHERE relevant_date >= $2::date AND relevant_date < $3::date AND ($4::uuid IS NULL OR $4::uuid=ANY(member_ids))
+    ) ranked WHERE type NOT IN ('EXPECTED_EXPENSE','EXPECTED_INCOME') OR id<>commitment_id OR occurrence_rank=1
 )`;
 const projection = `id,type,commitment_id AS "commitmentId",external_liability_id AS "externalLiabilityId",description,amount_in_cents::text AS "amountInCents",to_char(relevant_date,'YYYY-MM-DD') AS "relevantDate",
     CASE WHEN type IN ('EXPECTED_INCOME','EXPECTED_EXPENSE') THEN 'EXPECTED' ELSE 'ACTUAL' END AS "dateNature",${instant('registered_at')} AS "registeredAt",recorded_by_person_id AS "recordedByPersonId",participant_member_id AS "participantMemberId",participant_person_id AS "participantPersonId",recipient_member_id AS "recipientMemberId",array_remove(member_ids,NULL) AS "memberIds"`;
@@ -240,7 +258,8 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
             FROM selected s WHERE type='EXPECTED_EXPENSE' OR (type='EXPECTED_INCOME' AND relevant_date >= $5::date)
         ), outstanding AS (SELECT *,amount_in_cents-received AS remaining FROM pending WHERE received<amount_in_cents OR amount_in_cents IS NULL), page AS (
             SELECT ${projection},received::text AS "receivedAmountInCents",remaining::text AS "remainingAmountInCents",
-                COALESCE((SELECT v.amount_in_cents::text FROM financial_recurrence_versions v WHERE v.space_id=$1 AND v.commitment_id=outstanding.commitment_id AND v.version=1),amount_in_cents::text) AS "expectedAmountInCents" FROM outstanding
+                COALESCE((SELECT v.amount_in_cents::text FROM financial_occurrences o JOIN financial_recurrence_versions v ON v.space_id=o.space_id AND v.commitment_id=o.commitment_id AND v.version=o.economic_version WHERE o.id=outstanding.id AND o.space_id=$1),
+                    (SELECT v.amount_in_cents::text FROM financial_recurrence_versions v WHERE v.space_id=$1 AND v.commitment_id=outstanding.commitment_id AND v.effective_from<=outstanding.relevant_date ORDER BY v.effective_from DESC LIMIT 1),amount_in_cents::text) AS "expectedAmountInCents" FROM outstanding
             WHERE ($6::date IS NULL OR (relevant_date,id)>($6::date,$7::uuid)) ORDER BY relevant_date,id LIMIT 21
         ) SELECT COALESCE((SELECT jsonb_agg(p ORDER BY p."relevantDate",p.id) FROM page p),'[]'::jsonb) AS items,
             COALESCE(SUM(amount_in_cents) FILTER (WHERE type='EXPECTED_INCOME'),0)::text AS expected,

@@ -23,7 +23,9 @@ export type FinancesErrorCode =
     | 'EXPENSE_ALREADY_PAID'
     | 'OCCURRENCE_ALREADY_RESOLVED'
     | 'OCCURRENCE_VALUE_REQUIRED'
-    | 'INCOME_OPTIONS_CHANGED';
+    | 'INCOME_OPTIONS_CHANGED'
+    | 'RECURRENCE_ACCEPTANCE_REQUIRED'
+    | 'RECURRENCE_ALREADY_TERMINATED';
 const messages: Record<FinancesErrorCode, string> = {
     SETTLEMENT_RESOLUTION_ALREADY_REVERSED:
         'Este acerto já foi integralmente revertido.',
@@ -61,6 +63,9 @@ const messages: Record<FinancesErrorCode, string> = {
     OCCURRENCE_VALUE_REQUIRED:
         'Informe o valor efetivo desta ocorrência antes de registrar a realização.',
     INCOME_OPTIONS_CHANGED: 'As opções mudaram. Atualize e confirme novamente.',
+    RECURRENCE_ACCEPTANCE_REQUIRED:
+        'Esta alteração exige aceite dos demais membros e ainda não pode ser aplicada.',
+    RECURRENCE_ALREADY_TERMINATED: 'Esta recorrência já foi encerrada.',
 };
 export class FinancesError extends Error {
     constructor(

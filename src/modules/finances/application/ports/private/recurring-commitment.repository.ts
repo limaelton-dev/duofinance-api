@@ -21,7 +21,7 @@ export interface RecurringCommitmentRepository {
         month: string,
         after: string | null,
     ): Promise<{
-        items: RecurringCommitment[];
+        items: { commitment: RecurringCommitment; referenceDate: string }[];
         totalCount: number;
         totalAmountInCents: string;
         unknownAmountCount: number;
@@ -30,6 +30,32 @@ export interface RecurringCommitmentRepository {
         root: RecurringCommitment,
         referenceDate: string,
     ): Promise<FinancialOccurrence | null>;
+    occurrencesInMonth(
+        root: RecurringCommitment,
+        month: string,
+    ): Promise<FinancialOccurrence[]>;
+    materializedAfter(
+        root: RecurringCommitment,
+        date: string,
+    ): Promise<
+        { referenceDate: string; status: string; economicVersion: number }[]
+    >;
+    saveVersion(
+        root: RecurringCommitment,
+        next: RecurringCommitment,
+        effectiveFrom: string,
+    ): Promise<void>;
+    terminate(
+        root: RecurringCommitment,
+        endsOn: string,
+        actorId: string,
+        now: string,
+    ): Promise<void>;
+    cancel(
+        root: RecurringCommitment,
+        occurrence: FinancialOccurrence,
+        wasProjected: boolean,
+    ): Promise<void>;
     defineValue(
         root: RecurringCommitment,
         occurrence: FinancialOccurrence,

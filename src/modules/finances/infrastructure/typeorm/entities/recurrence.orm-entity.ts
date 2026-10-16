@@ -16,6 +16,11 @@ import {
 
 @Entity('financial_recurrence_versions')
 @Unique('UQ_recurrence_versions_space', ['spaceId', 'commitmentId', 'version'])
+@Unique('UQ_recurrence_versions_effective', [
+    'spaceId',
+    'commitmentId',
+    'effectiveFrom',
+])
 @Check(
     'CHK_recurrence_versions_values',
     `version > 0 AND (amount_in_cents IS NULL OR amount_in_cents BETWEEN 1 AND 9007199254740991) AND value_mode IN ('FIXED','VARIABLE') AND (value_mode='VARIABLE' OR amount_in_cents IS NOT NULL) AND frequency IN ('MONTHLY','ANNUAL') AND day_of_month BETWEEN 1 AND 31 AND ((frequency='MONTHLY' AND month_of_year IS NULL) OR (frequency='ANNUAL' AND month_of_year BETWEEN 1 AND 12)) AND (ends_on IS NULL OR ends_on >= starts_on) AND ((owner_person_id IS NOT NULL AND split_input IS NULL AND expected_member_id IS NULL AND rule_snapshot IS NULL AND rule_source_version=0) OR (owner_person_id IS NULL AND split_input IS NOT NULL AND rule_source_version >= 0 AND (rule_snapshot IS NULL)=(rule_source_version=0) AND (value_mode='FIXED' OR split_input->>'mode'='PERCENTAGES')))`,
@@ -41,6 +46,8 @@ export class FinancialRecurrenceVersionOrmEntity {
     commitmentId!: string;
     @PrimaryColumn('integer') version!: number;
     @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
+    @Column({ name: 'effective_from', type: 'date' }) effectiveFrom!: string;
+    @Column({ type: 'varchar', length: 160 }) description!: string;
     @Column({
         name: 'amount_in_cents',
         type: 'bigint',
@@ -150,7 +157,7 @@ export class FinancialOccurrenceOrmEntity {
 @Entity('financial_recurrence_command_receipts')
 @Check(
     'CHK_recurrence_command_receipts',
-    `status='COMPLETED' AND octet_length(request_hash)=32 AND operation IN ('CREATE_FIXED_RECURRING_COMMITMENT','CREATE_RECURRING_COMMITMENT','SET_RECURRING_OCCURRENCE_VALUE','RECORD_RECURRING_DISBURSEMENT','RECORD_RECURRING_RECEIPT','RECORD_RECURRING_EXTERNAL_LIABILITY','SETTLE_RECURRING_EXTERNAL_LIABILITY')`,
+    `status='COMPLETED' AND octet_length(request_hash)=32 AND operation IN ('CREATE_FIXED_RECURRING_COMMITMENT','CREATE_RECURRING_COMMITMENT','SET_RECURRING_OCCURRENCE_VALUE','RECORD_RECURRING_DISBURSEMENT','RECORD_RECURRING_RECEIPT','RECORD_RECURRING_EXTERNAL_LIABILITY','SETTLE_RECURRING_EXTERNAL_LIABILITY','CHANGE_RECURRING_COMMITMENT','TERMINATE_RECURRING_COMMITMENT','CANCEL_RECURRING_OCCURRENCE')`,
 )
 @ForeignKey('persons', ['actorId'], ['id'], {
     name: 'FK_recurrence_receipts_actor',
