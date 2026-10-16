@@ -82,6 +82,7 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
                     o.status === 'RECONCILED',
                     null,
                     o.externalLiabilityId,
+                    o.status === 'WAIVED',
                 ),
             );
         }
@@ -94,7 +95,7 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
         const settlements: OriginSettlement[] = await m.query(
             `SELECT t.payer_member_id AS "payerMemberId",t.recipient_member_id AS "recipientMemberId",a.amount_in_cents::text AS "amountInCents" FROM settlement_allocations a JOIN settlement_transfers t ON t.space_id=a.space_id AND t.id=a.transfer_id JOIN inter_member_obligations o ON o.space_id=a.space_id AND o.id=a.obligation_id WHERE o.space_id=$1 AND o.commitment_id=$2
             UNION ALL
-            SELECT o.debtor_member_id AS "payerMemberId",o.creditor_member_id AS "recipientMemberId",ch.snapshot->>'appliedAmountInCents' AS "amountInCents" FROM inter_member_obligation_changes ch JOIN inter_member_obligations o ON o.space_id=ch.space_id AND o.id=ch.obligation_id WHERE o.space_id=$1 AND o.commitment_id=$2 AND ch.type='OFFSET_APPLIED'`,
+            SELECT o.debtor_member_id AS "payerMemberId",o.creditor_member_id AS "recipientMemberId",ch.snapshot->>'appliedAmountInCents' AS "amountInCents" FROM inter_member_obligation_changes ch JOIN inter_member_obligations o ON o.space_id=ch.space_id AND o.id=ch.obligation_id WHERE o.space_id=$1 AND o.commitment_id=$2 AND ch.type IN ('OFFSET_APPLIED','WAIVED')`,
             [spaceId, commitmentId],
         );
         return {
@@ -171,15 +172,17 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
             id: string;
             transferred: string;
             compensated: string;
+            waived: string;
         }[] = await m.query(
             `WITH applications AS (
                 SELECT obligation_id,amount_in_cents,'TRANSFER' AS kind FROM settlement_allocations WHERE space_id=$1
                 UNION ALL
-                SELECT obligation_id,(snapshot->>'appliedAmountInCents')::bigint AS amount_in_cents,'OFFSET' AS kind FROM inter_member_obligation_changes WHERE space_id=$1 AND type='OFFSET_APPLIED'
+                SELECT obligation_id,(snapshot->>'appliedAmountInCents')::bigint AS amount_in_cents,type AS kind FROM inter_member_obligation_changes WHERE space_id=$1 AND type IN ('OFFSET_APPLIED','WAIVED')
             )
             SELECT o.id,
                 COALESCE(SUM(a.amount_in_cents) FILTER (WHERE a.kind='TRANSFER'),0)::text AS transferred,
-                COALESCE(SUM(a.amount_in_cents) FILTER (WHERE a.kind='OFFSET'),0)::text AS compensated
+                COALESCE(SUM(a.amount_in_cents) FILTER (WHERE a.kind='OFFSET_APPLIED'),0)::text AS compensated,
+                COALESCE(SUM(a.amount_in_cents) FILTER (WHERE a.kind='WAIVED'),0)::text AS waived
             FROM inter_member_obligations o LEFT JOIN applications a ON a.obligation_id=o.id
             WHERE o.space_id=$1 AND o.commitment_id=$2 GROUP BY o.id`,
             [spaceId, commitmentId],
@@ -210,6 +213,7 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
                 compensatedAmountInCents: Number(
                     totals.get(o.id)?.compensated ?? '0',
                 ),
+                waivedAmountInCents: Number(totals.get(o.id)?.waived ?? '0'),
                 status: o.status as FulfillmentObligationView['status'],
                 cycleId: o.cycleId,
                 history: changes.map((c) => ({

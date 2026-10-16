@@ -200,6 +200,7 @@ describe('CARD-009 PostgreSQL settlement transfer', () => {
                 remainingAmountInCents: '0',
                 transferredAmountInCents: '20000',
                 compensatedAmountInCents: '0',
+                waivedAmountInCents: '0',
             },
         });
         const sourceDetail = await origin.execute(

@@ -143,6 +143,7 @@ describe('CARD-003 — persistência e migration', () => {
                 'CustomSettlementAssignment1792160969556',
                 'RecordSettlementOffset1792162181991',
                 'FinalizeSettlementCycle1792162609967',
+                'WaiveInterMemberObligation1792163371690',
             ]);
             expect(await receipts.find(command)).not.toBeNull();
             expect((await repository.findById(legacy.space.id))?.version).toBe(

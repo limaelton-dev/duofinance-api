@@ -438,6 +438,7 @@ describe('CARD-001 — PostgreSQL e HTTP', () => {
             'CustomSettlementAssignment1792160969556',
             'RecordSettlementOffset1792162181991',
             'FinalizeSettlementCycle1792162609967',
+            'WaiveInterMemberObligation1792163371690',
         ]);
         expect(await counts()).toEqual([0, 0, 0, 0]);
 

@@ -13,6 +13,7 @@ export interface OpenObligationView extends PositionKey {
     recognizedAmountInCents: number;
     remainingAmountInCents: number;
     compensatedAmountInCents?: number;
+    waivedAmountInCents?: number;
     factDate: string;
     origin:
         | {

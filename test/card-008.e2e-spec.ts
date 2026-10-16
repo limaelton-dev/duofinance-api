@@ -237,6 +237,7 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
                     remainingAmountInCents: '43000',
                     transferredAmountInCents: '0',
                     compensatedAmountInCents: '0',
+                    waivedAmountInCents: '0',
                 },
                 position: {
                     payableAmountInCents: '35000',
@@ -402,6 +403,7 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
                         remainingAmountInCents: '0',
                         transferredAmountInCents: '0',
                         compensatedAmountInCents: '0',
+                        waivedAmountInCents: '0',
                     },
                 }),
             ]),
@@ -624,6 +626,7 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
             remainingAmountInCents: '18014398509481983',
             transferredAmountInCents: '0',
             compensatedAmountInCents: '0',
+            waivedAmountInCents: '0',
         });
         expect(result.cycle.position.net).toEqual({
             direction: 'PAYABLE',

@@ -14,7 +14,8 @@ const object = (
     type: 'object',
     additionalProperties: false,
     required: Object.keys(properties).filter(
-        (name) => name !== 'compensatedAmountInCents',
+        (name) =>
+            !['compensatedAmountInCents', 'waivedAmountInCents'].includes(name),
     ),
     properties,
 });
@@ -119,9 +120,10 @@ const obligation = object({
     remainingAmountInCents: money,
     transferredAmountInCents: money,
     compensatedAmountInCents: money,
+    waivedAmountInCents: money,
     status: {
         type: 'string',
-        enum: ['OPEN', 'PARTIALLY_SETTLED', 'SETTLED', 'RECONCILED'],
+        enum: ['OPEN', 'PARTIALLY_SETTLED', 'SETTLED', 'RECONCILED', 'WAIVED'],
     },
     cycleId: nullable(uuid),
     history: {
@@ -136,6 +138,7 @@ const obligation = object({
                     'RECONCILED',
                     'ASSIGNMENT_CHANGED',
                     'OFFSET_APPLIED',
+                    'WAIVED',
                 ],
             },
             actorId: uuid,

@@ -13,7 +13,8 @@ const object = (
     type: 'object',
     additionalProperties: false,
     required: Object.keys(properties).filter(
-        (name) => name !== 'compensatedAmountInCents',
+        (name) =>
+            !['compensatedAmountInCents', 'waivedAmountInCents'].includes(name),
     ),
     properties,
 });
@@ -123,6 +124,11 @@ const summary = {
             ...total,
             description:
                 'Soma das aplicações de compensação no ciclo ou recorte. Pode incluir ambas as direções: compensação de 8000 aplica 16000 no conjunto. Não é transferência de caixa.',
+        },
+        waivedAmountInCents: {
+            ...total,
+            description:
+                'Valor dispensado pelo credor nas pendências do ciclo ou recorte, separado de transferência de caixa e compensação.',
         },
     }),
     position: object({
@@ -371,6 +377,7 @@ export const settlementCycleOpenApi: Pick<
                         'PARTIALLY_SETTLED',
                         'SETTLED',
                         'RECONCILED',
+                        'WAIVED',
                     ],
                 },
                 debtorMemberId: uuid,
@@ -380,6 +387,7 @@ export const settlementCycleOpenApi: Pick<
                 resolvedAmountInCents: integer,
                 remainingAmountInCents: integer,
                 compensatedAmountInCents: integer,
+                waivedAmountInCents: integer,
                 factDate: date,
                 registeredAt: { type: 'string', format: 'date-time' },
                 origin: ref('InterMemberObligationOrigin'),
@@ -486,6 +494,7 @@ export const settlementCycleOpenApi: Pick<
                                 'PARTIALLY_SETTLED',
                                 'SETTLED',
                                 'RECONCILED',
+                                'WAIVED',
                             ],
                         },
                         debtorMemberId: uuid,
@@ -495,6 +504,7 @@ export const settlementCycleOpenApi: Pick<
                         resolvedAmountInCents: integer,
                         remainingAmountInCents: integer,
                         compensatedAmountInCents: integer,
+                        waivedAmountInCents: integer,
                         factDate: date,
                         registeredAt: { type: 'string', format: 'date-time' },
                         cycleId: uuid,

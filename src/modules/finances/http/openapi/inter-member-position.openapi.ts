@@ -13,7 +13,8 @@ const object = (
     type: 'object',
     additionalProperties: false,
     required: Object.keys(properties).filter(
-        (name) => name !== 'compensatedAmountInCents',
+        (name) =>
+            !['compensatedAmountInCents', 'waivedAmountInCents'].includes(name),
     ),
     properties,
 });
@@ -164,6 +165,7 @@ export const interMemberPositionOpenApi: Pick<
                 recognizedAmountInCents: { ...money, minimum: 1 },
                 remainingAmountInCents: { ...money, minimum: 1 },
                 compensatedAmountInCents: money,
+                waivedAmountInCents: money,
                 factDate: date,
                 registeredAt: { type: 'string', format: 'date-time' },
                 origin: ref('InterMemberObligationOrigin'),

@@ -24,6 +24,7 @@ function transaction(p: EntityManagerProvider) {
     return m;
 }
 interface ObligationRow {
+    status: string;
     id: string;
     space_id: string;
     commitment_id: string;
@@ -136,9 +137,10 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
                     changes.map((change) => change.allocation_id),
                     o.receipt_id ? 'INCOME' : 'EXPENSE',
                     amount(o.recognized_amount_in_cents),
-                    false,
+                    o.status === 'RECONCILED',
                     null,
                     o.external_liability_id,
+                    o.status === 'WAIVED',
                 ),
             );
         }

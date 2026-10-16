@@ -7,7 +7,8 @@ export type FinancialReviewItemType =
     | 'EXTERNAL_LIABILITY'
     | 'EXTERNAL_SETTLEMENT'
     | 'INTERNAL_TRANSFER'
-    | 'INTERNAL_OFFSET';
+    | 'INTERNAL_OFFSET'
+    | 'INTERNAL_WAIVER';
 export interface FinancialReviewItem {
     id: string;
     type: FinancialReviewItemType;

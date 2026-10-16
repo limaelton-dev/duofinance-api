@@ -136,6 +136,9 @@ export class TypeOrmSettlementAdjustmentRepository implements SettlementAdjustme
                           ? {
                                 obligationVersion: result.obligation.version,
                                 affectedCycleIds: result.affectedCycleIds,
+                                ...('waiver' in result
+                                    ? { waiverId: result.waiver.id }
+                                    : {}),
                             }
                           : {
                                 cycleVersion: result.cycle.version,

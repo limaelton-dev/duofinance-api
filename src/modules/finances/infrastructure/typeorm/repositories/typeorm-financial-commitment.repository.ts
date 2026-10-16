@@ -245,7 +245,9 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
         const latest = history.at(-1);
         const current =
             history.find((o) => o.remainingAmountInCents > 0) ??
-            (latest?.status === 'SETTLED' ? latest : null);
+            (latest && ['SETTLED', 'WAIVED'].includes(latest.status)
+                ? latest
+                : null);
         const cycle = current?.cycleId
             ? await this.provider
                   .get()

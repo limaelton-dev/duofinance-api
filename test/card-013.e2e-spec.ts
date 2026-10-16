@@ -939,6 +939,7 @@ describe('CARD-013 partial fulfillment HTTP/PostgreSQL', () => {
             resolvedAmountInCents: '5000',
             transferredAmountInCents: '5000',
             compensatedAmountInCents: '0',
+            waivedAmountInCents: '0',
             remainingAmountInCents: '0',
         });
         expect(cycle.items).toHaveLength(1);

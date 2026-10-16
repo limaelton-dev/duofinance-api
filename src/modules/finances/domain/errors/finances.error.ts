@@ -1,9 +1,11 @@
 export type FinancesErrorCode =
+    | 'OBLIGATION_WAIVER_NOT_FOUND'
     | 'SETTLEMENT_OFFSET_NOT_FOUND'
     | 'EXTERNAL_LIABILITY_NOT_FOUND'
     | 'EXTERNAL_LIABILITY_ALREADY_SETTLED'
     | 'EXTERNAL_LIABILITY_HOLDER_REQUIRED'
     | 'VALIDATION_ERROR'
+    | 'OBLIGATION_CREDITOR_REQUIRED'
     | 'SHARED_SPACE_REQUIRED'
     | 'PERSONAL_SPACE_REQUIRED'
     | 'CONCURRENT_MODIFICATION'
@@ -19,6 +21,7 @@ export type FinancesErrorCode =
     | 'EXPENSE_ALREADY_PAID'
     | 'INCOME_OPTIONS_CHANGED';
 const messages: Record<FinancesErrorCode, string> = {
+    OBLIGATION_WAIVER_NOT_FOUND: 'Dispensa não encontrada.',
     SETTLEMENT_OFFSET_NOT_FOUND: 'Compensação não encontrada.',
     EXTERNAL_LIABILITY_NOT_FOUND:
         'Obriga\u00e7\u00e3o externa n\u00e3o encontrada.',
@@ -27,6 +30,8 @@ const messages: Record<FinancesErrorCode, string> = {
     EXTERNAL_LIABILITY_HOLDER_REQUIRED:
         'Somente o titular pode registrar este pagamento.',
     VALIDATION_ERROR: 'Verifique os dados informados.',
+    OBLIGATION_CREDITOR_REQUIRED:
+        'Somente o credor pode dispensar esta pendência.',
     SHARED_SPACE_REQUIRED: 'Esta ação requer um espaço compartilhado.',
     PERSONAL_SPACE_REQUIRED: 'Esta ação requer um espaço pessoal.',
     CONCURRENT_MODIFICATION:

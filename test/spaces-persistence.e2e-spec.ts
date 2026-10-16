@@ -132,6 +132,7 @@ describe('CARD-002 — persistência PostgreSQL', () => {
             'CustomSettlementAssignment1792160969556',
             'RecordSettlementOffset1792162181991',
             'FinalizeSettlementCycle1792162609967',
+            'WaiveInterMemberObligation1792163371690',
         ]);
 
         const context = new TransactionContext();

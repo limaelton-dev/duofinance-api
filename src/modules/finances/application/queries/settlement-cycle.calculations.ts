@@ -5,6 +5,7 @@ export function settlementCycleTotals(
     transferred = '0',
     recognized = original,
     compensated = '0',
+    waived = '0',
 ): SettlementCycleTotals {
     return {
         originalAmountInCents: original,
@@ -15,5 +16,6 @@ export function settlementCycleTotals(
         remainingAmountInCents: remaining,
         transferredAmountInCents: transferred,
         compensatedAmountInCents: compensated,
+        waivedAmountInCents: waived,
     };
 }

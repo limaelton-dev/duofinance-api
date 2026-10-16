@@ -36,6 +36,7 @@ const itemProperties = {
             'EXTERNAL_SETTLEMENT',
             'INTERNAL_TRANSFER',
             'INTERNAL_OFFSET',
+            'INTERNAL_WAIVER',
         ],
     } as SchemaObject,
     commitmentId: nullable(uuid),

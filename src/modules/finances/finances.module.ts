@@ -1,6 +1,13 @@
 import { settlementAdjustmentEntities } from './infrastructure/typeorm/entities/settlement-adjustment.orm-entity.js';
 import { settlementOffsetEntities } from './infrastructure/typeorm/entities/settlement-offset.orm-entity.js';
 import { SettlementCycleChangeOrmEntity } from './infrastructure/typeorm/entities/settlement-cycle-change.orm-entity.js';
+import { ObligationWaiverOrmEntity } from './infrastructure/typeorm/entities/obligation-waiver.orm-entity.js';
+import { OBLIGATION_WAIVER_REPOSITORY } from './application/ports/private/obligation-waiver.repository.js';
+import { TypeOrmObligationWaiverRepository } from './infrastructure/typeorm/repositories/typeorm-obligation-waiver.repository.js';
+import { WaiveObligationHandler } from './application/handlers/waive-obligation.handler.js';
+import { ObligationWaiverQueries } from './application/queries/obligation-waiver.queries.js';
+import { WaiveObligationPipe } from './http/dto/obligation-waiver.dto.js';
+import { ObligationWaiverController } from './http/controllers/obligation-waiver.controller.js';
 import { SETTLEMENT_CYCLE_FINALIZATION_REPOSITORY } from './application/ports/private/settlement-cycle-finalization.repository.js';
 import { TypeOrmSettlementCycleFinalizationRepository } from './infrastructure/typeorm/repositories/typeorm-settlement-cycle-finalization.repository.js';
 import { FinalizeSettlementCycleHandler } from './application/handlers/finalize-settlement-cycle.handler.js';
@@ -160,6 +167,7 @@ import {
             ...settlementAdjustmentEntities,
             ...settlementOffsetEntities,
             SettlementCycleChangeOrmEntity,
+            ObligationWaiverOrmEntity,
             FinancialCommandAuditOrmEntity,
             ...sharedExpenseEntities,
             FinancialExternalLiabilitySettlementOrmEntity,
@@ -174,6 +182,7 @@ import {
         ]),
     ],
     controllers: [
+        ObligationWaiverController,
         SettlementCycleFinalizationController,
         SettlementOffsetController,
         SettlementAdjustmentController,
@@ -190,6 +199,13 @@ import {
         SettlementTransferController,
     ],
     providers: [
+        WaiveObligationHandler,
+        ObligationWaiverQueries,
+        WaiveObligationPipe,
+        {
+            provide: OBLIGATION_WAIVER_REPOSITORY,
+            useClass: TypeOrmObligationWaiverRepository,
+        },
         FinalizeSettlementCycleHandler,
         FinalizeSettlementCyclePipe,
         {

@@ -275,7 +275,7 @@ export class SettlementCycleOrmEntity {
 @Index('IDX_obligations_space_cycle', ['spaceId', 'cycleId'])
 @Check(
     'CHK_obligations_state',
-    `${money('original_amount_in_cents', true)} AND ${money('recognized_amount_in_cents')} AND ${money('remaining_amount_in_cents')} AND remaining_amount_in_cents <= recognized_amount_in_cents AND debtor_member_id <> creditor_member_id AND version > 0 AND fact_date <= (registered_at AT TIME ZONE 'America/Sao_Paulo')::date AND ((status = 'OPEN' AND remaining_amount_in_cents > 0 AND remaining_amount_in_cents = recognized_amount_in_cents) OR (status = 'PARTIALLY_SETTLED' AND remaining_amount_in_cents > 0 AND remaining_amount_in_cents < recognized_amount_in_cents) OR (status IN ('SETTLED','RECONCILED') AND remaining_amount_in_cents = 0))`,
+    `${money('original_amount_in_cents', true)} AND ${money('recognized_amount_in_cents')} AND ${money('remaining_amount_in_cents')} AND remaining_amount_in_cents <= recognized_amount_in_cents AND debtor_member_id <> creditor_member_id AND version > 0 AND fact_date <= (registered_at AT TIME ZONE 'America/Sao_Paulo')::date AND ((status = 'OPEN' AND remaining_amount_in_cents > 0 AND remaining_amount_in_cents = recognized_amount_in_cents) OR (status = 'PARTIALLY_SETTLED' AND remaining_amount_in_cents > 0 AND remaining_amount_in_cents < recognized_amount_in_cents) OR (status IN ('SETTLED','RECONCILED','WAIVED') AND remaining_amount_in_cents = 0))`,
 )
 @Check(
     'CHK_obligations_origin_xor',
@@ -356,7 +356,7 @@ export class InterMemberObligationOrmEntity {
 @Entity('inter_member_obligation_changes')
 @Check(
     'CHK_obligation_changes_type',
-    `(version = 1 AND type = 'CREATED' AND allocation_id IS NULL) OR (version > 1 AND type = 'SETTLEMENT_APPLIED' AND allocation_id IS NOT NULL) OR (version > 1 AND type IN ('RECONCILED','ASSIGNMENT_CHANGED','OFFSET_APPLIED') AND allocation_id IS NULL)`,
+    `(version = 1 AND type = 'CREATED' AND allocation_id IS NULL) OR (version > 1 AND type = 'SETTLEMENT_APPLIED' AND allocation_id IS NOT NULL) OR (version > 1 AND type IN ('RECONCILED','ASSIGNMENT_CHANGED','OFFSET_APPLIED','WAIVED') AND allocation_id IS NULL)`,
 )
 @ForeignKey(
     () => InterMemberObligationOrmEntity,

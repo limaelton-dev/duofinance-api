@@ -12,6 +12,7 @@ export interface FulfillmentObligationView {
     remainingAmountInCents: number;
     transferredAmountInCents: number;
     compensatedAmountInCents?: number;
+    waivedAmountInCents?: number;
     status: ObligationStatus;
     cycleId: string | null;
     history: {
@@ -21,7 +22,8 @@ export interface FulfillmentObligationView {
             | 'SETTLEMENT_APPLIED'
             | 'RECONCILED'
             | 'ASSIGNMENT_CHANGED'
-            | 'OFFSET_APPLIED';
+            | 'OFFSET_APPLIED'
+            | 'WAIVED';
         actorId: string;
         registeredAt: string;
         snapshot: Record<string, unknown>;

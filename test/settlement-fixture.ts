@@ -3,6 +3,7 @@ import type { Server } from 'node:http';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { DataSource } from 'typeorm';
+import { expect, vi } from 'vitest';
 
 export const financeBase = (space: string) => `/v2/spaces/${space}`;
 export const commitmentPath = (space: string, id: string) =>
@@ -137,7 +138,7 @@ export function sharedExpenseInput(
 
 export async function financeSnapshot(db: DataSource) {
     const tables = (await db.query(
-        "SELECT tablename FROM pg_tables WHERE schemaname='public' AND (tablename LIKE 'financial_%' OR tablename LIKE 'inter_member_%' OR tablename LIKE 'settlement_%' OR tablename LIKE 'default_settlement_%') ORDER BY tablename",
+        "SELECT tablename FROM pg_tables WHERE schemaname='public' AND (tablename LIKE 'financial_%' OR tablename LIKE 'inter_member_%' OR tablename LIKE 'settlement_%' OR tablename LIKE 'default_settlement_%' OR tablename='obligation_waivers') ORDER BY tablename",
     )) as { tablename: string }[];
     return Object.fromEntries(
         await Promise.all(
@@ -149,4 +150,40 @@ export async function financeSnapshot(db: DataSource) {
             ]),
         ),
     );
+}
+
+export async function competingFinanceCommands<T>(
+    db: DataSource,
+    space: string,
+    work: () => Promise<T>,
+) {
+    const gate = db.createQueryRunner();
+    await gate.connect();
+    await gate.startTransaction();
+    let pending: Promise<T> | undefined;
+    try {
+        const [{ pid }] = await gate.query('SELECT pg_backend_pid() AS pid');
+        await gate.query('SELECT id FROM spaces WHERE id=$1 FOR UPDATE', [
+            space,
+        ]);
+        pending = work();
+        await vi.waitFor(
+            async () => {
+                const waiting = await db.query(
+                    "SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND $1=ANY(pg_blocking_pids(pid))",
+                    [pid],
+                );
+                expect(
+                    new Set(waiting.map((r: { pid: number }) => r.pid)).size,
+                ).toBe(2);
+            },
+            { timeout: 10000, interval: 20 },
+        );
+        await gate.commitTransaction();
+        return await pending;
+    } finally {
+        if (gate.isTransactionActive) await gate.rollbackTransaction();
+        await gate.release();
+        if (pending) await Promise.allSettled([pending]);
+    }
 }

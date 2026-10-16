@@ -202,7 +202,9 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
         const latest = obligations.at(-1);
         const obligation =
             obligations.find((o) => o.remainingAmountInCents > 0) ??
-            (latest?.status === 'SETTLED' ? latest : null);
+            (latest && ['SETTLED', 'WAIVED'].includes(latest.status)
+                ? latest
+                : null);
         const cycle = obligation?.cycleId
             ? await this.provider
                   .get()

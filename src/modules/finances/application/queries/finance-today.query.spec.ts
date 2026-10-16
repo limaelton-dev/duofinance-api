@@ -27,6 +27,7 @@ function cycle(targetDate: string, remaining = '8000'): SettlementCycleRead {
             resolvedAmountInCents: '0',
             transferredAmountInCents: '0',
             compensatedAmountInCents: '0',
+            waivedAmountInCents: '0',
         },
         payableAmountInCents: (BigInt(remaining) / 2n).toString(),
         receivableAmountInCents: (BigInt(remaining) / 2n).toString(),

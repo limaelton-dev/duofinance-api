@@ -57,6 +57,7 @@ describe('settlement cycle exact calculated read values', () => {
                 remainingAmountInCents: remaining,
                 transferredAmountInCents: '0',
                 compensatedAmountInCents: '0',
+                waivedAmountInCents: '0',
                 resolvedAmountInCents: resolved,
             });
             expect(BigInt(totals.originalAmountInCents)).toBe(
@@ -91,6 +92,7 @@ describe('settlement cycle exact calculated read values', () => {
                 remainingAmountInCents: remaining,
                 transferredAmountInCents: transferred,
                 compensatedAmountInCents: '0',
+                waivedAmountInCents: '0',
                 resolvedAmountInCents: transferred,
             });
         },
