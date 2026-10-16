@@ -360,6 +360,7 @@ describe('settlement cycle application authorization and public contract', () =>
             today: vi.fn(),
             list: vi.fn().mockResolvedValue([cycle()]),
             detail: vi.fn().mockResolvedValue({ cycle: cycle(), items: [] }),
+            summary: vi.fn(),
         };
         const clock = {
             now: vi.fn(),

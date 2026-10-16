@@ -56,6 +56,7 @@ function fixture() {
         }),
         list: vi.fn(),
         detail: vi.fn(),
+        summary: vi.fn(),
     };
     return {
         context,

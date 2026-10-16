@@ -95,6 +95,7 @@ import { TypeOrmSettlementTransferReceipts } from './infrastructure/typeorm/repo
 import {
     GetSettlementCycleQuery,
     GetSettlementCyclesQuery,
+    GetSelectedSettlementCyclesQuery,
 } from './application/queries/settlement-cycle.queries.js';
 import { SETTLEMENT_CYCLE_READER } from './application/ports/private/settlement-cycle-reader.js';
 import { SETTLEMENT_CYCLE_QUERY_PORT } from './application/ports/public/settlement-cycle-query.port.js';
@@ -238,6 +239,7 @@ import {
             useExisting: GetFinanceTodayQuery,
         },
         GetSettlementCyclesQuery,
+        GetSelectedSettlementCyclesQuery,
         GetSettlementTransferOptionsQuery,
         GetSettlementTransferQuery,
         ListSettlementTransfersQuery,

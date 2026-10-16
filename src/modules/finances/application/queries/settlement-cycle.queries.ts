@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import {
     SPACE_FINANCIAL_CONTEXT_PORT,
     type SpaceFinancialContextPort,
@@ -17,6 +18,7 @@ import type {
     SettlementCycleResponse,
     SettlementCyclesResponse,
     SettlementCycleView,
+    SelectedSettlementCyclesResponse,
 } from '../models/settlement-cycle.js';
 import {
     SETTLEMENT_CYCLE_READER,
@@ -54,7 +56,7 @@ export function encodeSettlementListCursor(
         space,
         actor,
         view,
-        view === 'UPCOMING' ? referenceDate : null,
+        view !== 'OPEN' ? referenceDate : null,
         key.targetDate,
         key.id,
     ]);
@@ -76,7 +78,7 @@ export function decodeSettlementListCursor(
             v[2] !== space ||
             v[3] !== actor ||
             v[4] !== view ||
-            v[5] !== (view === 'UPCOMING' ? referenceDate : null) ||
+            v[5] !== (view !== 'OPEN' ? referenceDate : null) ||
             typeof v[6] !== 'string' ||
             typeof v[7] !== 'string' ||
             !uuid.test(v[7])
@@ -173,7 +175,7 @@ export class GetSettlementCyclesQuery implements SettlementCycleQueryPort {
         cursor?: string,
     ): Promise<SettlementCyclesResponse> {
         const authorized = await this.access.read(actor, space);
-        if (!['OPEN', 'UPCOMING'].includes(view))
+        if (!['OPEN', 'UPCOMING', 'OVERDUE'].includes(view))
             throw new FinancesError('VALIDATION_ERROR', ['view']);
         const referenceDate = civilDate(this.clock.today());
         const after = decodeSettlementListCursor(
@@ -216,6 +218,88 @@ export class GetSettlementCyclesQuery implements SettlementCycleQueryPort {
                               actor.value,
                               view,
                               referenceDate,
+                              last,
+                          )
+                        : null,
+            },
+        };
+    }
+}
+@Injectable()
+export class GetSelectedSettlementCyclesQuery {
+    constructor(
+        @Inject(SPACE_FINANCIAL_CONTEXT_PORT)
+        private readonly access: SpaceFinancialContextPort,
+        @Inject(SETTLEMENT_CYCLE_READER)
+        private readonly reader: SettlementCycleReader,
+        @Inject(FINANCES_CLOCK) private readonly clock: FinancesClock,
+    ) {}
+    async execute(
+        actor: PersonId,
+        space: SpaceId,
+        input: string[],
+        direction: PositionDirection = 'ALL',
+        cursor?: string,
+    ): Promise<SelectedSettlementCyclesResponse> {
+        const authorized = await this.access.read(actor, space);
+        const ids = input.map((id) => id.toLowerCase()).sort();
+        if (
+            ids.length < 2 ||
+            ids.length > 50 ||
+            new Set(ids).size !== ids.length ||
+            ids.some((id) => !uuid.test(id))
+        )
+            throw new FinancesError('VALIDATION_ERROR', ['cycleIds']);
+        if (!['ALL', 'PAYABLE', 'RECEIVABLE'].includes(direction))
+            throw new FinancesError('VALIDATION_ERROR', ['direction']);
+        const binding =
+            'SUMMARY:' +
+            createHash('sha256').update(JSON.stringify(ids)).digest('hex');
+        const after = decodeSettlementDetailCursor(
+            cursor,
+            space.value,
+            actor.value,
+            binding,
+            direction,
+        );
+        const referenceDate = civilDate(this.clock.today());
+        const result = await this.reader.summary(
+            space.value,
+            authorized.actorMemberId,
+            ids,
+            direction,
+            after,
+        );
+        const context = await this.access.read(actor, space);
+        const items = result.items.slice(0, 20),
+            last = items.at(-1);
+        return {
+            spaceId: space.value,
+            spaceStatus: context.status,
+            actorMemberId: context.actorMemberId,
+            members: context.members,
+            referenceDate,
+            selectedCycles: result.cycles.map((row) => ({
+                ...settlementCycleSummary(row, referenceDate),
+                readOnly:
+                    row.status === 'FINALIZED' || context.status === 'CLOSED',
+            })),
+            totals: result.totals,
+            position: positionSummary(
+                result.payableAmountInCents,
+                result.receivableAmountInCents,
+            ),
+            items,
+            page: {
+                direction,
+                pageSize: 20,
+                nextCursor:
+                    result.items.length > 20 && last
+                        ? encodeSettlementDetailCursor(
+                              space.value,
+                              actor.value,
+                              binding,
+                              direction,
                               last,
                           )
                         : null,

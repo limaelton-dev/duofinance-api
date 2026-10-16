@@ -634,7 +634,7 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
         'view=OTHER',
         'view=',
         'view=open',
-        'view=OVERDUE',
+        'view=ARCHIVED',
         'view=FINALIZED',
         'view=OPEN&view=OPEN',
         'cursor=x&cursor=x',
@@ -992,7 +992,11 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
             'direction',
             'cursor',
         ]);
-        expect(list.parameters[1].schema.enum).toEqual(['OPEN', 'UPCOMING']);
+        expect(list.parameters[1].schema.enum).toEqual([
+            'OPEN',
+            'UPCOMING',
+            'OVERDUE',
+        ]);
         expect(detail.parameters[2].schema.enum).toEqual([
             'ALL',
             'PAYABLE',

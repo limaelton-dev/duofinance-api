@@ -7,6 +7,8 @@ import type {
     SettlementCycleKey,
     SettlementCycleView,
     SettlementObligationView,
+    SelectedSettlementObligation,
+    SelectedSettlementTotals,
 } from '../../models/settlement-cycle.js';
 export const SETTLEMENT_CYCLE_READER = Symbol('SETTLEMENT_CYCLE_READER');
 export type SettlementCycleRead = Omit<
@@ -14,6 +16,19 @@ export type SettlementCycleRead = Omit<
     'position' | 'isOverdue'
 > & { payableAmountInCents: string; receivableAmountInCents: string };
 export interface SettlementCycleReader {
+    summary(
+        spaceId: string,
+        actorMemberId: string,
+        cycleIds: string[],
+        direction: PositionDirection,
+        after: PositionKey | null,
+    ): Promise<{
+        cycles: SettlementCycleRead[];
+        totals: SelectedSettlementTotals;
+        payableAmountInCents: string;
+        receivableAmountInCents: string;
+        items: SelectedSettlementObligation[];
+    }>;
     today(
         spaceId: string,
         actorMemberId: string,
