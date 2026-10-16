@@ -429,6 +429,7 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
             resolvedAmountInCents: '2500',
             remainingAmountInCents: '7500',
             transferredAmountInCents: '2500',
+            compensatedAmountInCents: '0',
         });
         await transfer(f, [
             {
@@ -488,6 +489,7 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
             remainingAmountInCents: '12000',
             resolvedAmountInCents: '3000',
             transferredAmountInCents: '2000',
+            compensatedAmountInCents: '0',
         });
         expect(
             result.find(
@@ -499,6 +501,7 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
             remainingAmountInCents: '2000',
             resolvedAmountInCents: '1000',
             transferredAmountInCents: '1000',
+            compensatedAmountInCents: '0',
         });
     });
 
@@ -777,6 +780,7 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
                             remainingAmountInCents: '2500',
                             resolvedAmountInCents: '2500',
                             transferredAmountInCents: '2500',
+                            compensatedAmountInCents: '0',
                         },
                     },
                 ],
@@ -789,6 +793,7 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
                     remainingAmountInCents: '2500',
                     resolvedAmountInCents: '500',
                     transferredAmountInCents: '500',
+                    compensatedAmountInCents: '0',
                 },
             });
             const afterTransfer = await financialState();

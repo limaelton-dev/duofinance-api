@@ -130,6 +130,7 @@ describe('CARD-002 — persistência PostgreSQL', () => {
             'ExternalLiabilitySettlements1792110000000',
             'FinancialCommandAudit1792154979034',
             'CustomSettlementAssignment1792160969556',
+            'RecordSettlementOffset1792162181991',
         ]);
 
         const context = new TransactionContext();

@@ -4,6 +4,7 @@ export function settlementCycleTotals(
     remaining: string,
     transferred = '0',
     recognized = original,
+    compensated = '0',
 ): SettlementCycleTotals {
     return {
         originalAmountInCents: original,
@@ -13,5 +14,6 @@ export function settlementCycleTotals(
         ).toString(),
         remainingAmountInCents: remaining,
         transferredAmountInCents: transferred,
+        compensatedAmountInCents: compensated,
     };
 }

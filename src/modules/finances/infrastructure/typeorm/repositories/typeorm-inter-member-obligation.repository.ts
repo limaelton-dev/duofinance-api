@@ -91,7 +91,9 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
         const order = new Map(chronology.map((row, index) => [row.id, index]));
         obligations.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
         const settlements: OriginSettlement[] = await m.query(
-            `SELECT t.payer_member_id AS "payerMemberId",t.recipient_member_id AS "recipientMemberId",a.amount_in_cents::text AS "amountInCents" FROM settlement_allocations a JOIN settlement_transfers t ON t.space_id=a.space_id AND t.id=a.transfer_id JOIN inter_member_obligations o ON o.space_id=a.space_id AND o.id=a.obligation_id WHERE o.space_id=$1 AND o.commitment_id=$2 ORDER BY a.id`,
+            `SELECT t.payer_member_id AS "payerMemberId",t.recipient_member_id AS "recipientMemberId",a.amount_in_cents::text AS "amountInCents" FROM settlement_allocations a JOIN settlement_transfers t ON t.space_id=a.space_id AND t.id=a.transfer_id JOIN inter_member_obligations o ON o.space_id=a.space_id AND o.id=a.obligation_id WHERE o.space_id=$1 AND o.commitment_id=$2
+            UNION ALL
+            SELECT o.debtor_member_id AS "payerMemberId",o.creditor_member_id AS "recipientMemberId",ch.snapshot->>'appliedAmountInCents' AS "amountInCents" FROM inter_member_obligation_changes ch JOIN inter_member_obligations o ON o.space_id=ch.space_id AND o.id=ch.obligation_id WHERE o.space_id=$1 AND o.commitment_id=$2 AND ch.type='OFFSET_APPLIED'`,
             [spaceId, commitmentId],
         );
         return {
@@ -163,6 +165,24 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
             .orderBy('COALESCE(d.sequence,r.sequence,e.sequence)', 'ASC')
             .addOrderBy('o.id', 'ASC')
             .getMany();
+        const applications: {
+            id: string;
+            transferred: string;
+            compensated: string;
+        }[] = await m.query(
+            `WITH applications AS (
+                SELECT obligation_id,amount_in_cents,'TRANSFER' AS kind FROM settlement_allocations WHERE space_id=$1
+                UNION ALL
+                SELECT obligation_id,(snapshot->>'appliedAmountInCents')::bigint AS amount_in_cents,'OFFSET' AS kind FROM inter_member_obligation_changes WHERE space_id=$1 AND type='OFFSET_APPLIED'
+            )
+            SELECT o.id,
+                COALESCE(SUM(a.amount_in_cents) FILTER (WHERE a.kind='TRANSFER'),0)::text AS transferred,
+                COALESCE(SUM(a.amount_in_cents) FILTER (WHERE a.kind='OFFSET'),0)::text AS compensated
+            FROM inter_member_obligations o LEFT JOIN applications a ON a.obligation_id=o.id
+            WHERE o.space_id=$1 AND o.commitment_id=$2 GROUP BY o.id`,
+            [spaceId, commitmentId],
+        );
+        const totals = new Map(applications.map((a) => [a.id, a]));
         const result: FulfillmentObligationView[] = [];
         for (const o of rows) {
             const changes = await m.find(InterMemberObligationChangeOrmEntity, {
@@ -182,8 +202,12 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
                 originalAmountInCents: o.originalAmountInCents,
                 recognizedAmountInCents: o.recognizedAmountInCents,
                 remainingAmountInCents: o.remainingAmountInCents,
-                transferredAmountInCents:
-                    o.recognizedAmountInCents - o.remainingAmountInCents,
+                transferredAmountInCents: Number(
+                    totals.get(o.id)?.transferred ?? '0',
+                ),
+                compensatedAmountInCents: Number(
+                    totals.get(o.id)?.compensated ?? '0',
+                ),
                 status: o.status as FulfillmentObligationView['status'],
                 cycleId: o.cycleId,
                 history: changes.map((c) => ({

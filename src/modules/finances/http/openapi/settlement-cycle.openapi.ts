@@ -12,7 +12,9 @@ const object = (
 ): SchemaObject => ({
     type: 'object',
     additionalProperties: false,
-    required: Object.keys(properties),
+    required: Object.keys(properties).filter(
+        (name) => name !== 'compensatedAmountInCents',
+    ),
     properties,
 });
 const uuid: SchemaObject = { type: 'string', format: 'uuid' };
@@ -117,6 +119,11 @@ const summary = {
         resolvedAmountInCents: total,
         remainingAmountInCents: total,
         transferredAmountInCents: total,
+        compensatedAmountInCents: {
+            ...total,
+            description:
+                'Soma das aplicações de compensação no ciclo ou recorte. Pode incluir ambas as direções: compensação de 8000 aplica 16000 no conjunto. Não é transferência de caixa.',
+        },
     }),
     position: object({
         payableAmountInCents: total,
@@ -278,6 +285,7 @@ export const settlementCycleOpenApi: Pick<
                 recognizedAmountInCents: integer,
                 resolvedAmountInCents: integer,
                 remainingAmountInCents: integer,
+                compensatedAmountInCents: integer,
                 factDate: date,
                 registeredAt: { type: 'string', format: 'date-time' },
                 origin: ref('InterMemberObligationOrigin'),
@@ -392,6 +400,7 @@ export const settlementCycleOpenApi: Pick<
                         recognizedAmountInCents: integer,
                         resolvedAmountInCents: integer,
                         remainingAmountInCents: integer,
+                        compensatedAmountInCents: integer,
                         factDate: date,
                         registeredAt: { type: 'string', format: 'date-time' },
                         cycleId: uuid,

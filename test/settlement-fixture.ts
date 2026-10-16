@@ -79,6 +79,31 @@ export async function sharedFinance(app: INestApplication<Server>) {
 
 export type SharedFinance = Awaited<ReturnType<typeof sharedFinance>>;
 
+export async function recordSharedObligation(
+    f: SharedFinance,
+    amount: number,
+    targetDate: string | null = null,
+    payer = f.ma,
+    total = amount,
+) {
+    const input = sharedExpenseInput(
+        f,
+        total,
+        amount,
+        targetDate ? { mode: 'DATE', targetDate } : { mode: 'NONE' },
+    );
+    input.responsibilitySplit.shares = [
+        { memberId: f.ma, amountInCents: payer === f.ma ? 0 : total },
+        { memberId: f.mb, amountInCents: payer === f.mb ? 0 : total },
+    ];
+    input.disbursement.payerMemberId = payer;
+    return (
+        await f.a
+            .post(`${financeBase(f.space)}/shared-cash-expenses`, input)
+            .expect(201)
+    ).body;
+}
+
 export function sharedExpenseInput(
     f: SharedFinance,
     amount = 50000,

@@ -1,4 +1,11 @@
 import { settlementAdjustmentEntities } from './infrastructure/typeorm/entities/settlement-adjustment.orm-entity.js';
+import { settlementOffsetEntities } from './infrastructure/typeorm/entities/settlement-offset.orm-entity.js';
+import { SETTLEMENT_OFFSET_REPOSITORY } from './application/ports/private/settlement-offset.repository.js';
+import { TypeOrmSettlementOffsetRepository } from './infrastructure/typeorm/repositories/typeorm-settlement-offset.repository.js';
+import { RecordSettlementOffsetHandler } from './application/handlers/record-settlement-offset.handler.js';
+import { SettlementOffsetQueries } from './application/queries/settlement-offset.queries.js';
+import { SettlementOffsetController } from './http/controllers/settlement-offset.controller.js';
+import { RecordSettlementOffsetPipe } from './http/dto/settlement-offset.dto.js';
 import { SETTLEMENT_ADJUSTMENT_REPOSITORY } from './application/ports/private/settlement-adjustment.repository.js';
 import { TypeOrmSettlementAdjustmentRepository } from './infrastructure/typeorm/repositories/typeorm-settlement-adjustment.repository.js';
 import { SettlementAdjustmentHandler } from './application/handlers/settlement-adjustment.handler.js';
@@ -145,6 +152,7 @@ import {
         SpacesModule,
         TypeOrmModule.forFeature([
             ...settlementAdjustmentEntities,
+            ...settlementOffsetEntities,
             FinancialCommandAuditOrmEntity,
             ...sharedExpenseEntities,
             FinancialExternalLiabilitySettlementOrmEntity,
@@ -159,6 +167,7 @@ import {
         ]),
     ],
     controllers: [
+        SettlementOffsetController,
         SettlementAdjustmentController,
         FinancialReviewController,
         ExternalLiabilityController,
@@ -174,6 +183,13 @@ import {
     ],
     providers: [
         SettlementAdjustmentHandler,
+        RecordSettlementOffsetHandler,
+        RecordSettlementOffsetPipe,
+        SettlementOffsetQueries,
+        {
+            provide: SETTLEMENT_OFFSET_REPOSITORY,
+            useClass: TypeOrmSettlementOffsetRepository,
+        },
         SettlementAssignmentOptionsQuery,
         ConfigureCommitmentSettlementRulePipe,
         MoveObligationPipe,

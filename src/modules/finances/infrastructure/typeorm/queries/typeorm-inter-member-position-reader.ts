@@ -17,6 +17,7 @@ interface PositionRow {
     original_amount_in_cents: string;
     recognized_amount_in_cents: string;
     remaining_amount_in_cents: string;
+    compensated_amount_in_cents: string;
     fact_date: string;
     registered_at: string;
     commitment_id: string;
@@ -60,6 +61,7 @@ export class TypeOrmInterMemberPositionReader implements InterMemberPositionRead
                 ORDER BY registered_at DESC, id DESC LIMIT 21
             )
             SELECT t.payable, t.receivable, p.id, p.version, p.status, p.debtor_member_id, p.creditor_member_id,
+                COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.obligation_id=p.id AND ch.type='OFFSET_APPLIED'),0)::text AS compensated_amount_in_cents,
                 p.original_amount_in_cents::text, p.recognized_amount_in_cents::text, p.remaining_amount_in_cents::text,
                 to_char(p.fact_date, 'YYYY-MM-DD') AS fact_date,
                 to_char(p.registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS registered_at,
@@ -92,6 +94,9 @@ export class TypeOrmInterMemberPositionReader implements InterMemberPositionRead
                 ),
                 remainingAmountInCents: safeAmount(
                     row.remaining_amount_in_cents,
+                ),
+                compensatedAmountInCents: safeAmount(
+                    row.compensated_amount_in_cents,
                 ),
                 factDate: row.fact_date,
                 registeredAt: row.registered_at,

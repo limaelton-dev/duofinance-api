@@ -42,6 +42,10 @@ const facts = `WITH facts AS (
     UNION ALL
     SELECT f.id,'INTERNAL_TRANSFER',NULL,NULL,'Transferência interna',f.amount_in_cents,f.fact_date,f.registered_at,f.created_by,f.payer_member_id,NULL,f.recipient_member_id,ARRAY[f.payer_member_id,f.recipient_member_id]
     FROM settlement_transfers f WHERE f.space_id=$1
+    UNION ALL
+    SELECT f.id,'INTERNAL_OFFSET',NULL,NULL,'Compensação entre pendências',f.amount_in_cents,f.fact_date,f.registered_at,f.created_by,NULL,NULL,NULL,
+        ARRAY(SELECT DISTINCT a.debtor_member_id FROM settlement_offset_allocations a WHERE a.space_id=f.space_id AND a.offset_id=f.id ORDER BY a.debtor_member_id)
+    FROM settlement_offsets f WHERE f.space_id=$1
 ), selected AS (
     SELECT * FROM facts WHERE relevant_date >= $2::date AND relevant_date < $3::date AND ($4::uuid IS NULL OR $4::uuid=ANY(member_ids))
 )`;

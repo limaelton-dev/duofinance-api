@@ -12,7 +12,9 @@ const object = (
 ): SchemaObject => ({
     type: 'object',
     additionalProperties: false,
-    required: Object.keys(properties),
+    required: Object.keys(properties).filter(
+        (name) => name !== 'compensatedAmountInCents',
+    ),
     properties,
 });
 const uuid: SchemaObject = { type: 'string', format: 'uuid' },
@@ -161,6 +163,7 @@ export const interMemberPositionOpenApi: Pick<
                 originalAmountInCents: { ...money, minimum: 1 },
                 recognizedAmountInCents: { ...money, minimum: 1 },
                 remainingAmountInCents: { ...money, minimum: 1 },
+                compensatedAmountInCents: money,
                 factDate: date,
                 registeredAt: { type: 'string', format: 'date-time' },
                 origin: ref('InterMemberObligationOrigin'),

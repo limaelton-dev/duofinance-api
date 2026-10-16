@@ -13,7 +13,9 @@ const object = (
 ): SchemaObject => ({
     type: 'object',
     additionalProperties: false,
-    required: Object.keys(properties),
+    required: Object.keys(properties).filter(
+        (name) => name !== 'compensatedAmountInCents',
+    ),
     properties,
 });
 const uuid: SchemaObject = { type: 'string', format: 'uuid' };
@@ -116,6 +118,7 @@ const obligation = object({
     recognizedAmountInCents: money,
     remainingAmountInCents: money,
     transferredAmountInCents: money,
+    compensatedAmountInCents: money,
     status: {
         type: 'string',
         enum: ['OPEN', 'PARTIALLY_SETTLED', 'SETTLED', 'RECONCILED'],
@@ -132,6 +135,7 @@ const obligation = object({
                     'SETTLEMENT_APPLIED',
                     'RECONCILED',
                     'ASSIGNMENT_CHANGED',
+                    'OFFSET_APPLIED',
                 ],
             },
             actorId: uuid,

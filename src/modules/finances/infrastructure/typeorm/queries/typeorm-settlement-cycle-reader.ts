@@ -29,6 +29,7 @@ interface CycleRow {
     recognized: string;
     remaining: string;
     transferred: string;
+    compensated: string;
     payable: string;
     receivable: string;
     obligation_count: number;
@@ -50,6 +51,7 @@ interface DetailRow extends CycleRow {
     external_liability_id: string | null;
     receipt_id: string | null;
     description: string;
+    compensated_amount_in_cents: string;
 }
 function cycle(row: CycleRow): SettlementCycleRead {
     return {
@@ -65,6 +67,7 @@ function cycle(row: CycleRow): SettlementCycleRead {
             row.remaining,
             row.transferred,
             row.recognized,
+            row.compensated,
         ),
         payableAmountInCents: row.payable,
         receivableAmountInCents: row.receivable,
@@ -102,7 +105,7 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                     (SELECT s.* FROM settlement_cycles s JOIN overdue d ON d.id=s.id WHERE s.space_id=$1 ORDER BY s.target_date,s.id LIMIT 3)
                 ), summaries AS (
                     SELECT ${cycleColumns},${aggregate},
-                        COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.cycle_id=s.id),0)::text AS transferred
+                        COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.cycle_id=s.id),0)::text AS transferred, COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.type='OFFSET_APPLIED' AND ch.snapshot->>'cycleId'=s.id::text),0)::text AS compensated
                     FROM selected s LEFT JOIN inter_member_obligations o ON o.space_id=$1 AND o.cycle_id=s.id
                     GROUP BY s.id,s.version,s.target_date,s.status,s.finalized_at
                 )
@@ -165,7 +168,7 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                 ORDER BY target_date ASC,id ASC LIMIT 21
             )
             SELECT ${cycleColumns}, ${aggregate},
-                COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.cycle_id=s.id),0)::text AS transferred
+                COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.cycle_id=s.id),0)::text AS transferred, COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.type='OFFSET_APPLIED' AND ch.snapshot->>'cycleId'=s.id::text),0)::text AS compensated
             FROM page s LEFT JOIN inter_member_obligations o ON o.space_id=$1 AND o.cycle_id=s.id
             GROUP BY s.id,s.version,s.target_date,s.status,s.finalized_at
             ORDER BY s.target_date ASC,s.id ASC
@@ -204,12 +207,13 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                 ORDER BY registered_at DESC,id DESC LIMIT 21
             )
             SELECT ${cycleColumns},t.*,
-                COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.cycle_id=s.id),0)::text AS transferred,
+                COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.cycle_id=s.id),0)::text AS transferred, COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.type='OFFSET_APPLIED' AND ch.snapshot->>'cycleId'=s.id::text),0)::text AS compensated,
                 p.id AS obligation_id,p.version AS obligation_version,p.status AS obligation_status,
                 p.debtor_member_id,p.creditor_member_id,p.original_amount_in_cents::text,p.recognized_amount_in_cents::text,p.remaining_amount_in_cents::text,
                 to_char(p.fact_date,'YYYY-MM-DD') AS fact_date,
                 to_char(p.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS registered_at,
                 p.commitment_id,p.disbursement_id,p.external_liability_id,p.receipt_id,c.description
+                ,COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.obligation_id=p.id AND ch.type='OFFSET_APPLIED'),0)::text AS compensated_amount_in_cents
             FROM selected_cycle s CROSS JOIN totals t LEFT JOIN page p ON true
             LEFT JOIN financial_commitments c ON c.space_id=$1 AND c.id=p.commitment_id
             ORDER BY p.registered_at DESC,p.id DESC
@@ -241,6 +245,9 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                     ).toString(),
                 ),
                 remainingAmountInCents: amount(row.remaining_amount_in_cents),
+                compensatedAmountInCents: amount(
+                    row.compensated_amount_in_cents,
+                ),
                 factDate: row.fact_date,
                 registeredAt: row.registered_at,
                 origin: row.receipt_id
@@ -276,7 +283,7 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                 `
                 WITH selected_cycles AS MATERIALIZED (SELECT * FROM settlement_cycles WHERE space_id=$1 AND id=ANY($3::uuid[]))
                 SELECT ${cycleColumns},${aggregate},
-                    COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.cycle_id=s.id),0)::text AS transferred
+                    COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.cycle_id=s.id),0)::text AS transferred, COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.type='OFFSET_APPLIED' AND ch.snapshot->>'cycleId'=s.id::text),0)::text AS compensated
                 FROM selected_cycles s LEFT JOIN inter_member_obligations o ON o.space_id=$1 AND o.cycle_id=s.id
                 GROUP BY s.id,s.version,s.target_date,s.status,s.finalized_at ORDER BY s.target_date,s.id`,
                 [spaceId, actorMemberId, cycleIds],
@@ -288,6 +295,7 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                 recognized: string;
                 remaining: string;
                 transferred: string;
+                compensated: string;
                 transfer_total: string;
                 transfer_count: number;
                 gross_payable: string;
@@ -307,6 +315,7 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                     (SELECT COALESCE(SUM(a.amount_in_cents),0)::text FROM selected_allocations a) AS transferred,
                     (SELECT COALESCE(SUM(t.amount_in_cents),0)::text FROM transfers t) AS transfer_total,
                     (SELECT COUNT(*)::integer FROM transfers) AS transfer_count
+                    ,(SELECT COALESCE(SUM((ch.snapshot->>'appliedAmountInCents')::bigint),0)::text FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.type='OFFSET_APPLIED' AND ch.snapshot->>'cycleId'=ANY($3::text[])) AS compensated
                 FROM obligations`,
                 [spaceId, actorMemberId, cycleIds],
             );
@@ -333,6 +342,7 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                 SELECT jsonb_build_object('id',p.id,'version',p.version,'status',p.status,'debtorMemberId',p.debtor_member_id,'creditorMemberId',p.creditor_member_id,
                     'originalAmountInCents',p.original_amount_in_cents,'recognizedAmountInCents',p.recognized_amount_in_cents,
                     'resolvedAmountInCents',p.recognized_amount_in_cents-p.remaining_amount_in_cents,'remainingAmountInCents',p.remaining_amount_in_cents,
+                    'compensatedAmountInCents',COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.obligation_id=p.id AND ch.type='OFFSET_APPLIED'),0),
                     'cycleId',p.cycle_id,'factDate',to_char(p.fact_date,'YYYY-MM-DD'),
                     'registeredAt',to_char(p.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
                     'origin',jsonb_strip_nulls(jsonb_build_object('kind',c.kind,'commitmentId',c.id,'description',c.description,
@@ -356,6 +366,7 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                     t.remaining,
                     t.transferred,
                     t.recognized,
+                    t.compensated,
                 ),
                 transferTotalAmountInCents: t.transfer_total,
                 transferCount: t.transfer_count,
