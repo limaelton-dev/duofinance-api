@@ -822,6 +822,18 @@ describe('CARD-015 external liability settlement HTTP/PostgreSQL', () => {
         },
     );
 
+    async function rewindToExternalLiabilityMigration() {
+        await migrationSource.initialize();
+        while (
+            (
+                await migrationSource.query(
+                    'SELECT name FROM migrations ORDER BY id DESC LIMIT 1',
+                )
+            )[0]?.name !== 'ExternalLiabilitySettlements1792110000000'
+        )
+            await migrationSource.undoLastMigration();
+    }
+
     it('A09 preserves legacy card facts, allocations and literal receipts through down/up', async () => {
         const f = await shared(),
             key = randomUUID(),
@@ -845,7 +857,7 @@ describe('CARD-015 external liability settlement HTTP/PostgreSQL', () => {
                 ),
             );
         const before = await legacy();
-        await migrationSource.initialize();
+        await rewindToExternalLiabilityMigration();
         await migrationSource.undoLastMigration();
         expect(
             (
@@ -924,9 +936,9 @@ describe('CARD-015 external liability settlement HTTP/PostgreSQL', () => {
             db.query(
                 "SELECT conname,pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE connamespace='public'::regnamespace ORDER BY conname",
             );
+        await rewindToExternalLiabilityMigration();
         const constraints = await schema(),
             migrations = await db.query('SELECT * FROM migrations ORDER BY id');
-        await migrationSource.initialize();
         await expect(migrationSource.undoLastMigration()).rejects.toThrow();
         expect(await snapshot()).toEqual(before);
         expect(await schema()).toEqual(constraints);

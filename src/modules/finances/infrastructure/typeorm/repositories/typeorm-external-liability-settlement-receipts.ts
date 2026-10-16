@@ -1,3 +1,4 @@
+import { recordFinancialCommandAudit } from './record-financial-command-audit.js';
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { QueryFailedError } from 'typeorm';
@@ -73,5 +74,12 @@ export class TypeOrmExternalLiabilitySettlementReceipts implements ExternalLiabi
                 throw new ExpenseReceiptRaceError();
             throw error;
         }
+        await recordFinancialCommandAudit(
+            this.provider.get(),
+            c,
+            'SETTLE_EXTERNAL_LIABILITY',
+            result.commitment.id,
+            registeredAt,
+        );
     }
 }

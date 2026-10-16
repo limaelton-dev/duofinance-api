@@ -1,3 +1,4 @@
+import { FinancialCommandAuditOrmEntity } from './infrastructure/typeorm/entities/financial-command-audit.orm-entity.js';
 import { FinancialReviewController } from './http/controllers/financial-review.controller.js';
 import { FinancialReviewQueries } from './application/queries/financial-review.queries.js';
 import { FINANCIAL_REVIEW_READER } from './application/ports/private/financial-review-reader.js';
@@ -132,6 +133,7 @@ import {
         DatabaseModule,
         SpacesModule,
         TypeOrmModule.forFeature([
+            FinancialCommandAuditOrmEntity,
             ...sharedExpenseEntities,
             FinancialExternalLiabilitySettlementOrmEntity,
             ...incomeEntities,
