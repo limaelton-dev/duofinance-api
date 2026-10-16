@@ -29,6 +29,8 @@ const itemProperties = {
         type: 'string',
         enum: [
             'EXPENSE',
+            'EXPENSE_DISCOUNT',
+            'EXPENSE_SURCHARGE',
             'EXPECTED_INCOME',
             'EXPECTED_EXPENSE',
             'DISBURSEMENT',
@@ -76,6 +78,10 @@ const metricProperties = Object.fromEntries(
     ].map((name) => [name, total]),
 );
 metricProperties.economicResultInCents = {
+    type: 'string',
+    pattern: '^-?(0|[1-9][0-9]*)$',
+};
+metricProperties.expenseAmountInCents = {
     type: 'string',
     pattern: '^-?(0|[1-9][0-9]*)$',
 };

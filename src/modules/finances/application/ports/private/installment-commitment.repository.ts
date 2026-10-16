@@ -1,4 +1,5 @@
 import type { InstallmentCommitment } from '../../../domain/installment/installment-commitment.js';
+import type { InstallmentAnticipation } from '../../../domain/installment/installment-plan.js';
 import type {
     FinancialOccurrence,
     OccurrenceFact,
@@ -31,6 +32,7 @@ export interface InstallmentCommitmentRepository {
         commitment: InstallmentCommitment,
         occurrence: FinancialOccurrence,
         fact: OccurrenceFact,
+        anticipation?: InstallmentAnticipation,
     ): Promise<void>;
     settleExternal(
         commitment: InstallmentCommitment,

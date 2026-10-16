@@ -25,10 +25,14 @@ import {
     InstallmentDisbursementPipe,
     InstallmentLiabilityPipe,
     InstallmentSettlementPipe,
+    InstallmentAnticipationPreviewPipe,
+    InstallmentAnticipationPipe,
     type InstallmentCommitmentDto,
     type InstallmentDisbursementDto,
     type InstallmentLiabilityDto,
     type InstallmentSettlementDto,
+    type InstallmentAnticipationPreviewDto,
+    type InstallmentAnticipationDto,
 } from '../dto/installment-commitment.dto.js';
 
 @Controller('spaces/:spaceId/installment-commitments')
@@ -117,6 +121,62 @@ export class InstallmentCommitmentController {
             ids.spaceId,
             this.id(id, 'id'),
         );
+    }
+
+    @Get(':id/anticipation-options')
+    @Header('Cache-Control', 'no-store')
+    anticipationOptions(
+        @CurrentActor() actor: RequestActor,
+        @Param('spaceId') spaceId: string,
+        @Param('id') id: string,
+        @Query('cursor') cursor?: string,
+    ) {
+        const ids = this.ids(actor, spaceId);
+        return this.handler.anticipationOptions(
+            ids.actorId,
+            ids.spaceId,
+            this.id(id, 'id'),
+            cursor,
+        );
+    }
+
+    @Post(':id/anticipation-preview')
+    @HttpCode(200)
+    @Header('Cache-Control', 'no-store')
+    anticipationPreview(
+        @CurrentActor() actor: RequestActor,
+        @Param('spaceId') spaceId: string,
+        @Param('id') id: string,
+        @Body(InstallmentAnticipationPreviewPipe)
+        input: InstallmentAnticipationPreviewDto,
+    ) {
+        const ids = this.ids(actor, spaceId);
+        return this.handler.anticipationPreview(
+            ids.actorId,
+            ids.spaceId,
+            this.id(id, 'id'),
+            input,
+        );
+    }
+
+    @Post(':id/anticipations')
+    @Header('Cache-Control', 'no-store')
+    async anticipate(
+        @CurrentActor() actor: RequestActor,
+        @Param('spaceId') spaceId: string,
+        @Param('id') id: string,
+        @IdempotencyKey() idempotencyKey: string,
+        @Body(InstallmentAnticipationPipe) input: InstallmentAnticipationDto,
+        @Res({ passthrough: true }) response: Response,
+    ) {
+        const result = await this.handler.anticipate({
+            ...this.ids(actor, spaceId),
+            ...input,
+            commitmentId: this.id(id, 'id'),
+            idempotencyKey,
+        });
+        if ((result as { replayed: boolean }).replayed) response.status(200);
+        return result;
     }
 
     @Get(':id/installments/:installmentId/options')

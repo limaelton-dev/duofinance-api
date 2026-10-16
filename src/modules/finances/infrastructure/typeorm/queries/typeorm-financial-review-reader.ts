@@ -45,6 +45,11 @@ const facts = `WITH facts AS (
     FROM financial_installments i JOIN financial_commitments c ON c.space_id=i.space_id AND c.id=i.commitment_id
     WHERE i.space_id=$1 AND c.modality='INSTALLMENT'
     UNION ALL
+    SELECT a.id,CASE WHEN a.adjustment_in_cents<0 THEN 'EXPENSE_DISCOUNT' ELSE 'EXPENSE_SURCHARGE' END,c.id,NULL,c.description,abs(a.adjustment_in_cents),a.fact_date,a.registered_at,a.actor_id,NULL,c.personal_owner_person_id,NULL,
+        ARRAY(SELECT s.member_id FROM financial_installment_shares s WHERE s.installment_id=a.installment_id)
+    FROM financial_installment_anticipations a JOIN financial_commitments c ON c.space_id=a.space_id AND c.id=a.commitment_id
+    WHERE a.space_id=$1 AND a.adjustment_in_cents<>0
+    UNION ALL
     SELECT c.id,'EXPECTED_EXPENSE',c.id,NULL,c.description,v.amount_in_cents,v.expected_payment_date,c.registered_at,c.created_by,
         v.expected_payer_member_id,c.personal_owner_person_id,NULL,
         ARRAY(SELECT s.member_id FROM financial_commitment_shares s WHERE s.space_id=c.space_id AND s.commitment_id=c.id AND s.version=v.version)
@@ -56,7 +61,8 @@ const facts = `WITH facts AS (
         ARRAY(SELECT s.member_id FROM financial_installment_shares s WHERE s.installment_id=i.id)
     FROM financial_installments i JOIN financial_commitments c ON c.space_id=i.space_id AND c.id=i.commitment_id
     JOIN financial_installment_plans p ON p.id=i.plan_id
-    WHERE i.space_id=$1 AND c.modality='INSTALLMENT'
+    JOIN financial_occurrences o ON o.installment_id=i.id AND o.space_id=i.space_id
+    WHERE i.space_id=$1 AND c.modality='INSTALLMENT' AND o.status<>'FULFILLED'
     UNION ALL
     SELECT COALESCE(o.id,c.id),'EXPECTED_EXPENSE',c.id,NULL,v.description,CASE WHEN v.value_mode='VARIABLE' THEN o.amount_in_cents ELSE COALESCE(o.amount_in_cents,v.amount_in_cents) END,${recurringDate},c.registered_at,c.created_by,
         v.expected_member_id,v.owner_person_id,NULL,
@@ -393,6 +399,10 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                         UNION ALL SELECT l.fact_date FROM financial_external_liabilities l WHERE l.space_id=i.space_id AND l.occurrence_id=i.id
                     ) f
                 ) < $3::date
+                UNION ALL
+                SELECT a.space_id,a.commitment_id,1,a.adjustment_in_cents,c.personal_owner_person_id,'INSTALLMENT_ADJUSTMENT',a.installment_id
+                FROM financial_installment_anticipations a JOIN financial_commitments c ON c.space_id=a.space_id AND c.id=a.commitment_id
+                WHERE a.space_id=$1 AND a.fact_date >= $2::date AND a.fact_date < $3::date
             ),
             period_receipts AS (SELECT r.* FROM financial_receipts r WHERE r.space_id=$1),
             contributions AS (
@@ -401,6 +411,7 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                 UNION ALL SELECT s.member_id,'expenseAmountInCents',SUM(s.amount_in_cents) FROM expenses e JOIN financial_recurrence_shares s ON s.space_id=e.space_id AND s.commitment_id=e.commitment_id AND s.version=e.version WHERE e.modality='RECURRING' GROUP BY s.member_id
                 UNION ALL SELECT s.member_id,'expenseAmountInCents',SUM(s.amount_in_cents) FROM expenses e JOIN financial_occurrence_shares s ON s.occurrence_id=e.occurrence_id WHERE e.modality='RECURRING' GROUP BY s.member_id
                 UNION ALL SELECT s.member_id,'expenseAmountInCents',SUM(s.amount_in_cents) FROM expenses e JOIN financial_installment_shares s ON s.installment_id=e.occurrence_id WHERE e.modality='INSTALLMENT' GROUP BY s.member_id
+                UNION ALL SELECT x."memberId",'expenseAmountInCents',SUM(x."amountInCents"-s.amount_in_cents) FROM expenses e JOIN financial_installment_anticipations a ON a.installment_id=e.occurrence_id CROSS JOIN LATERAL jsonb_to_recordset(a.economic_shares) AS x("memberId" uuid,"amountInCents" bigint) JOIN financial_installment_shares s ON s.installment_id=a.installment_id AND s.member_id=x."memberId" WHERE e.modality='INSTALLMENT_ADJUSTMENT' GROUP BY x."memberId"
                 UNION ALL SELECT NULL,'realizedIncomeAmountInCents',SUM(amount_in_cents) FROM period_receipts WHERE fact_date >= $2::date AND fact_date < $3::date
                 UNION ALL SELECT payer_member_id,'paidAmountInCents',SUM(amount_in_cents) FROM financial_disbursements WHERE space_id=$1 AND fact_date >= $2::date AND fact_date < $3::date GROUP BY GROUPING SETS((),(payer_member_id)) HAVING GROUPING(payer_member_id)=1 OR payer_member_id IS NOT NULL
                 UNION ALL SELECT recipient_member_id,'receivedAmountInCents',SUM(amount_in_cents) FROM period_receipts WHERE fact_date >= $2::date AND fact_date < $3::date GROUP BY GROUPING SETS((),(recipient_member_id)) HAVING GROUPING(recipient_member_id)=1 OR recipient_member_id IS NOT NULL
@@ -410,7 +421,9 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                 UNION ALL SELECT recipient_member_id,'internalTransfersReceivedAmountInCents',SUM(amount_in_cents) FROM settlement_transfers WHERE space_id=$1 AND fact_date >= $2::date AND fact_date < $3::date GROUP BY GROUPING SETS((),(recipient_member_id)) HAVING GROUPING(recipient_member_id)=1 OR recipient_member_id IS NOT NULL
                 UNION ALL SELECT t.payer_member_id,'internalTransfersSentReversedAmountInCents',SUM(r.amount_in_cents) FROM settlement_reversals r JOIN settlement_transfers t ON t.space_id=r.space_id AND t.id=r.original_transfer_id WHERE r.space_id=$1 AND t.fact_date >= $2::date AND t.fact_date < $3::date GROUP BY GROUPING SETS((),(t.payer_member_id)) HAVING GROUPING(t.payer_member_id)=1 OR t.payer_member_id IS NOT NULL
                 UNION ALL SELECT t.recipient_member_id,'internalTransfersReceivedReversedAmountInCents',SUM(r.amount_in_cents) FROM settlement_reversals r JOIN settlement_transfers t ON t.space_id=r.space_id AND t.id=r.original_transfer_id WHERE r.space_id=$1 AND t.fact_date >= $2::date AND t.fact_date < $3::date GROUP BY GROUPING SETS((),(t.recipient_member_id)) HAVING GROUPING(t.recipient_member_id)=1 OR t.recipient_member_id IS NOT NULL
-            ), metrics AS (SELECT member_id,jsonb_object_agg(metric,COALESCE(amount,0)::text) AS payload FROM contributions GROUP BY member_id),
+            ), metrics AS (SELECT member_id,jsonb_object_agg(metric,amount::text) AS payload FROM (
+                SELECT member_id,metric,SUM(COALESCE(amount,0)) AS amount FROM contributions GROUP BY member_id,metric
+            ) combined GROUP BY member_id),
             income AS (
                 SELECT v.amount_in_cents::text AS amount,COALESCE(SUM(r.amount_in_cents) FILTER (WHERE r.fact_date < $2::date),0)::text AS before,SUM(r.amount_in_cents)::text AS after,v.split_input AS "splitInput" FROM period_receipts r JOIN financial_income_versions v ON v.space_id=r.space_id AND v.commitment_id=r.commitment_id WHERE r.fact_date < $3::date AND v.split_input IS NOT NULL GROUP BY v.commitment_id,v.amount_in_cents,v.split_input HAVING COUNT(*) FILTER (WHERE r.fact_date >= $2::date)>0
                 UNION ALL

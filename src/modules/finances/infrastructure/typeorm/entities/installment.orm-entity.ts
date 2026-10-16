@@ -8,8 +8,12 @@ import {
     Unique,
 } from 'typeorm';
 import type { SplitInput } from '../../../domain/shared-expense/responsibility-split.js';
+import type { EconomicShare } from '../../../domain/shared-expense/responsibility-split.js';
 import type { SettlementRuleSnapshot } from '../../../domain/settlement-rule/settlement-rule.js';
-import { safeBigInt } from './shared-expense.orm-entity.js';
+import {
+    FinancialDisbursementOrmEntity,
+    safeBigInt,
+} from './shared-expense.orm-entity.js';
 
 @Entity('financial_installment_plans')
 @Unique('UQ_installment_plans_origin', ['spaceId', 'commitmentId', 'id'])
@@ -121,10 +125,75 @@ export class FinancialInstallmentShareOrmEntity {
     amountInCents!: number;
 }
 
+@Entity('financial_installment_anticipations')
+@Unique('UQ_installment_anticipation_origin', [
+    'spaceId',
+    'commitmentId',
+    'installmentId',
+])
+@Unique('UQ_installment_anticipation_fact', ['factId'])
+@Check(
+    'CHK_installment_anticipation_values',
+    `expected_remaining_amount_in_cents BETWEEN 1 AND 9007199254740991 AND paid_amount_in_cents BETWEEN 1 AND 9007199254740991 AND effective_amount_in_cents BETWEEN 1 AND 9007199254740991 AND adjustment_in_cents=paid_amount_in_cents-expected_remaining_amount_in_cents AND fact_date<due_date`,
+)
+@ForeignKey(
+    () => FinancialInstallmentOrmEntity,
+    ['spaceId', 'commitmentId', 'installmentId'],
+    ['spaceId', 'commitmentId', 'id'],
+    { name: 'FK_installment_anticipation_installment', onDelete: 'RESTRICT' },
+)
+@ForeignKey(
+    () => FinancialDisbursementOrmEntity,
+    ['spaceId', 'commitmentId', 'factId'],
+    ['spaceId', 'commitmentId', 'id'],
+    { name: 'FK_installment_anticipation_fact', onDelete: 'RESTRICT' },
+)
+@ForeignKey('persons', ['actorId'], ['id'], {
+    name: 'FK_installment_anticipation_actor',
+    onDelete: 'RESTRICT',
+})
+export class FinancialInstallmentAnticipationOrmEntity {
+    @PrimaryColumn('uuid') id!: string;
+    @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
+    @Column({ name: 'commitment_id', type: 'uuid' }) commitmentId!: string;
+    @Column({ name: 'installment_id', type: 'uuid' }) installmentId!: string;
+    @Column({ name: 'fact_id', type: 'uuid' }) factId!: string;
+    @Column({ name: 'due_date', type: 'date' }) dueDate!: string;
+    @Column({
+        name: 'expected_remaining_amount_in_cents',
+        type: 'bigint',
+        transformer: safeBigInt,
+    })
+    expectedRemainingAmountInCents!: number;
+    @Column({
+        name: 'paid_amount_in_cents',
+        type: 'bigint',
+        transformer: safeBigInt,
+    })
+    paidAmountInCents!: number;
+    @Column({
+        name: 'effective_amount_in_cents',
+        type: 'bigint',
+        transformer: safeBigInt,
+    })
+    effectiveAmountInCents!: number;
+    @Column({
+        name: 'adjustment_in_cents',
+        type: 'bigint',
+        transformer: safeBigInt,
+    })
+    adjustmentInCents!: number;
+    @Column({ name: 'economic_shares', type: 'jsonb', nullable: true })
+    economicShares!: readonly EconomicShare[] | null;
+    @Column({ name: 'fact_date', type: 'date' }) factDate!: string;
+    @Column({ name: 'registered_at', type: 'timestamptz' }) registeredAt!: Date;
+    @Column({ name: 'actor_id', type: 'uuid' }) actorId!: string;
+}
+
 @Entity('financial_installment_command_receipts')
 @Check(
     'CHK_installment_command_receipts',
-    `status='COMPLETED' AND octet_length(request_hash)=32 AND operation IN ('CREATE_INSTALLMENT_COMMITMENT','RECORD_INSTALLMENT_DISBURSEMENT','RECORD_INSTALLMENT_EXTERNAL_LIABILITY','SETTLE_INSTALLMENT_EXTERNAL_LIABILITY')`,
+    `status='COMPLETED' AND octet_length(request_hash)=32 AND operation IN ('CREATE_INSTALLMENT_COMMITMENT','RECORD_INSTALLMENT_DISBURSEMENT','RECORD_INSTALLMENT_EXTERNAL_LIABILITY','SETTLE_INSTALLMENT_EXTERNAL_LIABILITY','ANTICIPATE_INSTALLMENTS')`,
 )
 @ForeignKey('persons', ['actorId'], ['id'], {
     name: 'FK_installment_receipts_actor',
@@ -161,5 +230,6 @@ export const installmentEntities = [
     FinancialInstallmentPlanOrmEntity,
     FinancialInstallmentOrmEntity,
     FinancialInstallmentShareOrmEntity,
+    FinancialInstallmentAnticipationOrmEntity,
     FinancialInstallmentCommandReceiptOrmEntity,
 ];

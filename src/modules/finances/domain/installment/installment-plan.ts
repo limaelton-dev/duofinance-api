@@ -1,4 +1,5 @@
 import { FinancesError } from '../errors/finances.error.js';
+import type { EconomicShare } from '../shared-expense/responsibility-split.js';
 import { civilDate } from '../shared-expense/settlement-cycle.js';
 
 export type InstallmentCadence = 'MONTHLY' | 'ANNUAL';
@@ -18,6 +19,18 @@ export interface InstallmentScheduleEntry {
     position: number;
     dueDate: string;
     amountInCents: number;
+}
+
+export interface InstallmentAnticipation {
+    id: string;
+    factId: string;
+    factDate: string;
+    registeredAt: string;
+    actorId: string;
+    expectedRemainingAmountInCents: number;
+    paidAmountInCents: number;
+    adjustmentInCents: number;
+    economicShares: readonly EconomicShare[] | null;
 }
 
 function invalid(field: string): never {
@@ -135,6 +148,7 @@ export function createInstallmentSchedule(
 
 export class Installment {
     readonly remainingAmountInCents: number;
+    readonly effectiveAmountInCents: number;
 
     constructor(
         readonly id: string,
@@ -144,27 +158,50 @@ export class Installment {
         readonly status: InstallmentStatus = 'PENDING',
         readonly fulfilledAmountInCents = 0,
         readonly stateVersion = 1,
+        readonly anticipation: InstallmentAnticipation | null = null,
     ) {
         if (!id || !Number.isSafeInteger(position) || position < 1)
             invalid('installments');
         validDate(dueDate, 'dueDate');
         positiveCents(amountInCents, 'amountInCents');
+        this.effectiveAmountInCents =
+            amountInCents + (anticipation?.adjustmentInCents ?? 0);
         if (
+            !Number.isSafeInteger(this.effectiveAmountInCents) ||
+            this.effectiveAmountInCents < 1 ||
             !Number.isSafeInteger(fulfilledAmountInCents) ||
             fulfilledAmountInCents < 0 ||
-            fulfilledAmountInCents > amountInCents
+            fulfilledAmountInCents > this.effectiveAmountInCents
         )
             invalid('fulfilledAmountInCents');
         if (!Number.isSafeInteger(stateVersion) || stateVersion < 1)
             invalid('stateVersion');
+        if (
+            anticipation &&
+            (!anticipation.id ||
+                !anticipation.factId ||
+                !anticipation.actorId ||
+                !Number.isFinite(Date.parse(anticipation.registeredAt)) ||
+                validDate(anticipation.factDate, 'factDate') >= dueDate ||
+                anticipation.expectedRemainingAmountInCents !==
+                    amountInCents -
+                        (fulfilledAmountInCents -
+                            anticipation.paidAmountInCents) ||
+                anticipation.adjustmentInCents !==
+                    anticipation.paidAmountInCents -
+                        anticipation.expectedRemainingAmountInCents ||
+                fulfilledAmountInCents !== this.effectiveAmountInCents)
+        )
+            invalid('anticipation');
         const actualStatus =
             fulfilledAmountInCents === 0
                 ? 'PENDING'
-                : fulfilledAmountInCents === amountInCents
+                : fulfilledAmountInCents === this.effectiveAmountInCents
                   ? 'FULFILLED'
                   : 'PARTIALLY_FULFILLED';
         if (status !== actualStatus) invalid('status');
-        this.remainingAmountInCents = amountInCents - fulfilledAmountInCents;
+        this.remainingAmountInCents =
+            this.effectiveAmountInCents - fulfilledAmountInCents;
         Object.freeze(this);
     }
 }

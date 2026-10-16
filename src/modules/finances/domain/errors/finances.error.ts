@@ -1,4 +1,5 @@
 export type FinancesErrorCode =
+    | 'INSTALLMENT_SELECTION_CHANGED'
     | 'SETTLEMENT_RESOLUTION_ALREADY_REVERSED'
     | 'REVERSAL_CORRECTION_CYCLE_REQUIRED'
     | 'OBLIGATION_WAIVER_NOT_FOUND'
@@ -27,6 +28,8 @@ export type FinancesErrorCode =
     | 'RECURRENCE_ACCEPTANCE_REQUIRED'
     | 'RECURRENCE_ALREADY_TERMINATED';
 const messages: Record<FinancesErrorCode, string> = {
+    INSTALLMENT_SELECTION_CHANGED:
+        'A seleção ou o estado das parcelas mudou. Atualize a prévia e confirme novamente.',
     SETTLEMENT_RESOLUTION_ALREADY_REVERSED:
         'Este acerto já foi integralmente revertido.',
     REVERSAL_CORRECTION_CYCLE_REQUIRED:

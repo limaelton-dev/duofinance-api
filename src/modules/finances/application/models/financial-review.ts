@@ -1,6 +1,8 @@
 export type FinancialReviewView = 'CALENDAR' | 'HISTORY';
 export type FinancialReviewItemType =
     | 'EXPENSE'
+    | 'EXPENSE_DISCOUNT'
+    | 'EXPENSE_SURCHARGE'
     | 'EXPECTED_INCOME'
     | 'EXPECTED_EXPENSE'
     | 'DISBURSEMENT'

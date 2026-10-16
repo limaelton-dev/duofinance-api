@@ -153,4 +153,142 @@ describe('finite installment plan', () => {
             remainingAmountInCents: 100,
         });
     });
+
+    it('selects the farthest open installments and allocates manual adjustments without increasing the other member', () => {
+        const root = new InstallmentCommitment(
+            'root',
+            'space',
+            'Compra',
+            'author',
+            '2026-10-01T12:00:00Z',
+            1,
+            new InstallmentPlan('plan', 'root', 'space', [
+                new Installment('first', 1, '2026-11-20', 10000),
+                new Installment('second', 2, '2026-12-20', 10000),
+            ]),
+            {
+                type: 'SHARED',
+                distribution: {
+                    mode: 'AMOUNTS',
+                    shares: [
+                        { memberId: 'a', amountInCents: 10000 },
+                        { memberId: 'b', amountInCents: 10000 },
+                    ],
+                },
+                expectedMemberId: 'a',
+                settlementRuleSnapshot: null,
+                settlementRuleSourceVersion: 0,
+            },
+            'MONTHLY',
+            null,
+        );
+        const selected = root.selectForAnticipation(
+            { mode: 'FROM_END', quantity: 2 },
+            [
+                {
+                    installmentId: 'second',
+                    expectedInstallmentVersion: 1,
+                    paidAmountInCents: 8000,
+                },
+                {
+                    installmentId: 'first',
+                    expectedInstallmentVersion: 1,
+                    paidAmountInCents: 12000,
+                },
+            ],
+            '2026-10-14',
+            '2026-10-14',
+            'a',
+        );
+        expect(selected.map((item) => item.installmentId)).toEqual([
+            'second',
+            'first',
+        ]);
+        expect(selected.map((item) => item.adjustmentInCents)).toEqual([
+            -2000, 2000,
+        ]);
+        expect(selected[0]!.effectiveEconomicShares).toEqual([
+            { memberId: 'a', amountInCents: 4000 },
+            { memberId: 'b', amountInCents: 4000 },
+        ]);
+        expect(selected[1]!.effectiveEconomicShares).toEqual([
+            { memberId: 'a', amountInCents: 7000 },
+            { memberId: 'b', amountInCents: 5000 },
+        ]);
+        expect(() =>
+            root.selectForAnticipation(
+                { mode: 'FROM_END', quantity: 2 },
+                [
+                    {
+                        installmentId: 'first',
+                        expectedInstallmentVersion: 1,
+                        paidAmountInCents: 10000,
+                    },
+                    {
+                        installmentId: 'second',
+                        expectedInstallmentVersion: 1,
+                        paidAmountInCents: 10000,
+                    },
+                ],
+                '2026-10-14',
+                '2026-10-14',
+                'a',
+            ),
+        ).toThrow(FinancesError);
+    });
+
+    it('closes only the remaining amount of a partially fulfilled installment and keeps its due date', () => {
+        const root = new InstallmentCommitment(
+            'root',
+            'space',
+            'Compra',
+            'author',
+            '2026-10-01T12:00:00Z',
+            2,
+            new InstallmentPlan('plan', 'root', 'space', [
+                new Installment(
+                    'first',
+                    1,
+                    '2026-11-20',
+                    10000,
+                    'PARTIALLY_FULFILLED',
+                    2000,
+                    2,
+                ),
+            ]),
+            { type: 'PERSONAL', ownerPersonId: 'author' },
+            'MONTHLY',
+            null,
+        );
+        const [item] = root.selectForAnticipation(
+            { mode: 'IDS', installmentIds: ['first'] },
+            [
+                {
+                    installmentId: 'first',
+                    expectedInstallmentVersion: 2,
+                    paidAmountInCents: 7000,
+                },
+            ],
+            '2026-10-14',
+            '2026-10-14',
+            null,
+        );
+        expect(item).toMatchObject({
+            dueDate: '2026-11-20',
+            plannedAmountInCents: 10000,
+            previouslyFulfilledAmountInCents: 2000,
+            expectedRemainingAmountInCents: 8000,
+            effectiveAmountInCents: 9000,
+            adjustmentInCents: -1000,
+        });
+        expect(() =>
+            root.selectForAnticipation(
+                { mode: 'IDS', installmentIds: ['first'] },
+                null,
+                '2026-11-20',
+                '2026-10-14',
+                null,
+            ),
+        ).toThrow(FinancesError);
+    });
 });

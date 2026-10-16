@@ -488,6 +488,7 @@ describe('CARD-027 finite installment commitments', () => {
         await migrationSource.initialize();
         try {
             await migrationSource.undoLastMigration();
+            await migrationSource.undoLastMigration();
             expect(
                 (
                     await migrationSource.query(

@@ -8,6 +8,7 @@ import { InstallmentCommitment } from '../../../domain/installment/installment-c
 import {
     Installment,
     InstallmentPlan,
+    type InstallmentAnticipation,
 } from '../../../domain/installment/installment-plan.js';
 import {
     FinancialOccurrence,
@@ -20,6 +21,7 @@ import {
 } from '../entities/shared-expense.orm-entity.js';
 import { FinancialOccurrenceOrmEntity } from '../entities/recurrence.orm-entity.js';
 import {
+    FinancialInstallmentAnticipationOrmEntity,
     FinancialInstallmentCommandReceiptOrmEntity,
     FinancialInstallmentOrmEntity,
     FinancialInstallmentPlanOrmEntity,
@@ -141,6 +143,10 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
                 installmentId: In(rows.map((row) => row.id)),
             },
         });
+        const anticipations = await m.find(
+            FinancialInstallmentAnticipationOrmEntity,
+            { where: { spaceId, commitmentId } },
+        );
         const fulfilled: { installment_id: string; amount: string }[] =
             await m.query(
                 `SELECT installment_id,SUM(amount_in_cents)::text AS amount FROM (
@@ -163,6 +169,26 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
                         ?.amount ?? '0',
                 ),
                 state.stateVersion,
+                (() => {
+                    const anticipation = anticipations.find(
+                        (item) => item.installmentId === row.id,
+                    );
+                    return anticipation
+                        ? {
+                              id: anticipation.id,
+                              factId: anticipation.factId,
+                              factDate: anticipation.factDate,
+                              registeredAt:
+                                  anticipation.registeredAt.toISOString(),
+                              actorId: anticipation.actorId,
+                              expectedRemainingAmountInCents:
+                                  anticipation.expectedRemainingAmountInCents,
+                              paidAmountInCents: anticipation.paidAmountInCents,
+                              adjustmentInCents: anticipation.adjustmentInCents,
+                              economicShares: anticipation.economicShares,
+                          }
+                        : null;
+                })(),
             );
         });
         return new InstallmentCommitment(
@@ -335,6 +361,7 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
         occurrence: FinancialOccurrence,
         status: FinancialOccurrence['status'],
         settling = false,
+        amountInCents?: number,
     ) {
         const m = this.manager();
         const changed = await m.update(
@@ -358,6 +385,7 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
                     ? occurrence.stateVersion + 1
                     : occurrence.stateVersion,
                 status,
+                ...(amountInCents === undefined ? {} : { amountInCents }),
             },
         );
         if (state.affected !== 1)
@@ -368,9 +396,16 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
         root: InstallmentCommitment,
         occurrence: FinancialOccurrence,
         fact: OccurrenceFact,
+        anticipation?: InstallmentAnticipation,
     ): Promise<void> {
         const m = this.manager();
-        await this.bump(root, occurrence, occurrence.status);
+        await this.bump(
+            root,
+            occurrence,
+            occurrence.status,
+            false,
+            anticipation ? occurrence.amountInCents! : undefined,
+        );
         const sequence = await this.nextSequence(root);
         if (fact.kind === 'DISBURSEMENT')
             await m.insert(FinancialDisbursementOrmEntity, {
@@ -403,6 +438,24 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
                 remainingAmountInCents: fact.remainingAmountInCents,
                 factDate: fact.factDate,
                 registeredAt: new Date(fact.registeredAt),
+            });
+        if (anticipation)
+            await m.insert(FinancialInstallmentAnticipationOrmEntity, {
+                id: anticipation.id,
+                spaceId: root.spaceId,
+                commitmentId: root.id,
+                installmentId: occurrence.id,
+                factId: anticipation.factId,
+                dueDate: occurrence.referenceDate,
+                expectedRemainingAmountInCents:
+                    anticipation.expectedRemainingAmountInCents,
+                paidAmountInCents: anticipation.paidAmountInCents,
+                effectiveAmountInCents: occurrence.amountInCents!,
+                adjustmentInCents: anticipation.adjustmentInCents,
+                economicShares: anticipation.economicShares,
+                factDate: anticipation.factDate,
+                registeredAt: new Date(anticipation.registeredAt),
+                actorId: anticipation.actorId,
             });
     }
 

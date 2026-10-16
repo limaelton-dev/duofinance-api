@@ -90,7 +90,8 @@ export class PlannedTodayQuery implements PlannedTodayQueryPort {
                         COALESCE((SELECT SUM(d.amount_in_cents) FROM financial_disbursements d WHERE d.space_id=i.space_id AND d.occurrence_id=i.id),0)
                         +COALESCE((SELECT SUM(l.amount_in_cents) FROM financial_external_liabilities l WHERE l.space_id=i.space_id AND l.occurrence_id=i.id),0) AS fulfilled
                     FROM financial_installments i JOIN financial_commitments c ON c.space_id=i.space_id AND c.id=i.commitment_id
-                    WHERE i.space_id=$1 AND c.modality='INSTALLMENT'
+                    JOIN financial_occurrences o ON o.space_id=i.space_id AND o.installment_id=i.id
+                    WHERE i.space_id=$1 AND c.modality='INSTALLMENT' AND o.status<>'FULFILLED'
                 ), eligible AS (
                     SELECT * FROM one_time WHERE fulfilled<amount_in_cents
                     UNION ALL

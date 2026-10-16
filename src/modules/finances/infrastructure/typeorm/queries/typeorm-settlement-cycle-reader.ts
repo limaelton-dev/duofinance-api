@@ -386,12 +386,14 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                             FROM financial_occurrence_shares s WHERE s.space_id=$1 AND s.occurrence_id=p0.occurrence_id),
                             (SELECT jsonb_agg(jsonb_build_object('memberId',s.member_id,'amountInCents',s.amount_in_cents) ORDER BY s.member_id)
                             FROM financial_recurrence_shares s WHERE s.space_id=$1 AND s.commitment_id=c.id AND s.version=o.economic_version),
+                            (SELECT a.economic_shares FROM financial_installment_anticipations a WHERE a.space_id=$1 AND a.installment_id=p0.occurrence_id),
                             (SELECT jsonb_agg(jsonb_build_object('memberId',s.member_id,'amountInCents',s.amount_in_cents) ORDER BY s.member_id)
                             FROM financial_installment_shares s WHERE s.space_id=$1 AND s.installment_id=p0.occurrence_id),'[]'::jsonb) AS shares,
                         COALESCE((SELECT s.amount_in_cents FROM financial_commitment_shares s WHERE s.space_id=$1 AND s.commitment_id=c.id AND s.version=1 AND s.member_id=$2),
                             (SELECT s.amount_in_cents FROM financial_income_shares s WHERE s.space_id=$1 AND s.commitment_id=c.id AND s.member_id=$2),
                             (SELECT s.amount_in_cents FROM financial_occurrence_shares s WHERE s.space_id=$1 AND s.occurrence_id=p0.occurrence_id AND s.member_id=$2),
                             (SELECT s.amount_in_cents FROM financial_recurrence_shares s WHERE s.space_id=$1 AND s.commitment_id=c.id AND s.version=o.economic_version AND s.member_id=$2),
+                            (SELECT (share->>'amountInCents')::bigint FROM financial_installment_anticipations a CROSS JOIN LATERAL jsonb_array_elements(a.economic_shares) share WHERE a.space_id=$1 AND a.installment_id=p0.occurrence_id AND (share->>'memberId')::uuid=$2),
                             (SELECT s.amount_in_cents FROM financial_installment_shares s WHERE s.space_id=$1 AND s.installment_id=p0.occurrence_id AND s.member_id=$2),0) AS actor_amount
                     FROM page p0 JOIN financial_commitments c ON c.space_id=p0.space_id AND c.id=p0.commitment_id
                     LEFT JOIN financial_occurrences o ON o.space_id=c.space_id AND o.id=p0.occurrence_id
