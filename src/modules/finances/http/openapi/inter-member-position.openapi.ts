@@ -12,7 +12,17 @@ const object = (
 ): SchemaObject => ({
     type: 'object',
     additionalProperties: false,
-    required: Object.keys(properties),
+    required: Object.keys(properties).filter(
+        (name) =>
+            ![
+                'compensatedAmountInCents',
+                'waivedAmountInCents',
+                'reversedTransferredAmountInCents',
+                'effectiveTransferredAmountInCents',
+                'reversedCompensatedAmountInCents',
+                'effectiveCompensatedAmountInCents',
+            ].includes(name),
+    ),
     properties,
 });
 const uuid: SchemaObject = { type: 'string', format: 'uuid' },
@@ -161,6 +171,13 @@ export const interMemberPositionOpenApi: Pick<
                 originalAmountInCents: { ...money, minimum: 1 },
                 recognizedAmountInCents: { ...money, minimum: 1 },
                 remainingAmountInCents: { ...money, minimum: 1 },
+                transferredAmountInCents: { oneOf: [money, total] },
+                compensatedAmountInCents: { oneOf: [money, total] },
+                reversedTransferredAmountInCents: total,
+                effectiveTransferredAmountInCents: total,
+                reversedCompensatedAmountInCents: total,
+                effectiveCompensatedAmountInCents: total,
+                waivedAmountInCents: money,
                 factDate: date,
                 registeredAt: { type: 'string', format: 'date-time' },
                 origin: ref('InterMemberObligationOrigin'),

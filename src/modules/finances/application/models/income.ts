@@ -71,6 +71,7 @@ export interface IncomeView {
         expectedRecipientMemberId?: string | null;
         settlementRuleSnapshot?: SettlementRuleSnapshot | null;
         settlementRuleSourceVersion?: number;
+        settlementRule?: import('./settlement-adjustment.js').EffectiveSettlementRule;
     };
     receipt: null | NonNullable<IncomeCommitment['receipt']>;
     receipts: IncomeCommitment['receipts'];

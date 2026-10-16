@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { FinancialCommitmentSettlementRuleOrmEntity } from '../entities/settlement-adjustment.orm-entity.js';
 import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
 import type { IncomeRepository } from '../../../application/ports/private/income.ports.js';
 import type {
@@ -185,6 +186,15 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
         const income = await this.find(spaceId, commitmentId);
         if (!income) return null;
         const p = income.participation;
+        const specific =
+            p.type === 'SHARED'
+                ? await this.provider
+                      .get()
+                      .findOneBy(FinancialCommitmentSettlementRuleOrmEntity, {
+                          spaceId,
+                          commitmentId,
+                      })
+                : null;
         const obligations = await this.obligations.history(
             spaceId,
             commitmentId,
@@ -192,7 +202,9 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
         const latest = obligations.at(-1);
         const obligation =
             obligations.find((o) => o.remainingAmountInCents > 0) ??
-            (latest?.status === 'SETTLED' ? latest : null);
+            (latest && ['SETTLED', 'WAIVED'].includes(latest.status)
+                ? latest
+                : null);
         const cycle = obligation?.cycleId
             ? await this.provider
                   .get()
@@ -228,6 +240,17 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
                           settlementRuleSnapshot: p.settlementRuleSnapshot,
                           settlementRuleSourceVersion:
                               p.settlementRuleSourceVersion,
+                          settlementRule: specific
+                              ? {
+                                    source: 'SPECIFIC' as const,
+                                    rule: specific.rule,
+                                    version: specific.version,
+                                }
+                              : {
+                                    source: 'INHERITED' as const,
+                                    rule: p.settlementRuleSnapshot,
+                                    version: p.settlementRuleSourceVersion,
+                                },
                       }),
             },
             receipt: income.receipt,

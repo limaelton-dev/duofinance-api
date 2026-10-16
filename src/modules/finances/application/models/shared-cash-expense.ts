@@ -47,6 +47,7 @@ export interface SharedCashExpenseView {
         };
         settlementRuleSnapshot: SettlementRuleSnapshot | null;
         settlementRuleSourceVersion: number;
+        settlementRule?: import('./settlement-adjustment.js').EffectiveSettlementRule;
         suggestedTargetDate: string | null;
     };
     disbursement: FinancialCommitment['disbursement'];

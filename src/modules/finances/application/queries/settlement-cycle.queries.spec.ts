@@ -56,6 +56,8 @@ describe('settlement cycle exact calculated read values', () => {
                 recognizedAmountInCents: original,
                 remainingAmountInCents: remaining,
                 transferredAmountInCents: '0',
+                compensatedAmountInCents: '0',
+                waivedAmountInCents: '0',
                 resolvedAmountInCents: resolved,
             });
             expect(BigInt(totals.originalAmountInCents)).toBe(
@@ -89,6 +91,8 @@ describe('settlement cycle exact calculated read values', () => {
                 recognizedAmountInCents: recognized,
                 remainingAmountInCents: remaining,
                 transferredAmountInCents: transferred,
+                compensatedAmountInCents: '0',
+                waivedAmountInCents: '0',
                 resolvedAmountInCents: transferred,
             });
         },
@@ -360,6 +364,7 @@ describe('settlement cycle application authorization and public contract', () =>
             today: vi.fn(),
             list: vi.fn().mockResolvedValue([cycle()]),
             detail: vi.fn().mockResolvedValue({ cycle: cycle(), items: [] }),
+            summary: vi.fn(),
         };
         const clock = {
             now: vi.fn(),

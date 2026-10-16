@@ -1,3 +1,40 @@
+import { settlementAdjustmentEntities } from './infrastructure/typeorm/entities/settlement-adjustment.orm-entity.js';
+import { settlementOffsetEntities } from './infrastructure/typeorm/entities/settlement-offset.orm-entity.js';
+import { SettlementCycleChangeOrmEntity } from './infrastructure/typeorm/entities/settlement-cycle-change.orm-entity.js';
+import { ObligationWaiverOrmEntity } from './infrastructure/typeorm/entities/obligation-waiver.orm-entity.js';
+import { settlementReversalEntities } from './infrastructure/typeorm/entities/settlement-reversal.orm-entity.js';
+import { SETTLEMENT_REVERSAL_REPOSITORY } from './application/ports/private/settlement-reversal.repository.js';
+import { TypeOrmSettlementReversalRepository } from './infrastructure/typeorm/repositories/typeorm-settlement-reversal.repository.js';
+import { ReverseSettlementHandler } from './application/handlers/reverse-settlement.handler.js';
+import { SettlementReversalOptionsQuery } from './application/queries/settlement-reversal-options.query.js';
+import { ReverseSettlementPipe } from './http/dto/settlement-reversal.dto.js';
+import { SettlementReversalController } from './http/controllers/settlement-reversal.controller.js';
+import { OBLIGATION_WAIVER_REPOSITORY } from './application/ports/private/obligation-waiver.repository.js';
+import { TypeOrmObligationWaiverRepository } from './infrastructure/typeorm/repositories/typeorm-obligation-waiver.repository.js';
+import { WaiveObligationHandler } from './application/handlers/waive-obligation.handler.js';
+import { ObligationWaiverQueries } from './application/queries/obligation-waiver.queries.js';
+import { WaiveObligationPipe } from './http/dto/obligation-waiver.dto.js';
+import { ObligationWaiverController } from './http/controllers/obligation-waiver.controller.js';
+import { SETTLEMENT_CYCLE_FINALIZATION_REPOSITORY } from './application/ports/private/settlement-cycle-finalization.repository.js';
+import { TypeOrmSettlementCycleFinalizationRepository } from './infrastructure/typeorm/repositories/typeorm-settlement-cycle-finalization.repository.js';
+import { FinalizeSettlementCycleHandler } from './application/handlers/finalize-settlement-cycle.handler.js';
+import { FinalizeSettlementCyclePipe } from './http/dto/finalize-settlement-cycle.dto.js';
+import { SettlementCycleFinalizationController } from './http/controllers/settlement-cycle-finalization.controller.js';
+import { SETTLEMENT_OFFSET_REPOSITORY } from './application/ports/private/settlement-offset.repository.js';
+import { TypeOrmSettlementOffsetRepository } from './infrastructure/typeorm/repositories/typeorm-settlement-offset.repository.js';
+import { RecordSettlementOffsetHandler } from './application/handlers/record-settlement-offset.handler.js';
+import { SettlementOffsetQueries } from './application/queries/settlement-offset.queries.js';
+import { SettlementOffsetController } from './http/controllers/settlement-offset.controller.js';
+import { RecordSettlementOffsetPipe } from './http/dto/settlement-offset.dto.js';
+import { SETTLEMENT_ADJUSTMENT_REPOSITORY } from './application/ports/private/settlement-adjustment.repository.js';
+import { TypeOrmSettlementAdjustmentRepository } from './infrastructure/typeorm/repositories/typeorm-settlement-adjustment.repository.js';
+import { SettlementAdjustmentHandler } from './application/handlers/settlement-adjustment.handler.js';
+import { SettlementAssignmentOptionsQuery } from './application/queries/settlement-assignment-options.query.js';
+import { SettlementAdjustmentController } from './http/controllers/settlement-adjustment.controller.js';
+import {
+    ConfigureCommitmentSettlementRulePipe,
+    MoveObligationPipe,
+} from './http/dto/settlement-adjustment.dto.js';
 import { FinancialCommandAuditOrmEntity } from './infrastructure/typeorm/entities/financial-command-audit.orm-entity.js';
 import { FinancialReviewController } from './http/controllers/financial-review.controller.js';
 import { FinancialReviewQueries } from './application/queries/financial-review.queries.js';
@@ -85,6 +122,7 @@ import { TypeOrmSettlementTransferReceipts } from './infrastructure/typeorm/repo
 import {
     GetSettlementCycleQuery,
     GetSettlementCyclesQuery,
+    GetSelectedSettlementCyclesQuery,
 } from './application/queries/settlement-cycle.queries.js';
 import { SETTLEMENT_CYCLE_READER } from './application/ports/private/settlement-cycle-reader.js';
 import { SETTLEMENT_CYCLE_QUERY_PORT } from './application/ports/public/settlement-cycle-query.port.js';
@@ -133,6 +171,11 @@ import {
         DatabaseModule,
         SpacesModule,
         TypeOrmModule.forFeature([
+            ...settlementAdjustmentEntities,
+            ...settlementOffsetEntities,
+            SettlementCycleChangeOrmEntity,
+            ObligationWaiverOrmEntity,
+            ...settlementReversalEntities,
             FinancialCommandAuditOrmEntity,
             ...sharedExpenseEntities,
             FinancialExternalLiabilitySettlementOrmEntity,
@@ -147,6 +190,11 @@ import {
         ]),
     ],
     controllers: [
+        SettlementReversalController,
+        ObligationWaiverController,
+        SettlementCycleFinalizationController,
+        SettlementOffsetController,
+        SettlementAdjustmentController,
         FinancialReviewController,
         ExternalLiabilityController,
         CreditCardPurchaseController,
@@ -160,6 +208,41 @@ import {
         SettlementTransferController,
     ],
     providers: [
+        ReverseSettlementHandler,
+        SettlementReversalOptionsQuery,
+        ReverseSettlementPipe,
+        {
+            provide: SETTLEMENT_REVERSAL_REPOSITORY,
+            useClass: TypeOrmSettlementReversalRepository,
+        },
+        WaiveObligationHandler,
+        ObligationWaiverQueries,
+        WaiveObligationPipe,
+        {
+            provide: OBLIGATION_WAIVER_REPOSITORY,
+            useClass: TypeOrmObligationWaiverRepository,
+        },
+        FinalizeSettlementCycleHandler,
+        FinalizeSettlementCyclePipe,
+        {
+            provide: SETTLEMENT_CYCLE_FINALIZATION_REPOSITORY,
+            useClass: TypeOrmSettlementCycleFinalizationRepository,
+        },
+        SettlementAdjustmentHandler,
+        RecordSettlementOffsetHandler,
+        RecordSettlementOffsetPipe,
+        SettlementOffsetQueries,
+        {
+            provide: SETTLEMENT_OFFSET_REPOSITORY,
+            useClass: TypeOrmSettlementOffsetRepository,
+        },
+        SettlementAssignmentOptionsQuery,
+        ConfigureCommitmentSettlementRulePipe,
+        MoveObligationPipe,
+        {
+            provide: SETTLEMENT_ADJUSTMENT_REPOSITORY,
+            useClass: TypeOrmSettlementAdjustmentRepository,
+        },
         FinancialReviewQueries,
         {
             provide: FINANCIAL_REVIEW_READER,
@@ -218,6 +301,7 @@ import {
             useExisting: GetFinanceTodayQuery,
         },
         GetSettlementCyclesQuery,
+        GetSelectedSettlementCyclesQuery,
         GetSettlementTransferOptionsQuery,
         GetSettlementTransferQuery,
         ListSettlementTransfersQuery,

@@ -28,6 +28,9 @@ export interface SettlementTransferView {
     payerMemberId: string;
     recipientMemberId: string;
     amountInCents: number;
+    reversedAmountInCents?: number;
+    effectiveAmountInCents?: number;
+    reversalId?: string | null;
     factDate: string;
     registeredAt: string;
     createdByPersonId: string;
@@ -42,6 +45,8 @@ export interface SettlementTransferResult {
         obligationId: string;
         cycleId: string | null;
         amountInCents: number;
+        reversedAmountInCents?: number;
+        effectiveAmountInCents?: number;
         origin: OpenObligationView['origin'];
     }[];
     affectedCycleIds: string[];

@@ -236,6 +236,12 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
                     resolvedAmountInCents: '0',
                     remainingAmountInCents: '43000',
                     transferredAmountInCents: '0',
+                    compensatedAmountInCents: '0',
+                    waivedAmountInCents: '0',
+                    reversedTransferredAmountInCents: '0',
+                    effectiveTransferredAmountInCents: '0',
+                    reversedCompensatedAmountInCents: '0',
+                    effectiveCompensatedAmountInCents: '0',
                 },
                 position: {
                     payableAmountInCents: '35000',
@@ -249,6 +255,8 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
         expect(detailed.body.cycle).toEqual({
             ...listed.body.items[0],
             finalizedAt: null,
+            canFinalize: false,
+            finalizationBlockReason: 'OPEN_OBLIGATIONS',
         });
         expect(
             detailed.body.items.map((i: { id: string }) => i.id).sort(),
@@ -398,6 +406,12 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
                         resolvedAmountInCents: '60000',
                         remainingAmountInCents: '0',
                         transferredAmountInCents: '0',
+                        compensatedAmountInCents: '0',
+                        waivedAmountInCents: '0',
+                        reversedTransferredAmountInCents: '0',
+                        effectiveTransferredAmountInCents: '0',
+                        reversedCompensatedAmountInCents: '0',
+                        effectiveCompensatedAmountInCents: '0',
                     },
                 }),
             ]),
@@ -619,6 +633,12 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
             resolvedAmountInCents: '0',
             remainingAmountInCents: '18014398509481983',
             transferredAmountInCents: '0',
+            compensatedAmountInCents: '0',
+            waivedAmountInCents: '0',
+            reversedTransferredAmountInCents: '0',
+            effectiveTransferredAmountInCents: '0',
+            reversedCompensatedAmountInCents: '0',
+            effectiveCompensatedAmountInCents: '0',
         });
         expect(result.cycle.position.net).toEqual({
             direction: 'PAYABLE',
@@ -634,8 +654,7 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
         'view=OTHER',
         'view=',
         'view=open',
-        'view=OVERDUE',
-        'view=FINALIZED',
+        'view=ARCHIVED',
         'view=OPEN&view=OPEN',
         'cursor=x&cursor=x',
         'cursor=',
@@ -992,7 +1011,12 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
             'direction',
             'cursor',
         ]);
-        expect(list.parameters[1].schema.enum).toEqual(['OPEN', 'UPCOMING']);
+        expect(list.parameters[1].schema.enum).toEqual([
+            'OPEN',
+            'UPCOMING',
+            'OVERDUE',
+            'FINALIZED',
+        ]);
         expect(detail.parameters[2].schema.enum).toEqual([
             'ALL',
             'PAYABLE',
@@ -1034,7 +1058,7 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
             expect(summary.properties.totals.properties[amount].type).toBe(
                 'string',
             );
-        expect(summary.properties.status.enum).toEqual(['OPEN']);
+        expect(summary.properties.status.enum).toEqual(['OPEN', 'FINALIZED']);
         expect(cycle.properties.status.enum).toEqual(['OPEN', 'FINALIZED']);
         expect(cycle.properties.finalizedAt.oneOf).toEqual([
             { type: 'null' },

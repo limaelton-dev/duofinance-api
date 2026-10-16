@@ -139,6 +139,7 @@ const commitment = object({
     settlementRuleSourceVersion: money,
     suggestedTargetDate: nullable(date),
 });
+commitment.properties!.settlementRule = ref('EffectiveSettlementRule');
 const legacyInitialProperties = {
     spaceId: uuid,
     commitment,

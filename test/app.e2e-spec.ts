@@ -435,6 +435,11 @@ describe('CARD-001 — PostgreSQL e HTTP', () => {
             'RecordCreditCardPurchase1792087652424',
             'ExternalLiabilitySettlements1792110000000',
             'FinancialCommandAudit1792154979034',
+            'CustomSettlementAssignment1792160969556',
+            'RecordSettlementOffset1792162181991',
+            'FinalizeSettlementCycle1792162609967',
+            'WaiveInterMemberObligation1792163371690',
+            'ReverseSettlementResolution1792164211588',
         ]);
         expect(await counts()).toEqual([0, 0, 0, 0]);
 
@@ -819,7 +824,7 @@ describe('CARD-001 — PostgreSQL e HTTP', () => {
             .expect(200);
 
         expect(response.body.openapi).toBe('3.1.0');
-        expect(Object.keys(response.body.paths)).toHaveLength(41);
+        expect(Object.keys(response.body.paths)).toHaveLength(56);
 
         const paths = response.body.paths as Record<
             string,
@@ -844,7 +849,7 @@ describe('CARD-001 — PostgreSQL e HTTP', () => {
             0,
         );
 
-        expect(operations).toBe(46);
+        expect(operations).toBe(63);
         expect(paths['/v2/spaces']).toHaveProperty('get');
         expect(paths['/v2/spaces']).toHaveProperty('post');
 

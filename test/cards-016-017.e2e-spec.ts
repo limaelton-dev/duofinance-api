@@ -634,6 +634,8 @@ describe('CARDS-016-017 financial review HTTP/PostgreSQL', () => {
             ...before.totals,
             internalTransfersSentAmountInCents: '40000',
             internalTransfersReceivedAmountInCents: '40000',
+            internalTransfersSentEffectiveAmountInCents: '40000',
+            internalTransfersReceivedEffectiveAmountInCents: '40000',
         });
         expect(
             (await overview(f.a, f.space, '2026-10', f.mb)).totals,

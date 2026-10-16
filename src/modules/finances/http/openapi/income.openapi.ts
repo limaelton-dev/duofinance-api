@@ -471,6 +471,7 @@ export const incomeOpenApi: Pick<OpenAPIObject, 'paths' | 'components'> = {
                                 ref('SettlementRule'),
                             ),
                             settlementRuleSourceVersion: total,
+                            settlementRule: ref('EffectiveSettlementRule'),
                         },
                     },
                     receipt: nullable(ref('IncomeReceipt')),
@@ -548,6 +549,7 @@ export const incomeOpenApi: Pick<OpenAPIObject, 'paths' | 'components'> = {
                     expectedSpaceVersion: version,
                     participationSplit: calculatedSplit,
                     expectedRecipientMemberId: nullable(uuid),
+                    settlementRule: ref('EffectiveSettlementRule'),
                 },
             },
             IncomeList: obj({

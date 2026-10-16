@@ -1,14 +1,20 @@
 export type FinancesErrorCode =
+    | 'SETTLEMENT_RESOLUTION_ALREADY_REVERSED'
+    | 'REVERSAL_CORRECTION_CYCLE_REQUIRED'
+    | 'OBLIGATION_WAIVER_NOT_FOUND'
+    | 'SETTLEMENT_OFFSET_NOT_FOUND'
     | 'EXTERNAL_LIABILITY_NOT_FOUND'
     | 'EXTERNAL_LIABILITY_ALREADY_SETTLED'
     | 'EXTERNAL_LIABILITY_HOLDER_REQUIRED'
     | 'VALIDATION_ERROR'
+    | 'OBLIGATION_CREDITOR_REQUIRED'
     | 'SHARED_SPACE_REQUIRED'
     | 'PERSONAL_SPACE_REQUIRED'
     | 'CONCURRENT_MODIFICATION'
     | 'IDEMPOTENCY_KEY_REUSED'
     | 'EXPENSE_OPTIONS_CHANGED'
     | 'SETTLEMENT_CYCLE_FINALIZED'
+    | 'SETTLEMENT_CYCLE_HAS_OPEN_OBLIGATIONS'
     | 'SETTLEMENT_CYCLE_NOT_FOUND'
     | 'FINANCIAL_COMMITMENT_NOT_FOUND'
     | 'INTER_MEMBER_OBLIGATION_NOT_FOUND'
@@ -17,6 +23,12 @@ export type FinancesErrorCode =
     | 'EXPENSE_ALREADY_PAID'
     | 'INCOME_OPTIONS_CHANGED';
 const messages: Record<FinancesErrorCode, string> = {
+    SETTLEMENT_RESOLUTION_ALREADY_REVERSED:
+        'Este acerto já foi integralmente revertido.',
+    REVERSAL_CORRECTION_CYCLE_REQUIRED:
+        'Escolha um ciclo aberto para registrar a correção sem alterar o acerto finalizado.',
+    OBLIGATION_WAIVER_NOT_FOUND: 'Dispensa não encontrada.',
+    SETTLEMENT_OFFSET_NOT_FOUND: 'Compensação não encontrada.',
     EXTERNAL_LIABILITY_NOT_FOUND:
         'Obriga\u00e7\u00e3o externa n\u00e3o encontrada.',
     EXTERNAL_LIABILITY_ALREADY_SETTLED:
@@ -24,6 +36,8 @@ const messages: Record<FinancesErrorCode, string> = {
     EXTERNAL_LIABILITY_HOLDER_REQUIRED:
         'Somente o titular pode registrar este pagamento.',
     VALIDATION_ERROR: 'Verifique os dados informados.',
+    OBLIGATION_CREDITOR_REQUIRED:
+        'Somente o credor pode dispensar esta pendência.',
     SHARED_SPACE_REQUIRED: 'Esta ação requer um espaço compartilhado.',
     PERSONAL_SPACE_REQUIRED: 'Esta ação requer um espaço pessoal.',
     CONCURRENT_MODIFICATION:
@@ -32,6 +46,8 @@ const messages: Record<FinancesErrorCode, string> = {
     EXPENSE_OPTIONS_CHANGED:
         'As opções mudaram. Atualize e confirme novamente.',
     SETTLEMENT_CYCLE_FINALIZED: 'Este acerto já foi finalizado.',
+    SETTLEMENT_CYCLE_HAS_OPEN_OBLIGATIONS:
+        'Ainda existem pendências abertas neste acerto. Resolva os valores antes de finalizar.',
     SETTLEMENT_CYCLE_NOT_FOUND: 'Acerto não encontrado.',
     FINANCIAL_COMMITMENT_NOT_FOUND: 'Despesa não encontrada.',
     INTER_MEMBER_OBLIGATION_NOT_FOUND: 'Pendência não encontrada.',

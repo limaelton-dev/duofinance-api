@@ -23,6 +23,7 @@ export interface ObligationReconciliationPlan {
 export function planObligationReconciliation(
     chronologicalObligations: readonly InterMemberObligation[],
     difference: InitialDifference | null,
+    finalizedCycleIds: readonly string[] = [],
 ): ObligationReconciliationPlan {
     const first = chronologicalObligations[0];
     const open = chronologicalObligations.filter(
@@ -44,7 +45,11 @@ export function planObligationReconciliation(
         o.creditorMemberId === difference.creditorMemberId;
     const reusedObligation = difference
         ? (open.find(matches) ??
-          (latest?.status === 'SETTLED' && matches(latest) ? latest : null))
+          (latest?.status === 'SETTLED' &&
+          matches(latest) &&
+          (!latest.cycleId || !finalizedCycleIds.includes(latest.cycleId))
+              ? latest
+              : null))
         : null;
     const changes = chronologicalObligations.flatMap((obligation) => {
         if (

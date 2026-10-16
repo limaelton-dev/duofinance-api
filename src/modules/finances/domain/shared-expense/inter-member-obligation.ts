@@ -2,8 +2,9 @@ import { FinancesError } from '../errors/finances.error.js';
 import { Money } from './money.js';
 import { civilDate } from './settlement-cycle.js';
 import { invalidExpense } from './validation.js';
+import type { ObligationWaiver } from './obligation-waiver.js';
 export type ObligationStatus =
-    'OPEN' | 'PARTIALLY_SETTLED' | 'SETTLED' | 'RECONCILED';
+    'OPEN' | 'PARTIALLY_SETTLED' | 'SETTLED' | 'RECONCILED' | 'WAIVED';
 export interface ObligationReconciliation {
     type: 'RECONCILED';
     actorId: string;
@@ -46,6 +47,7 @@ export class InterMemberObligation {
         readonly reconciled = false,
         reconciliation: ObligationReconciliation | null = null,
         readonly originExternalLiabilityId: string | null = null,
+        readonly waived = false,
     ) {
         if (
             debtorMemberId === creditorMemberId ||
@@ -55,7 +57,8 @@ export class InterMemberObligation {
             remainingAmountInCents >
                 Money.from(recognizedAmountInCents).amountInCents ||
             !Number.isSafeInteger(version) ||
-            version < 1
+            version < 1 ||
+            (waived && remainingAmountInCents !== 0)
         )
             invalidExpense();
         civilDate(factDate);
@@ -67,9 +70,11 @@ export class InterMemberObligation {
             : null;
         this.status =
             remainingAmountInCents === 0
-                ? reconciled
-                    ? 'RECONCILED'
-                    : 'SETTLED'
+                ? waived
+                    ? 'WAIVED'
+                    : reconciled
+                      ? 'RECONCILED'
+                      : 'SETTLED'
                 : remainingAmountInCents === recognizedAmountInCents
                   ? 'OPEN'
                   : 'PARTIALLY_SETTLED';
@@ -80,6 +85,39 @@ export class InterMemberObligation {
             registeredAt,
         });
         Object.freeze(this);
+    }
+    moveToCycle(
+        cycleId: string | null,
+        expectedVersion: number,
+    ): InterMemberObligation {
+        if (expectedVersion !== this.version)
+            throw new FinancesError('CONCURRENT_MODIFICATION');
+        if (this.remainingAmountInCents === 0)
+            throw new FinancesError('VALIDATION_ERROR', ['obligationId']);
+        if (cycleId !== null && !cycleId.trim())
+            throw new FinancesError('VALIDATION_ERROR', ['settlement.cycleId']);
+        return new InterMemberObligation(
+            this.id,
+            this.spaceId,
+            this.originCommitmentId,
+            this.originDisbursementId,
+            this.debtorMemberId,
+            this.creditorMemberId,
+            this.originalAmountInCents,
+            cycleId,
+            this.factDate,
+            this.registeredAt,
+            this.history.actorId,
+            this.remainingAmountInCents,
+            this.version + 1,
+            this.appliedAllocationIds,
+            this.originKind,
+            this.recognizedAmountInCents,
+            this.reconciled,
+            this.reconciliation,
+            this.originExternalLiabilityId,
+            this.waived,
+        );
     }
     applySettlement(
         allocationId: string,
@@ -115,6 +153,7 @@ export class InterMemberObligation {
             this.reconciled,
             null,
             this.originExternalLiabilityId,
+            this.waived,
         );
     }
     reconcile(
@@ -158,6 +197,87 @@ export class InterMemberObligation {
                 remainingAmountInCents,
             },
             this.originExternalLiabilityId,
+            this.waived && remainingAmountInCents === 0,
+        );
+    }
+    waive(
+        waiver: ObligationWaiver,
+        actorMemberId: string,
+        expectedVersion: number,
+    ): InterMemberObligation {
+        if (actorMemberId !== this.creditorMemberId)
+            throw new FinancesError('OBLIGATION_CREDITOR_REQUIRED');
+        if (
+            waiver.obligationId !== this.id ||
+            waiver.creditorMemberId !== this.creditorMemberId
+        )
+            throw new FinancesError('VALIDATION_ERROR', ['obligationId']);
+        if (
+            expectedVersion !== this.version ||
+            waiver.amountInCents > this.remainingAmountInCents
+        )
+            throw new FinancesError('CONCURRENT_MODIFICATION');
+        const remaining = this.remainingAmountInCents - waiver.amountInCents;
+        return new InterMemberObligation(
+            this.id,
+            this.spaceId,
+            this.originCommitmentId,
+            this.originDisbursementId,
+            this.debtorMemberId,
+            this.creditorMemberId,
+            this.originalAmountInCents,
+            this.cycleId,
+            this.factDate,
+            this.registeredAt,
+            this.history.actorId,
+            remaining,
+            this.version + 1,
+            this.appliedAllocationIds,
+            this.originKind,
+            this.recognizedAmountInCents,
+            false,
+            null,
+            this.originExternalLiabilityId,
+            remaining === 0,
+        );
+    }
+    reverseResolution(
+        remainingAmountInCents: number,
+        reversedAmountInCents: number,
+        expectedVersion: number,
+    ): InterMemberObligation {
+        if (this.version !== expectedVersion)
+            throw new FinancesError('CONCURRENT_MODIFICATION');
+        Money.from(remainingAmountInCents);
+        Money.from(reversedAmountInCents);
+        const resolved =
+            this.recognizedAmountInCents - this.remainingAmountInCents;
+        if (reversedAmountInCents > resolved)
+            throw new FinancesError('VALIDATION_ERROR', ['applications']);
+        const recognized = Money.from(resolved - reversedAmountInCents).add(
+            Money.from(remainingAmountInCents),
+        ).amountInCents;
+        return new InterMemberObligation(
+            this.id,
+            this.spaceId,
+            this.originCommitmentId,
+            this.originDisbursementId,
+            this.debtorMemberId,
+            this.creditorMemberId,
+            this.originalAmountInCents,
+            this.cycleId,
+            this.factDate,
+            this.registeredAt,
+            this.history.actorId,
+            remainingAmountInCents,
+            this.version + 1,
+            this.appliedAllocationIds,
+            this.originKind,
+            recognized,
+            remainingAmountInCents === 0,
+            null,
+            this.originExternalLiabilityId,
+            this.waived && remainingAmountInCents === 0,
         );
     }
 }

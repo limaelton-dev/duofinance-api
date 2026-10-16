@@ -166,6 +166,25 @@ describe('financial review semantics', () => {
             ]).get(a),
         ).toBe(9007199254740990n);
     });
+    it('distinguishes recorded transfers from reversed and valid effects without changing support', () => {
+        expect(
+            reviewMetrics({
+                expenseAmountInCents: '10000',
+                paidAmountInCents: '10000',
+                internalTransfersSentAmountInCents: '18014398509481982',
+                internalTransfersSentReversedAmountInCents: '9007199254740991',
+                internalTransfersReceivedAmountInCents: '18014398509481982',
+                internalTransfersReceivedReversedAmountInCents:
+                    '9007199254740991',
+            }),
+        ).toMatchObject({
+            internalTransfersSentEffectiveAmountInCents: '9007199254740991',
+            internalTransfersReceivedEffectiveAmountInCents: '9007199254740991',
+            economicResultInCents: '-10000',
+            supportedAmountInCents: '10000',
+            disbursedAmountInCents: '10000',
+        });
+    });
 });
 describe('financial review application authorization', () => {
     function fixture(personal = false) {

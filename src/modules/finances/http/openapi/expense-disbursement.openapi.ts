@@ -13,7 +13,18 @@ const object = (
 ): SchemaObject => ({
     type: 'object',
     additionalProperties: false,
-    required: Object.keys(properties),
+    required: Object.keys(properties).filter(
+        (name) =>
+            ![
+                'compensatedAmountInCents',
+                'waivedAmountInCents',
+                'reversedTransferredAmountInCents',
+                'effectiveTransferredAmountInCents',
+                'reversedCompensatedAmountInCents',
+                'effectiveCompensatedAmountInCents',
+                'reversalIds',
+            ].includes(name),
+    ),
     properties,
 });
 const uuid: SchemaObject = { type: 'string', format: 'uuid' };
@@ -115,10 +126,33 @@ const obligation = object({
     originalAmountInCents: positive,
     recognizedAmountInCents: money,
     remainingAmountInCents: money,
-    transferredAmountInCents: money,
+    transferredAmountInCents: {
+        oneOf: [money, { type: 'string', pattern: '^(0|[1-9][0-9]*)$' }],
+    },
+    compensatedAmountInCents: {
+        oneOf: [money, { type: 'string', pattern: '^(0|[1-9][0-9]*)$' }],
+    },
+    reversedTransferredAmountInCents: {
+        type: 'string',
+        pattern: '^(0|[1-9][0-9]*)$',
+    },
+    effectiveTransferredAmountInCents: {
+        type: 'string',
+        pattern: '^(0|[1-9][0-9]*)$',
+    },
+    reversedCompensatedAmountInCents: {
+        type: 'string',
+        pattern: '^(0|[1-9][0-9]*)$',
+    },
+    effectiveCompensatedAmountInCents: {
+        type: 'string',
+        pattern: '^(0|[1-9][0-9]*)$',
+    },
+    reversalIds: { type: 'array', uniqueItems: true, items: uuid },
+    waivedAmountInCents: money,
     status: {
         type: 'string',
-        enum: ['OPEN', 'PARTIALLY_SETTLED', 'SETTLED', 'RECONCILED'],
+        enum: ['OPEN', 'PARTIALLY_SETTLED', 'SETTLED', 'RECONCILED', 'WAIVED'],
     },
     cycleId: nullable(uuid),
     history: {
@@ -127,7 +161,15 @@ const obligation = object({
             version: positive,
             type: {
                 type: 'string',
-                enum: ['CREATED', 'SETTLEMENT_APPLIED', 'RECONCILED'],
+                enum: [
+                    'CREATED',
+                    'SETTLEMENT_APPLIED',
+                    'RECONCILED',
+                    'ASSIGNMENT_CHANGED',
+                    'OFFSET_APPLIED',
+                    'WAIVED',
+                    'REVERSED',
+                ],
             },
             actorId: uuid,
             registeredAt: instant,
@@ -276,6 +318,7 @@ export const expenseDisbursementOpenApi: Pick<
                         },
                         responsibilitySplit: { type: 'object' },
                         expectedPayerMemberId: nullable(uuid),
+                        settlementRule: ref('EffectiveSettlementRule'),
                         defaultSettlementRule: object({
                             rule: nullable(ref('SettlementRule')),
                             version: money,

@@ -87,6 +87,9 @@ export function decodeReviewCursor(
                 'EXTERNAL_LIABILITY',
                 'EXTERNAL_SETTLEMENT',
                 'INTERNAL_TRANSFER',
+                'INTERNAL_OFFSET',
+                'INTERNAL_WAIVER',
+                'INTERNAL_REVERSAL',
             ].includes(type)
         )
             throw new Error();

@@ -12,7 +12,19 @@ const object = (
 ): SchemaObject => ({
     type: 'object',
     additionalProperties: false,
-    required: Object.keys(properties),
+    required: Object.keys(properties).filter(
+        (name) =>
+            ![
+                'compensatedAmountInCents',
+                'waivedAmountInCents',
+                'reversedTransferredAmountInCents',
+                'effectiveTransferredAmountInCents',
+                'reversedCompensatedAmountInCents',
+                'effectiveCompensatedAmountInCents',
+                'reversedTransferTotalAmountInCents',
+                'effectiveTransferTotalAmountInCents',
+            ].includes(name),
+    ),
     properties,
 });
 const uuid: SchemaObject = { type: 'string', format: 'uuid' };
@@ -28,7 +40,25 @@ const total: SchemaObject = {
     description:
         'Centavos inteiros exatos. Reconhecido preserva a posição após reconciliação; resolvido é reconhecido menos restante. Dinheiro transferido provém somente das alocações de transferências.',
 };
-const view: SchemaObject = { type: 'string', enum: ['OPEN', 'UPCOMING'] };
+const aggregateAmount: SchemaObject = {
+    oneOf: [integer, { type: 'string', pattern: '^(0|[1-9][0-9]*)$' }],
+    description:
+        'Agregado em centavos: número inteiro seguro; string decimal quando exceder 9007199254740991.',
+};
+const reversalTotals = {
+    reversedTransferredAmountInCents: total,
+    effectiveTransferredAmountInCents: total,
+    reversedCompensatedAmountInCents: total,
+    effectiveCompensatedAmountInCents: total,
+};
+const obligationResolutions = {
+    transferredAmountInCents: aggregateAmount,
+    ...reversalTotals,
+};
+const view: SchemaObject = {
+    type: 'string',
+    enum: ['OPEN', 'UPCOMING', 'OVERDUE', 'FINALIZED'],
+};
 const direction: SchemaObject = {
     type: 'string',
     enum: ['ALL', 'PAYABLE', 'RECEIVABLE'],
@@ -79,7 +109,7 @@ const cursorParameter = {
     required: false,
     schema: { type: 'string' as const, minLength: 1, maxLength: 512 },
     description:
-        'Cursor opaco canônico versionado vinculado à pessoa, espaço, consulta e filtros. Lista usa data/UUID; detalhe preserva instante UTC de microssegundos/UUID. UPCOMING expira na virada da data civil America/Sao_Paulo, retornando VALIDATION_ERROR para cursor.',
+        'Cursor opaco canônico vinculado à pessoa, espaço, consulta e filtros. UPCOMING e OVERDUE expiram na virada da data civil America/Sao_Paulo. Detalhe preserva microssegundos UTC/UUID.',
 };
 const context = {
     spaceId: uuid,
@@ -104,7 +134,7 @@ const summary = {
     id: uuid,
     version: { ...integer, minimum: 1 },
     targetDate: date,
-    status: { type: 'string' as const, enum: ['OPEN'] },
+    status: { type: 'string' as const, enum: ['OPEN', 'FINALIZED'] },
     isOverdue: { type: 'boolean' as const },
     obligationCount: integer,
     openObligationCount: integer,
@@ -114,6 +144,17 @@ const summary = {
         resolvedAmountInCents: total,
         remainingAmountInCents: total,
         transferredAmountInCents: total,
+        ...reversalTotals,
+        compensatedAmountInCents: {
+            ...total,
+            description:
+                'Soma das aplicações de compensação no ciclo ou recorte. Pode incluir ambas as direções: compensação de 8000 aplica 16000 no conjunto. Não é transferência de caixa.',
+        },
+        waivedAmountInCents: {
+            ...total,
+            description:
+                'Valor dispensado pelo credor nas pendências do ciclo ou recorte, separado de transferência de caixa e compensação.',
+        },
     }),
     position: object({
         payableAmountInCents: total,
@@ -145,9 +186,9 @@ export const settlementCycleOpenApi: Pick<
                 operationId: 'getSettlementCycles',
                 tags: ['Finances'],
                 summary:
-                    'Consultar ciclos em aberto e próximos ciclos existentes',
+                    'Consultar ciclos abertos, próximos, vencidos e finalizados',
                 description:
-                    'OPEN inclui ciclos vencidos e zerados. UPCOMING inclui OPEN com data-alvo hoje ou futura, sem projeção de ciclos. Ordem data-alvo/UUID crescente, página de 20. Totais abrangem toda composição do ciclo. Snapshot financeiro único por resposta; não há snapshot entre páginas. Rejeita query desconhecida, duplicada ou inválida. Consulta não escreve nem finaliza ciclos.',
+                    'OPEN inclui ciclos vencidos e zerados. UPCOMING inclui OPEN com data-alvo hoje ou futura. OVERDUE exige OPEN, data-alvo anterior a hoje e restante positivo. FINALIZED recupera ciclos encerrados somente leitura. Ordem data-alvo/UUID crescente, página de 20. Totais da composição inteira e snapshot financeiro único por resposta. Rejeita query desconhecida, duplicada ou inválida. Consulta não escreve nem finaliza ciclos.',
                 security: [{ sessionCookie: [] }],
                 parameters: [
                     spaceParameter,
@@ -174,7 +215,7 @@ export const settlementCycleOpenApi: Pick<
                 tags: ['Finances'],
                 summary: 'Consultar composição e totais de um ciclo',
                 description:
-                    'Detalhe OPEN ou FINALIZED existente. Direção filtra apenas linhas; totais, posição e contagens permanecem completos. Inclui restante zero. Ordem registeredAt/UUID decrescente, preservando microssegundos UTC. Posição líquida informativa não resolve pendências; resolvido não comprova transferência. Snapshot financeiro único por resposta. Rejeita query desconhecida ou duplicada. Origem deve ser consultada com autorização própria.',
+                    'Detalhe OPEN ou FINALIZED existente. Expõe elegibilidade e motivo de bloqueio para finalização. Direção filtra apenas linhas; totais, posição e contagens permanecem completos. Inclui restante zero. Ordem registeredAt/UUID decrescente, preservando microssegundos UTC. Posição líquida informativa não resolve pendências nem permite finalizar enquanto existir valor aberto. Snapshot financeiro único por resposta. Rejeita query desconhecida ou duplicada. Origem deve ser consultada com autorização própria.',
                 security: [{ sessionCookie: [] }],
                 parameters: [
                     spaceParameter,
@@ -202,6 +243,105 @@ export const settlementCycleOpenApi: Pick<
                 },
             },
         },
+        '/v2/spaces/{spaceId}/settlement-cycles/{cycleId}/finalize': {
+            post: {
+                operationId: 'finalizeSettlementCycle',
+                tags: ['Finances'],
+                summary:
+                    'Finalizar explicitamente um ciclo sem valores abertos',
+                description:
+                    'Exige ausência de restante em todas as pendências. Posição líquida zero com dívidas recíprocas abertas não permite finalizar. Conserva data-alvo, composição e fatos históricos; não reabre automaticamente. Finalização, histórico, auditoria e recibo são atômicos. Repita a chave e entrada originais após resultado incerto.',
+                security: [{ sessionCookie: [] }],
+                parameters: [
+                    spaceParameter,
+                    {
+                        name: 'cycleId',
+                        in: 'path',
+                        required: true,
+                        schema: uuid,
+                    },
+                    {
+                        name: 'Idempotency-Key',
+                        in: 'header',
+                        required: true,
+                        schema: uuid,
+                    },
+                    {
+                        name: 'X-CSRF-Token',
+                        in: 'header',
+                        required: true,
+                        schema: { type: 'string' },
+                    },
+                ],
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: ref('FinalizeSettlementCycleRequest'),
+                        },
+                    },
+                },
+                responses: {
+                    ...errors,
+                    200: response(
+                        ref('FinalizeSettlementCycleResponse'),
+                        'Ciclo finalizado ou replay autorizado da confirmação original.',
+                    ),
+                    403: error('INVALID_CSRF_TOKEN'),
+                    404: error('SPACE_NOT_FOUND', 'SETTLEMENT_CYCLE_NOT_FOUND'),
+                    409: error(
+                        'SPACE_NOT_ACTIVE',
+                        'SHARED_SPACE_REQUIRED',
+                        'CONCURRENT_MODIFICATION',
+                        'SETTLEMENT_CYCLE_FINALIZED',
+                        'SETTLEMENT_CYCLE_HAS_OPEN_OBLIGATIONS',
+                        'IDEMPOTENCY_KEY_REUSED',
+                    ),
+                },
+            },
+        },
+        '/v2/spaces/{spaceId}/settlement-cycles/summary': {
+            get: {
+                operationId: 'getSelectedSettlementCyclesSummary',
+                tags: ['Finances'],
+                summary: 'Consultar o recorte temporário de ciclos escolhidos',
+                description:
+                    'Seleciona de dois a cinquenta ciclos distintos do mesmo espaço, incluindo históricos FINALIZED somente leitura. Valida a seleção inteira e não persiste recorte. Totais consideram todos os ciclos; direction filtra apenas os itens. transferredAmountInCents soma aplicações no recorte; transferTotalAmountInCents soma cada transferência envolvida uma única vez. Posição líquida é informativa. A consulta usa snapshot único e revalida acesso fora dele.',
+                security: [{ sessionCookie: [] }],
+                parameters: [
+                    spaceParameter,
+                    {
+                        name: 'cycleIds',
+                        in: 'query',
+                        required: true,
+                        schema: {
+                            type: 'array',
+                            minItems: 2,
+                            maxItems: 50,
+                            uniqueItems: true,
+                            items: uuid,
+                        },
+                        style: 'form',
+                        explode: false,
+                    },
+                    {
+                        name: 'direction',
+                        in: 'query',
+                        required: false,
+                        schema: { ...direction, default: 'ALL' },
+                    },
+                    cursorParameter,
+                ],
+                responses: {
+                    ...errors,
+                    404: error('SPACE_NOT_FOUND', 'SETTLEMENT_CYCLE_NOT_FOUND'),
+                    200: response(
+                        ref('SelectedSettlementCyclesResponse'),
+                        'Recorte autorizado, sem dupla contagem de transferências ou criação de fatos.',
+                    ),
+                },
+            },
+        },
     },
     components: {
         schemas: {
@@ -215,6 +355,42 @@ export const settlementCycleOpenApi: Pick<
                         { type: 'string', format: 'date-time' },
                     ],
                 },
+                canFinalize: { type: 'boolean' },
+                finalizationBlockReason: {
+                    oneOf: [
+                        { type: 'null' },
+                        {
+                            type: 'string',
+                            enum: [
+                                'SPACE_CLOSED',
+                                'SETTLEMENT_CYCLE_FINALIZED',
+                                'OPEN_OBLIGATIONS',
+                            ],
+                        },
+                    ],
+                },
+            }),
+            FinalizeSettlementCycleRequest: object({
+                expectedSpaceVersion: { ...integer, minimum: 1 },
+                expectedCycleVersion: { ...integer, minimum: 1 },
+            }),
+            FinalizeSettlementCycleResponse: object({
+                spaceId: uuid,
+                cycle: object({
+                    id: uuid,
+                    targetDate: date,
+                    status: { type: 'string', enum: ['FINALIZED'] },
+                    version: { ...integer, minimum: 1 },
+                    finalizedAt: { type: 'string', format: 'date-time' },
+                    finalizedByPersonId: uuid,
+                }),
+                affectedCycleIds: {
+                    type: 'array',
+                    minItems: 1,
+                    maxItems: 1,
+                    items: uuid,
+                },
+                replayed: { type: 'boolean' },
             }),
             SettlementCycleObligation: object({
                 id: uuid,
@@ -226,6 +402,7 @@ export const settlementCycleOpenApi: Pick<
                         'PARTIALLY_SETTLED',
                         'SETTLED',
                         'RECONCILED',
+                        'WAIVED',
                     ],
                 },
                 debtorMemberId: uuid,
@@ -234,6 +411,9 @@ export const settlementCycleOpenApi: Pick<
                 recognizedAmountInCents: integer,
                 resolvedAmountInCents: integer,
                 remainingAmountInCents: integer,
+                compensatedAmountInCents: aggregateAmount,
+                ...obligationResolutions,
+                waivedAmountInCents: integer,
                 factDate: date,
                 registeredAt: { type: 'string', format: 'date-time' },
                 origin: ref('InterMemberObligationOrigin'),
@@ -258,6 +438,111 @@ export const settlementCycleOpenApi: Pick<
                     type: 'array',
                     maxItems: 20,
                     items: ref('SettlementCycleObligation'),
+                },
+                page: object({
+                    direction,
+                    pageSize: { type: 'integer', enum: [20] },
+                    nextCursor: nullableCursor,
+                }),
+            }),
+            SelectedSettlementCycleOrigin: {
+                type: 'object',
+                additionalProperties: false,
+                description:
+                    'Compromisso originador e distribuição econômica original. Estes valores não são novos totais do recorte e não devem ser somados por linha; uma origem pode gerar várias pendências.',
+                required: [
+                    'kind',
+                    'commitmentId',
+                    'description',
+                    'amountInCents',
+                    'distribution',
+                ],
+                properties: {
+                    commitmentId: uuid,
+                    description: { type: 'string' },
+                    disbursementId: uuid,
+                    receiptId: uuid,
+                    externalLiabilityId: uuid,
+                    kind: { type: 'string', enum: ['EXPENSE', 'INCOME'] },
+                    amountInCents: { ...integer, minimum: 1 },
+                    distribution: object({
+                        kind: {
+                            type: 'string',
+                            enum: ['RESPONSIBILITY', 'PARTICIPATION'],
+                        },
+                        shares: {
+                            type: 'array',
+                            items: object({
+                                memberId: uuid,
+                                amountInCents: integer,
+                            }),
+                        },
+                        actorAmountInCents: integer,
+                    }),
+                },
+            },
+            SelectedSettlementCyclesResponse: object({
+                ...context,
+                selectedCycles: {
+                    type: 'array',
+                    minItems: 2,
+                    maxItems: 50,
+                    items: object({
+                        ...summary,
+                        status: { type: 'string', enum: ['OPEN', 'FINALIZED'] },
+                        finalizedAt: {
+                            oneOf: [
+                                { type: 'null' },
+                                { type: 'string', format: 'date-time' },
+                            ],
+                        },
+                        readOnly: { type: 'boolean' },
+                    }),
+                },
+                totals: object({
+                    ...summary.totals.properties,
+                    transferTotalAmountInCents: total,
+                    reversedTransferTotalAmountInCents: total,
+                    effectiveTransferTotalAmountInCents: total,
+                    transferCount: {
+                        ...integer,
+                        description:
+                            'Quantidade de transferências registradas, incluindo as posteriormente revertidas.',
+                    },
+                    grossPayableAmountInCents: total,
+                    grossReceivableAmountInCents: total,
+                }),
+                position: summary.position,
+                items: {
+                    type: 'array',
+                    maxItems: 20,
+                    items: object({
+                        id: uuid,
+                        version: { ...integer, minimum: 1 },
+                        status: {
+                            type: 'string',
+                            enum: [
+                                'OPEN',
+                                'PARTIALLY_SETTLED',
+                                'SETTLED',
+                                'RECONCILED',
+                                'WAIVED',
+                            ],
+                        },
+                        debtorMemberId: uuid,
+                        creditorMemberId: uuid,
+                        originalAmountInCents: { ...integer, minimum: 1 },
+                        recognizedAmountInCents: integer,
+                        resolvedAmountInCents: integer,
+                        remainingAmountInCents: integer,
+                        compensatedAmountInCents: aggregateAmount,
+                        ...obligationResolutions,
+                        waivedAmountInCents: integer,
+                        factDate: date,
+                        registeredAt: { type: 'string', format: 'date-time' },
+                        cycleId: uuid,
+                        origin: ref('SelectedSettlementCycleOrigin'),
+                    }),
                 },
                 page: object({
                     direction,

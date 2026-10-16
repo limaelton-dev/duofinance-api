@@ -24,6 +24,7 @@ function transaction(p: EntityManagerProvider) {
     return m;
 }
 interface ObligationRow {
+    status: string;
     id: string;
     space_id: string;
     commitment_id: string;
@@ -136,9 +137,10 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
                     changes.map((change) => change.allocation_id),
                     o.receipt_id ? 'INCOME' : 'EXPENSE',
                     amount(o.recognized_amount_in_cents),
-                    false,
+                    o.status === 'RECONCILED',
                     null,
                     o.external_liability_id,
+                    o.status === 'WAIVED',
                 ),
             );
         }
@@ -318,6 +320,14 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
         spaceId: string,
         id: string,
     ): Promise<Omit<SettlementTransferResult, 'replayed'> | null> {
+        return this.provider.readSnapshot(() =>
+            this.detailInSnapshot(spaceId, id),
+        );
+    }
+    private async detailInSnapshot(
+        spaceId: string,
+        id: string,
+    ): Promise<Omit<SettlementTransferResult, 'replayed'> | null> {
         const rows: {
             id: string;
             payer_member_id: string;
@@ -327,10 +337,12 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
             registered_at: string;
             created_by: string;
             mode: 'MANUAL';
+            reversed_amount_in_cents: string;
+            reversal_id: string | null;
         }[] = await this.provider
             .get()
             .query(
-                `SELECT id,payer_member_id,recipient_member_id,amount_in_cents::text,to_char(fact_date,'YYYY-MM-DD') AS fact_date,to_char(registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS registered_at,created_by,mode FROM settlement_transfers WHERE space_id=$1 AND id=$2`,
+                `SELECT t.id,t.payer_member_id,t.recipient_member_id,t.amount_in_cents::text,to_char(t.fact_date,'YYYY-MM-DD') AS fact_date,to_char(t.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS registered_at,t.created_by,t.mode,COALESCE(r.amount_in_cents,0)::text AS reversed_amount_in_cents,r.id AS reversal_id FROM settlement_transfers t LEFT JOIN settlement_reversals r ON r.space_id=t.space_id AND r.original_transfer_id=t.id WHERE t.space_id=$1 AND t.id=$2`,
                 [spaceId, id],
             );
         if (!rows.length) return null;
@@ -345,10 +357,11 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
             external_liability_id: string | null;
             receipt_id: string | null;
             description: string;
+            reversed_amount_in_cents: string;
         }[] = await this.provider
             .get()
             .query(
-                `SELECT a.id,a.obligation_id,a.cycle_id,a.amount_in_cents::text,o.commitment_id,o.disbursement_id,o.external_liability_id,o.receipt_id,c.description FROM settlement_allocations a JOIN inter_member_obligations o ON o.space_id=a.space_id AND o.id=a.obligation_id JOIN financial_commitments c ON c.space_id=o.space_id AND c.id=o.commitment_id WHERE a.space_id=$1 AND a.transfer_id=$2 ORDER BY a.id`,
+                `SELECT a.id,a.obligation_id,a.cycle_id,a.amount_in_cents::text,o.commitment_id,o.disbursement_id,o.external_liability_id,o.receipt_id,c.description,COALESCE(ra.amount_in_cents,0)::text AS reversed_amount_in_cents FROM settlement_allocations a JOIN inter_member_obligations o ON o.space_id=a.space_id AND o.id=a.obligation_id JOIN financial_commitments c ON c.space_id=o.space_id AND c.id=o.commitment_id LEFT JOIN settlement_reversal_applications ra ON ra.space_id=a.space_id AND ra.original_transfer_allocation_id=a.id WHERE a.space_id=$1 AND a.transfer_id=$2 ORDER BY a.id`,
                 [spaceId, id],
             );
         return {
@@ -358,6 +371,14 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
                 payerMemberId: r.payer_member_id,
                 recipientMemberId: r.recipient_member_id,
                 amountInCents: amount(r.amount_in_cents),
+                reversedAmountInCents: amount(r.reversed_amount_in_cents),
+                effectiveAmountInCents: amount(
+                    (
+                        BigInt(r.amount_in_cents) -
+                        BigInt(r.reversed_amount_in_cents)
+                    ).toString(),
+                ),
+                reversalId: r.reversal_id,
                 factDate: r.fact_date,
                 registeredAt: r.registered_at,
                 createdByPersonId: r.created_by,
@@ -368,6 +389,13 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
                 obligationId: a.obligation_id,
                 cycleId: a.cycle_id,
                 amountInCents: amount(a.amount_in_cents),
+                reversedAmountInCents: amount(a.reversed_amount_in_cents),
+                effectiveAmountInCents: amount(
+                    (
+                        BigInt(a.amount_in_cents) -
+                        BigInt(a.reversed_amount_in_cents)
+                    ).toString(),
+                ),
                 origin: a.receipt_id
                     ? {
                           kind: 'INCOME',
@@ -397,6 +425,16 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
         };
     }
     async history(
+        spaceId: string,
+        cycleId: string | null,
+        obligationId: string | null,
+        after: PositionKey | null,
+    ) {
+        return this.provider.readSnapshot(() =>
+            this.historyInSnapshot(spaceId, cycleId, obligationId, after),
+        );
+    }
+    private async historyInSnapshot(
         spaceId: string,
         cycleId: string | null,
         obligationId: string | null,

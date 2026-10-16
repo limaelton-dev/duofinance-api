@@ -1226,7 +1226,7 @@ describe('CARD-014 credit card purchase HTTP/PostgreSQL', () => {
             );
         const before = await legacy();
         const constraints = await db.query(
-            "SELECT conname,pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE connamespace='public'::regnamespace AND conname NOT IN ('CHK_obligations_origin_xor','CHK_expense_receipt') ORDER BY conname",
+            "SELECT conname,pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE connamespace='public'::regnamespace AND conname NOT IN ('CHK_obligations_origin_xor','CHK_expense_receipt','CHK_obligation_changes_type','CHK_obligations_state') ORDER BY conname",
         );
         await migrationSource.runMigrations();
         expect(await legacy()).toEqual(before);
@@ -1235,6 +1235,14 @@ describe('CARD-014 credit card purchase HTTP/PostgreSQL', () => {
         );
         for (const constraint of constraints)
             expect(afterConstraints).toContainEqual(constraint);
+        expect(afterConstraints).toContainEqual({
+            conname: 'CHK_obligation_changes_type',
+            definition: expect.stringContaining('ASSIGNMENT_CHANGED'),
+        });
+        expect(afterConstraints).toContainEqual({
+            conname: 'CHK_obligations_state',
+            definition: expect.stringContaining('WAIVED'),
+        });
         expect(
             (
                 await f.a

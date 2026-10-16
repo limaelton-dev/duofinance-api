@@ -19,6 +19,7 @@ import type {
 } from '../models/expense-disbursement.js';
 import { RecordExpenseDisbursementHandler } from './record-expense-disbursement.handler.js';
 import { ReconcileFinancialOrigin } from './reconcile-financial-origin.js';
+import type { SettlementAdjustmentRepository } from '../ports/private/settlement-adjustment.repository.js';
 const actor = PersonId.from(randomUUID()),
     space = SpaceId.from(randomUUID()),
     today = '2026-10-15',
@@ -83,6 +84,26 @@ function setup() {
             saved.set(c.idempotencyKey, r);
         }),
     };
+    const adjustments: SettlementAdjustmentRepository = {
+        readSnapshot: async <T>(work: () => Promise<T>) => work(),
+        findReceipt: vi.fn(),
+        saveReceipt: vi.fn(),
+        commitment: vi.fn(),
+        saveRule: vi.fn(),
+        effectiveRule: vi.fn<SettlementAdjustmentRepository['effectiveRule']>(
+            async (_space, _commitment, rule, version) => ({
+                source: 'INHERITED',
+                rule,
+                version,
+            }),
+        ),
+        cycle: vi.fn(),
+        cycleForDate: vi.fn(),
+        createCycleForDate: vi.fn(),
+        lockCycles: vi.fn(),
+        saveAssignment: vi.fn(),
+        options: vi.fn(),
+    };
     const reconcile = new ReconcileFinancialOrigin(
         {
             save: vi.fn(),
@@ -92,6 +113,7 @@ function setup() {
             saveReconciliation: vi.fn(),
         },
         { lockExisting: vi.fn(), lockForDate: vi.fn(), listOpen: vi.fn() },
+        adjustments,
     );
     const reconcileSpy = vi.spyOn(reconcile, 'execute');
     const uow = { execute: vi.fn(async <T>(work: () => Promise<T>) => work()) };

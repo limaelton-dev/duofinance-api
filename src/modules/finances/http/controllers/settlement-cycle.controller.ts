@@ -8,18 +8,21 @@ import { SpaceId } from '../../../spaces/domain/space/space-id.js';
 import {
     GetSettlementCycleQuery,
     GetSettlementCyclesQuery,
+    GetSelectedSettlementCyclesQuery,
 } from '../../application/queries/settlement-cycle.queries.js';
 import { SettlementRuleParamsDto } from '../dto/configure-default-settlement-rule.dto.js';
 import {
     SettlementCycleParamsDto,
     SettlementCycleQueryDto,
     SettlementCyclesQueryDto,
+    SelectedSettlementCyclesQueryDto,
 } from '../dto/settlement-cycle-query.dto.js';
 @Controller('spaces/:spaceId/settlement-cycles')
 export class SettlementCycleController {
     constructor(
         private readonly cycles: GetSettlementCyclesQuery,
         private readonly cycle: GetSettlementCycleQuery,
+        private readonly selected: GetSelectedSettlementCyclesQuery,
     ) {}
     @Get()
     @Header('Cache-Control', 'no-store')
@@ -32,6 +35,21 @@ export class SettlementCycleController {
             PersonId.from(actor.personId.value),
             SpaceId.from(params.spaceId.toLowerCase()),
             query.view,
+            query.cursor,
+        );
+    }
+    @Get('summary')
+    @Header('Cache-Control', 'no-store')
+    summary(
+        @CurrentActor() actor: RequestActor,
+        @Param() params: SettlementRuleParamsDto,
+        @Query() query: SelectedSettlementCyclesQueryDto,
+    ) {
+        return this.selected.execute(
+            PersonId.from(actor.personId.value),
+            SpaceId.from(params.spaceId.toLowerCase()),
+            query.cycleIds.split(','),
+            query.direction,
             query.cursor,
         );
     }

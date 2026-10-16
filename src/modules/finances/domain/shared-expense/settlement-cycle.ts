@@ -30,6 +30,7 @@ export class SettlementCycle {
         readonly targetDate: string,
         readonly status: 'OPEN' | 'FINALIZED',
         readonly version: number,
+        readonly finalizedAt: string | null = null,
     ) {
         civilDate(targetDate);
         if (!Number.isSafeInteger(version) || version < 1) invalidExpense();
@@ -38,5 +39,26 @@ export class SettlementCycle {
     assertOpen(): void {
         if (this.status !== 'OPEN')
             throw new FinancesError('SETTLEMENT_CYCLE_FINALIZED');
+    }
+    finalize(
+        hasOpenObligations: boolean,
+        expectedVersion: number,
+        finalizedAt: string,
+    ): SettlementCycle {
+        this.assertOpen();
+        if (this.version !== expectedVersion)
+            throw new FinancesError('CONCURRENT_MODIFICATION');
+        if (hasOpenObligations)
+            throw new FinancesError('SETTLEMENT_CYCLE_HAS_OPEN_OBLIGATIONS');
+        if (!Number.isFinite(Date.parse(finalizedAt)))
+            throw new FinancesError('VALIDATION_ERROR', ['finalizedAt']);
+        return new SettlementCycle(
+            this.id,
+            this.spaceId,
+            this.targetDate,
+            'FINALIZED',
+            this.version + 1,
+            finalizedAt,
+        );
     }
 }

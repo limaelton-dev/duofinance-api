@@ -65,7 +65,8 @@ export class IncomeCommitment {
             description.length > 160 ||
             amountInCents < 1 ||
             !Number.isFinite(Date.parse(registeredAt)) ||
-            version !== receipts.length + 1 ||
+            !Number.isSafeInteger(version) ||
+            version < receipts.length + 1 ||
             new Set(receipts.map((r) => r.id)).size !== receipts.length
         )
             throw new FinancesError('VALIDATION_ERROR');
