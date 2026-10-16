@@ -34,13 +34,29 @@ const facts = `WITH facts AS (
         ) f),o.materialized_at,c.created_by,NULL,c.personal_owner_person_id,NULL,
         ARRAY(SELECT s.member_id FROM financial_recurrence_shares s WHERE s.space_id=c.space_id AND s.commitment_id=c.id AND s.version=o.economic_version) || ARRAY(SELECT s.member_id FROM financial_occurrence_shares s WHERE s.occurrence_id=o.id)
     FROM financial_occurrences o JOIN financial_commitments c ON c.space_id=o.space_id AND c.id=o.commitment_id
-    WHERE o.space_id=$1 AND c.kind='EXPENSE'
+    WHERE o.space_id=$1 AND c.kind='EXPENSE' AND c.modality='RECURRING'
+    UNION ALL
+    SELECT i.id,'EXPENSE',c.id,NULL,c.description,i.amount_in_cents,
+        (SELECT MIN(f.fact_date) FROM (
+            SELECT d.fact_date FROM financial_disbursements d WHERE d.space_id=i.space_id AND d.occurrence_id=i.id
+            UNION ALL SELECT l.fact_date FROM financial_external_liabilities l WHERE l.space_id=i.space_id AND l.occurrence_id=i.id
+        ) f),c.registered_at,c.created_by,NULL,c.personal_owner_person_id,NULL,
+        ARRAY(SELECT s.member_id FROM financial_installment_shares s WHERE s.installment_id=i.id)
+    FROM financial_installments i JOIN financial_commitments c ON c.space_id=i.space_id AND c.id=i.commitment_id
+    WHERE i.space_id=$1 AND c.modality='INSTALLMENT'
     UNION ALL
     SELECT c.id,'EXPECTED_EXPENSE',c.id,NULL,c.description,v.amount_in_cents,v.expected_payment_date,c.registered_at,c.created_by,
         v.expected_payer_member_id,c.personal_owner_person_id,NULL,
         ARRAY(SELECT s.member_id FROM financial_commitment_shares s WHERE s.space_id=c.space_id AND s.commitment_id=c.id AND s.version=v.version)
     FROM financial_commitments c JOIN financial_commitment_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id
     WHERE c.space_id=$1 AND c.kind='EXPENSE' AND v.expected_payment_date IS NOT NULL
+    UNION ALL
+    SELECT i.id,'EXPECTED_EXPENSE',c.id,NULL,c.description,i.amount_in_cents,i.due_date,c.registered_at,c.created_by,
+        p.expected_member_id,c.personal_owner_person_id,NULL,
+        ARRAY(SELECT s.member_id FROM financial_installment_shares s WHERE s.installment_id=i.id)
+    FROM financial_installments i JOIN financial_commitments c ON c.space_id=i.space_id AND c.id=i.commitment_id
+    JOIN financial_installment_plans p ON p.id=i.plan_id
+    WHERE i.space_id=$1 AND c.modality='INSTALLMENT'
     UNION ALL
     SELECT COALESCE(o.id,c.id),'EXPECTED_EXPENSE',c.id,NULL,v.description,CASE WHEN v.value_mode='VARIABLE' THEN o.amount_in_cents ELSE COALESCE(o.amount_in_cents,v.amount_in_cents) END,${recurringDate},c.registered_at,c.created_by,
         v.expected_member_id,v.owner_person_id,NULL,
@@ -352,7 +368,7 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                 UNION ALL
                 SELECT o.space_id,o.commitment_id,o.economic_version,o.amount_in_cents,c.personal_owner_person_id,'RECURRING',o.id
                 FROM financial_occurrences o JOIN financial_commitments c ON c.space_id=o.space_id AND c.id=o.commitment_id
-                WHERE o.space_id=$1 AND c.kind='EXPENSE' AND (
+                WHERE o.space_id=$1 AND c.kind='EXPENSE' AND c.modality='RECURRING' AND (
                     SELECT MIN(f.fact_date) FROM (
                         SELECT d.fact_date FROM financial_disbursements d WHERE d.space_id=o.space_id AND d.occurrence_id=o.id
                         UNION ALL SELECT l.fact_date FROM financial_external_liabilities l WHERE l.space_id=o.space_id AND l.occurrence_id=o.id
@@ -363,6 +379,20 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                         UNION ALL SELECT l.fact_date FROM financial_external_liabilities l WHERE l.space_id=o.space_id AND l.occurrence_id=o.id
                     ) f
                 ) < $3::date
+                UNION ALL
+                SELECT i.space_id,i.commitment_id,1,i.amount_in_cents,c.personal_owner_person_id,'INSTALLMENT',i.id
+                FROM financial_installments i JOIN financial_commitments c ON c.space_id=i.space_id AND c.id=i.commitment_id
+                WHERE i.space_id=$1 AND (
+                    SELECT MIN(f.fact_date) FROM (
+                        SELECT d.fact_date FROM financial_disbursements d WHERE d.space_id=i.space_id AND d.occurrence_id=i.id
+                        UNION ALL SELECT l.fact_date FROM financial_external_liabilities l WHERE l.space_id=i.space_id AND l.occurrence_id=i.id
+                    ) f
+                ) >= $2::date AND (
+                    SELECT MIN(f.fact_date) FROM (
+                        SELECT d.fact_date FROM financial_disbursements d WHERE d.space_id=i.space_id AND d.occurrence_id=i.id
+                        UNION ALL SELECT l.fact_date FROM financial_external_liabilities l WHERE l.space_id=i.space_id AND l.occurrence_id=i.id
+                    ) f
+                ) < $3::date
             ),
             period_receipts AS (SELECT r.* FROM financial_receipts r WHERE r.space_id=$1),
             contributions AS (
@@ -370,6 +400,7 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                 UNION ALL SELECT s.member_id,'expenseAmountInCents',SUM(s.amount_in_cents) FROM expenses e JOIN financial_commitment_shares s ON s.space_id=e.space_id AND s.commitment_id=e.commitment_id AND s.version=e.version WHERE e.modality='ONE_TIME' GROUP BY s.member_id
                 UNION ALL SELECT s.member_id,'expenseAmountInCents',SUM(s.amount_in_cents) FROM expenses e JOIN financial_recurrence_shares s ON s.space_id=e.space_id AND s.commitment_id=e.commitment_id AND s.version=e.version WHERE e.modality='RECURRING' GROUP BY s.member_id
                 UNION ALL SELECT s.member_id,'expenseAmountInCents',SUM(s.amount_in_cents) FROM expenses e JOIN financial_occurrence_shares s ON s.occurrence_id=e.occurrence_id WHERE e.modality='RECURRING' GROUP BY s.member_id
+                UNION ALL SELECT s.member_id,'expenseAmountInCents',SUM(s.amount_in_cents) FROM expenses e JOIN financial_installment_shares s ON s.installment_id=e.occurrence_id WHERE e.modality='INSTALLMENT' GROUP BY s.member_id
                 UNION ALL SELECT NULL,'realizedIncomeAmountInCents',SUM(amount_in_cents) FROM period_receipts WHERE fact_date >= $2::date AND fact_date < $3::date
                 UNION ALL SELECT payer_member_id,'paidAmountInCents',SUM(amount_in_cents) FROM financial_disbursements WHERE space_id=$1 AND fact_date >= $2::date AND fact_date < $3::date GROUP BY GROUPING SETS((),(payer_member_id)) HAVING GROUPING(payer_member_id)=1 OR payer_member_id IS NOT NULL
                 UNION ALL SELECT recipient_member_id,'receivedAmountInCents',SUM(amount_in_cents) FROM period_receipts WHERE fact_date >= $2::date AND fact_date < $3::date GROUP BY GROUPING SETS((),(recipient_member_id)) HAVING GROUPING(recipient_member_id)=1 OR recipient_member_id IS NOT NULL

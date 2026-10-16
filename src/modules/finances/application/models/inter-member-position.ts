@@ -24,6 +24,8 @@ export interface OpenObligationView extends PositionKey {
         | {
               commitmentId: string;
               occurrenceId?: string | null;
+              installmentId?: string;
+              installmentPosition?: number;
               disbursementId: string;
               description: string;
               kind?: 'EXPENSE';
@@ -31,6 +33,8 @@ export interface OpenObligationView extends PositionKey {
         | {
               commitmentId: string;
               occurrenceId?: string | null;
+              installmentId?: string;
+              installmentPosition?: number;
               externalLiabilityId: string;
               description: string;
               kind: 'EXPENSE';

@@ -118,6 +118,7 @@ export class FinancialRecurrenceShareOrmEntity {
     'referenceDate',
 ])
 @Unique('UQ_financial_occurrences_origin', ['spaceId', 'commitmentId', 'id'])
+@Unique('UQ_financial_occurrences_installment', ['installmentId'])
 @Index('IDX_financial_occurrences_space_date', [
     'spaceId',
     'referenceDate',
@@ -125,7 +126,7 @@ export class FinancialRecurrenceShareOrmEntity {
 ])
 @Check(
     'CHK_financial_occurrences_state',
-    `economic_version > 0 AND state_version > 0 AND (amount_in_cents IS NULL OR amount_in_cents BETWEEN 1 AND 9007199254740991) AND (amount_in_cents IS NOT NULL OR status IN ('PENDING','CANCELLED')) AND status IN ('PENDING','PARTIALLY_FULFILLED','FULFILLED','CANCELLED')`,
+    `((economic_version IS NOT NULL AND economic_version > 0 AND installment_id IS NULL) OR (economic_version IS NULL AND installment_id IS NOT NULL AND amount_in_cents IS NOT NULL)) AND state_version > 0 AND (amount_in_cents IS NULL OR amount_in_cents BETWEEN 1 AND 9007199254740991) AND (amount_in_cents IS NOT NULL OR status IN ('PENDING','CANCELLED')) AND status IN ('PENDING','PARTIALLY_FULFILLED','FULFILLED','CANCELLED')`,
 )
 @ForeignKey(
     () => FinancialRecurrenceVersionOrmEntity,
@@ -133,13 +134,21 @@ export class FinancialRecurrenceShareOrmEntity {
     ['spaceId', 'commitmentId', 'version'],
     { name: 'FK_financial_occurrences_version', onDelete: 'RESTRICT' },
 )
+@ForeignKey(
+    'financial_installments',
+    ['spaceId', 'commitmentId', 'installmentId'],
+    ['spaceId', 'commitmentId', 'id'],
+    { name: 'FK_financial_occurrences_installment', onDelete: 'RESTRICT' },
+)
 export class FinancialOccurrenceOrmEntity {
     @PrimaryColumn('uuid') id!: string;
     @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
     @Column({ name: 'commitment_id', type: 'uuid' }) commitmentId!: string;
     @Column({ name: 'reference_date', type: 'date' }) referenceDate!: string;
-    @Column({ name: 'economic_version', type: 'integer' })
-    economicVersion!: number;
+    @Column({ name: 'economic_version', type: 'integer', nullable: true })
+    economicVersion!: number | null;
+    @Column({ name: 'installment_id', type: 'uuid', nullable: true })
+    installmentId!: string | null;
     @Column({ name: 'state_version', type: 'integer' }) stateVersion!: number;
     @Column({
         name: 'amount_in_cents',

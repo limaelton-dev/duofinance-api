@@ -444,6 +444,7 @@ describe('CARD-001 — PostgreSQL e HTTP', () => {
             'FixedRecurringCommitments1792165100000',
             'VariableRecurringOccurrences1792165200000',
             'RecurringMaintenance1792165300000',
+            'FiniteInstallmentCommitments1792165400000',
         ]);
         expect(await counts()).toEqual([0, 0, 0, 0]);
 
@@ -828,7 +829,7 @@ describe('CARD-001 — PostgreSQL e HTTP', () => {
             .expect(200);
 
         expect(response.body.openapi).toBe('3.1.0');
-        expect(Object.keys(response.body.paths)).toHaveLength(71);
+        expect(Object.keys(response.body.paths)).toHaveLength(79);
 
         const paths = response.body.paths as Record<
             string,
@@ -853,7 +854,33 @@ describe('CARD-001 — PostgreSQL e HTTP', () => {
             0,
         );
 
-        expect(operations).toBe(80);
+        expect(operations).toBe(89);
+        for (const route of [
+            '/v2/spaces/{spaceId}/installment-commitments/preview',
+            '/v2/spaces/{spaceId}/installment-commitments/{id}/installments/{installmentId}/disbursements',
+            '/v2/spaces/{spaceId}/installment-commitments/{id}/installments/{installmentId}/external-liabilities',
+            '/v2/spaces/{spaceId}/installment-commitments/{id}/installments/{installmentId}/external-liabilities/{liabilityId}/settlements',
+        ])
+            expect(paths[route]).toHaveProperty('post');
+        expect(
+            paths['/v2/spaces/{spaceId}/installment-commitments'],
+        ).toHaveProperty('get');
+        expect(
+            paths['/v2/spaces/{spaceId}/installment-commitments'],
+        ).toHaveProperty('post');
+        expect(
+            paths['/v2/spaces/{spaceId}/installment-commitments/{id}'],
+        ).toHaveProperty('get');
+        expect(
+            paths[
+                '/v2/spaces/{spaceId}/installment-commitments/{id}/installments'
+            ],
+        ).toHaveProperty('get');
+        expect(
+            paths[
+                '/v2/spaces/{spaceId}/installment-commitments/{id}/installments/{installmentId}/options'
+            ],
+        ).toHaveProperty('get');
         for (const route of [
             '/v2/spaces/{spaceId}/recurring-commitments/{id}/change-preview',
             '/v2/spaces/{spaceId}/recurring-commitments/{id}/versions',

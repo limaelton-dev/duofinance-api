@@ -1,0 +1,165 @@
+import {
+    Check,
+    Column,
+    Entity,
+    ForeignKey,
+    Index,
+    PrimaryColumn,
+    Unique,
+} from 'typeorm';
+import type { SplitInput } from '../../../domain/shared-expense/responsibility-split.js';
+import type { SettlementRuleSnapshot } from '../../../domain/settlement-rule/settlement-rule.js';
+import { safeBigInt } from './shared-expense.orm-entity.js';
+
+@Entity('financial_installment_plans')
+@Unique('UQ_installment_plans_origin', ['spaceId', 'commitmentId', 'id'])
+@Unique('UQ_installment_plans_commitment', ['spaceId', 'commitmentId'])
+@Check(
+    'CHK_installment_plans_values',
+    `installment_count > 0 AND total_amount_in_cents BETWEEN 1 AND 9007199254740991 AND cadence IN ('MONTHLY','ANNUAL','EXPLICIT') AND (planned_payment_method IS NULL OR planned_payment_method IN ('CARD','PIX','DEBIT','CASH')) AND rule_source_version >= 0 AND (rule_snapshot IS NULL)=(rule_source_version=0) AND ((split_input IS NULL AND expected_member_id IS NULL) OR split_input IS NOT NULL)`,
+)
+@ForeignKey(
+    'financial_commitments',
+    ['spaceId', 'commitmentId'],
+    ['spaceId', 'id'],
+    { name: 'FK_installment_plans_commitment', onDelete: 'RESTRICT' },
+)
+@ForeignKey(
+    'space_members',
+    ['spaceId', 'expectedMemberId'],
+    ['spaceId', 'id'],
+    { name: 'FK_installment_plans_expected_member', onDelete: 'RESTRICT' },
+)
+export class FinancialInstallmentPlanOrmEntity {
+    @PrimaryColumn('uuid') id!: string;
+    @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
+    @Column({ name: 'commitment_id', type: 'uuid' }) commitmentId!: string;
+    @Column({ name: 'installment_count', type: 'integer' })
+    installmentCount!: number;
+    @Column({
+        name: 'total_amount_in_cents',
+        type: 'bigint',
+        transformer: safeBigInt,
+    })
+    totalAmountInCents!: number;
+    @Column({ type: 'varchar', length: 8 }) cadence!:
+        'MONTHLY' | 'ANNUAL' | 'EXPLICIT';
+    @Column({
+        name: 'planned_payment_method',
+        type: 'varchar',
+        length: 8,
+        nullable: true,
+    })
+    plannedPaymentMethod!: 'CARD' | 'PIX' | 'DEBIT' | 'CASH' | null;
+    @Column({ name: 'split_input', type: 'jsonb', nullable: true })
+    splitInput!: SplitInput | null;
+    @Column({ name: 'expected_member_id', type: 'uuid', nullable: true })
+    expectedMemberId!: string | null;
+    @Column({ name: 'rule_snapshot', type: 'jsonb', nullable: true })
+    ruleSnapshot!: SettlementRuleSnapshot | null;
+    @Column({ name: 'rule_source_version', type: 'integer' })
+    ruleSourceVersion!: number;
+    @Column({ name: 'registered_at', type: 'timestamptz' }) registeredAt!: Date;
+}
+
+@Entity('financial_installments')
+@Unique('UQ_installments_origin', ['spaceId', 'commitmentId', 'id'])
+@Unique('UQ_installments_position', ['planId', 'position'])
+@Unique('UQ_installments_due_date', ['planId', 'dueDate'])
+@Index('IDX_installments_space_due', ['spaceId', 'dueDate', 'id'])
+@Check(
+    'CHK_installments_values',
+    `position > 0 AND amount_in_cents BETWEEN 1 AND 9007199254740991`,
+)
+@ForeignKey(
+    () => FinancialInstallmentPlanOrmEntity,
+    ['spaceId', 'commitmentId', 'planId'],
+    ['spaceId', 'commitmentId', 'id'],
+    { name: 'FK_installments_plan', onDelete: 'RESTRICT' },
+)
+export class FinancialInstallmentOrmEntity {
+    @PrimaryColumn('uuid') id!: string;
+    @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
+    @Column({ name: 'commitment_id', type: 'uuid' }) commitmentId!: string;
+    @Column({ name: 'plan_id', type: 'uuid' }) planId!: string;
+    @Column('integer') position!: number;
+    @Column({ name: 'due_date', type: 'date' }) dueDate!: string;
+    @Column({
+        name: 'amount_in_cents',
+        type: 'bigint',
+        transformer: safeBigInt,
+    })
+    amountInCents!: number;
+}
+
+@Entity('financial_installment_shares')
+@Check(
+    'CHK_installment_shares_values',
+    `amount_in_cents BETWEEN 0 AND 9007199254740991`,
+)
+@ForeignKey(
+    () => FinancialInstallmentOrmEntity,
+    ['spaceId', 'commitmentId', 'installmentId'],
+    ['spaceId', 'commitmentId', 'id'],
+    { name: 'FK_installment_shares_installment', onDelete: 'RESTRICT' },
+)
+@ForeignKey('space_members', ['spaceId', 'memberId'], ['spaceId', 'id'], {
+    name: 'FK_installment_shares_member',
+    onDelete: 'RESTRICT',
+})
+export class FinancialInstallmentShareOrmEntity {
+    @PrimaryColumn({ name: 'installment_id', type: 'uuid' })
+    installmentId!: string;
+    @PrimaryColumn({ name: 'member_id', type: 'uuid' }) memberId!: string;
+    @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
+    @Column({ name: 'commitment_id', type: 'uuid' }) commitmentId!: string;
+    @Column({
+        name: 'amount_in_cents',
+        type: 'bigint',
+        transformer: safeBigInt,
+    })
+    amountInCents!: number;
+}
+
+@Entity('financial_installment_command_receipts')
+@Check(
+    'CHK_installment_command_receipts',
+    `status='COMPLETED' AND octet_length(request_hash)=32 AND operation IN ('CREATE_INSTALLMENT_COMMITMENT','RECORD_INSTALLMENT_DISBURSEMENT','RECORD_INSTALLMENT_EXTERNAL_LIABILITY','SETTLE_INSTALLMENT_EXTERNAL_LIABILITY')`,
+)
+@ForeignKey('persons', ['actorId'], ['id'], {
+    name: 'FK_installment_receipts_actor',
+    onDelete: 'RESTRICT',
+})
+@ForeignKey(
+    'financial_commitments',
+    ['spaceId', 'commitmentId'],
+    ['spaceId', 'id'],
+    { name: 'FK_installment_receipts_commitment', onDelete: 'RESTRICT' },
+)
+@ForeignKey(
+    () => FinancialInstallmentOrmEntity,
+    ['spaceId', 'commitmentId', 'installmentId'],
+    ['spaceId', 'commitmentId', 'id'],
+    { name: 'FK_installment_receipts_installment', onDelete: 'RESTRICT' },
+)
+export class FinancialInstallmentCommandReceiptOrmEntity {
+    @PrimaryColumn({ name: 'actor_id', type: 'uuid' }) actorId!: string;
+    @PrimaryColumn({ type: 'varchar', length: 48 }) operation!: string;
+    @PrimaryColumn({ name: 'idempotency_key', type: 'uuid' })
+    idempotencyKey!: string;
+    @Column({ name: 'request_hash', type: 'bytea' }) requestHash!: Buffer;
+    @Column({ type: 'varchar', length: 16 }) status!: string;
+    @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
+    @Column({ name: 'commitment_id', type: 'uuid' }) commitmentId!: string;
+    @Column({ name: 'installment_id', type: 'uuid', nullable: true })
+    installmentId!: string | null;
+    @Column({ type: 'jsonb' }) result!: unknown;
+    @Column({ name: 'created_at', type: 'timestamptz' }) createdAt!: Date;
+}
+
+export const installmentEntities = [
+    FinancialInstallmentPlanOrmEntity,
+    FinancialInstallmentOrmEntity,
+    FinancialInstallmentShareOrmEntity,
+    FinancialInstallmentCommandReceiptOrmEntity,
+];

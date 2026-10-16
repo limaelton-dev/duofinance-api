@@ -377,7 +377,7 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                     AND ($5::timestamptz IS NULL OR (registered_at,id)<($5::timestamptz,$6::uuid))
                     ORDER BY registered_at DESC,id DESC LIMIT 21
                 ), origins AS MATERIALIZED (
-                    SELECT c.id,p0.id AS obligation_id,c.kind,COALESCE(r.description,c.description) AS description,COALESCE(v.amount_in_cents,i.amount_in_cents,o.amount_in_cents,r.amount_in_cents) AS amount_in_cents,
+                    SELECT c.id,p0.id AS obligation_id,c.kind,COALESCE(r.description,c.description) AS description,COALESCE(v.amount_in_cents,i.amount_in_cents,o.amount_in_cents,r.amount_in_cents) AS amount_in_cents,fi.position AS installment_position,
                         COALESCE((SELECT jsonb_agg(jsonb_build_object('memberId',s.member_id,'amountInCents',s.amount_in_cents) ORDER BY s.member_id)
                             FROM financial_commitment_shares s WHERE s.space_id=$1 AND s.commitment_id=c.id AND s.version=1),
                             (SELECT jsonb_agg(jsonb_build_object('memberId',s.member_id,'amountInCents',s.amount_in_cents) ORDER BY s.member_id)
@@ -385,16 +385,20 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                             (SELECT jsonb_agg(jsonb_build_object('memberId',s.member_id,'amountInCents',s.amount_in_cents) ORDER BY s.member_id)
                             FROM financial_occurrence_shares s WHERE s.space_id=$1 AND s.occurrence_id=p0.occurrence_id),
                             (SELECT jsonb_agg(jsonb_build_object('memberId',s.member_id,'amountInCents',s.amount_in_cents) ORDER BY s.member_id)
-                            FROM financial_recurrence_shares s WHERE s.space_id=$1 AND s.commitment_id=c.id AND s.version=o.economic_version),'[]'::jsonb) AS shares,
+                            FROM financial_recurrence_shares s WHERE s.space_id=$1 AND s.commitment_id=c.id AND s.version=o.economic_version),
+                            (SELECT jsonb_agg(jsonb_build_object('memberId',s.member_id,'amountInCents',s.amount_in_cents) ORDER BY s.member_id)
+                            FROM financial_installment_shares s WHERE s.space_id=$1 AND s.installment_id=p0.occurrence_id),'[]'::jsonb) AS shares,
                         COALESCE((SELECT s.amount_in_cents FROM financial_commitment_shares s WHERE s.space_id=$1 AND s.commitment_id=c.id AND s.version=1 AND s.member_id=$2),
                             (SELECT s.amount_in_cents FROM financial_income_shares s WHERE s.space_id=$1 AND s.commitment_id=c.id AND s.member_id=$2),
                             (SELECT s.amount_in_cents FROM financial_occurrence_shares s WHERE s.space_id=$1 AND s.occurrence_id=p0.occurrence_id AND s.member_id=$2),
-                            (SELECT s.amount_in_cents FROM financial_recurrence_shares s WHERE s.space_id=$1 AND s.commitment_id=c.id AND s.version=o.economic_version AND s.member_id=$2),0) AS actor_amount
+                            (SELECT s.amount_in_cents FROM financial_recurrence_shares s WHERE s.space_id=$1 AND s.commitment_id=c.id AND s.version=o.economic_version AND s.member_id=$2),
+                            (SELECT s.amount_in_cents FROM financial_installment_shares s WHERE s.space_id=$1 AND s.installment_id=p0.occurrence_id AND s.member_id=$2),0) AS actor_amount
                     FROM page p0 JOIN financial_commitments c ON c.space_id=p0.space_id AND c.id=p0.commitment_id
                     LEFT JOIN financial_occurrences o ON o.space_id=c.space_id AND o.id=p0.occurrence_id
                     LEFT JOIN financial_commitment_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id AND v.version=1
                     LEFT JOIN financial_income_versions i ON i.space_id=c.space_id AND i.commitment_id=c.id
                     LEFT JOIN financial_recurrence_versions r ON r.space_id=c.space_id AND r.commitment_id=c.id AND r.version=o.economic_version
+                    LEFT JOIN financial_installments fi ON fi.space_id=c.space_id AND fi.commitment_id=c.id AND fi.id=p0.occurrence_id
                     WHERE c.space_id=$1
                 )
                 SELECT jsonb_build_object('id',p.id,'version',p.version,'status',p.status,'debtorMemberId',p.debtor_member_id,'creditorMemberId',p.creditor_member_id,
@@ -410,7 +414,8 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                     'cycleId',p.cycle_id,'factDate',to_char(p.fact_date,'YYYY-MM-DD'),
                     'registeredAt',to_char(p.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
                     'origin',jsonb_strip_nulls(jsonb_build_object('kind',c.kind,'commitmentId',c.id,'description',c.description,
-                        'occurrenceId',p.occurrence_id,'disbursementId',p.disbursement_id,'receiptId',p.receipt_id,'externalLiabilityId',p.external_liability_id,'amountInCents',c.amount_in_cents,
+                        'occurrenceId',p.occurrence_id,'installmentId',CASE WHEN c.kind='EXPENSE' AND c.installment_position IS NOT NULL THEN p.occurrence_id ELSE NULL END,
+                        'installmentPosition',c.installment_position,'disbursementId',p.disbursement_id,'receiptId',p.receipt_id,'externalLiabilityId',p.external_liability_id,'amountInCents',c.amount_in_cents,
                         'distribution',jsonb_build_object('kind',CASE WHEN c.kind='INCOME' THEN 'PARTICIPATION' ELSE 'RESPONSIBILITY' END,
                             'shares',c.shares,'actorAmountInCents',c.actor_amount)))) AS item
                 FROM page p JOIN origins c ON c.obligation_id=p.id

@@ -28,7 +28,7 @@ const money = (column: string, positive = false) =>
 @Unique('UQ_financial_commitments_space_id', ['spaceId', 'id'])
 @Check(
     'CHK_financial_commitments_scope',
-    `kind IN ('EXPENSE','INCOME') AND modality IN ('ONE_TIME','RECURRING') AND version > 0 AND length(description) BETWEEN 1 AND 160 AND description = btrim(description) AND (personal_owner_person_id IS NULL OR personal_owner_person_id = created_by)`,
+    `kind IN ('EXPENSE','INCOME') AND modality IN ('ONE_TIME','RECURRING','INSTALLMENT') AND version > 0 AND length(description) BETWEEN 1 AND 160 AND description = btrim(description) AND (personal_owner_person_id IS NULL OR personal_owner_person_id = created_by)`,
 )
 @Index('IDX_financial_commitments_space_registered', [
     'spaceId',

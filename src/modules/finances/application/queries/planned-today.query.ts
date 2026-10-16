@@ -84,11 +84,19 @@ export class PlannedTodayQuery implements PlannedTodayQueryPort {
                     FROM financial_occurrences o JOIN financial_commitments c ON c.space_id=o.space_id AND c.id=o.commitment_id
                     JOIN financial_recurrence_versions v ON v.space_id=o.space_id AND v.commitment_id=o.commitment_id AND v.version=o.economic_version
                     WHERE o.space_id=$1 AND o.status<>'CANCELLED'
+                ), installments AS (
+                    SELECT c.id AS commitment_id,i.id AS occurrence_id,'EXPENSE'::text AS kind,c.description,
+                        i.due_date AS expected_date,i.amount_in_cents,i.amount_in_cents AS expected_amount_in_cents,
+                        COALESCE((SELECT SUM(d.amount_in_cents) FROM financial_disbursements d WHERE d.space_id=i.space_id AND d.occurrence_id=i.id),0)
+                        +COALESCE((SELECT SUM(l.amount_in_cents) FROM financial_external_liabilities l WHERE l.space_id=i.space_id AND l.occurrence_id=i.id),0) AS fulfilled
+                    FROM financial_installments i JOIN financial_commitments c ON c.space_id=i.space_id AND c.id=i.commitment_id
+                    WHERE i.space_id=$1 AND c.modality='INSTALLMENT'
                 ), eligible AS (
                     SELECT * FROM one_time WHERE fulfilled<amount_in_cents
                     UNION ALL
                     SELECT * FROM scheduled
                     UNION ALL SELECT * FROM materialized
+                    UNION ALL SELECT * FROM installments
                 ), ranked AS (
                     SELECT *,ROW_NUMBER() OVER (PARTITION BY commitment_id ORDER BY expected_date) AS rank FROM eligible
                     WHERE fulfilled<amount_in_cents OR amount_in_cents IS NULL

@@ -75,6 +75,17 @@ import {
 import { RECURRING_COMMITMENT_REPOSITORY } from './application/ports/private/recurring-commitment.repository.js';
 import { TypeOrmRecurringCommitmentRepository } from './infrastructure/typeorm/repositories/typeorm-recurring-commitment.repository.js';
 import { recurrenceEntities } from './infrastructure/typeorm/entities/recurrence.orm-entity.js';
+import { installmentEntities } from './infrastructure/typeorm/entities/installment.orm-entity.js';
+import { InstallmentCommitmentController } from './http/controllers/installment-commitment.controller.js';
+import { InstallmentCommitmentHandler } from './application/handlers/installment-commitment.handler.js';
+import {
+    InstallmentCommitmentPipe,
+    InstallmentDisbursementPipe,
+    InstallmentLiabilityPipe,
+    InstallmentSettlementPipe,
+} from './http/dto/installment-commitment.dto.js';
+import { INSTALLMENT_COMMITMENT_REPOSITORY } from './application/ports/private/installment-commitment.repository.js';
+import { TypeOrmInstallmentCommitmentRepository } from './infrastructure/typeorm/repositories/typeorm-installment-commitment.repository.js';
 import { PlannedExpenseController } from './http/controllers/planned-expense.controller.js';
 import { CreatePlannedExpenseHandler } from './application/handlers/create-planned-expense.handler.js';
 import { ListPlannedExpensesQuery } from './application/queries/planned-expense.queries.js';
@@ -199,6 +210,7 @@ import {
             FinancialCommandAuditOrmEntity,
             ...sharedExpenseEntities,
             ...recurrenceEntities,
+            ...installmentEntities,
             FinancialExternalLiabilitySettlementOrmEntity,
             ...incomeEntities,
             SettlementTransferOrmEntity,
@@ -213,6 +225,7 @@ import {
     controllers: [
         PlannedExpenseController,
         RecurringCommitmentController,
+        InstallmentCommitmentController,
         SettlementReversalController,
         ObligationWaiverController,
         SettlementCycleFinalizationController,
@@ -233,6 +246,15 @@ import {
     providers: [
         CreatePlannedExpenseHandler,
         RecurringCommitmentHandler,
+        InstallmentCommitmentHandler,
+        InstallmentCommitmentPipe,
+        InstallmentDisbursementPipe,
+        InstallmentLiabilityPipe,
+        InstallmentSettlementPipe,
+        {
+            provide: INSTALLMENT_COMMITMENT_REPOSITORY,
+            useClass: TypeOrmInstallmentCommitmentRepository,
+        },
         PlannedTodayQuery,
         { provide: PLANNED_TODAY_QUERY_PORT, useExisting: PlannedTodayQuery },
         CreateRecurringCommitmentPipe,

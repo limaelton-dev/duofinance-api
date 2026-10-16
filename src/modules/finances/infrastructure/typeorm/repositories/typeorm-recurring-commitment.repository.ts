@@ -548,6 +548,8 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
                 `SELECT actor_id,registered_at FROM financial_occurrence_cancellations WHERE occurrence_id=$1`,
                 [row.id],
             );
+        if (row.economicVersion === null)
+            throw new Error('Recurring occurrence without economic version');
         return new FinancialOccurrence(
             row.id,
             row.commitmentId,
