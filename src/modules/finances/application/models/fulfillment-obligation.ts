@@ -15,7 +15,11 @@ export interface FulfillmentObligationView {
     cycleId: string | null;
     history: {
         version: number;
-        type: 'CREATED' | 'SETTLEMENT_APPLIED' | 'RECONCILED';
+        type:
+            | 'CREATED'
+            | 'SETTLEMENT_APPLIED'
+            | 'RECONCILED'
+            | 'ASSIGNMENT_CHANGED';
         actorId: string;
         registeredAt: string;
         snapshot: Record<string, unknown>;

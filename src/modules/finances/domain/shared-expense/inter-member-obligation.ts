@@ -81,6 +81,38 @@ export class InterMemberObligation {
         });
         Object.freeze(this);
     }
+    moveToCycle(
+        cycleId: string | null,
+        expectedVersion: number,
+    ): InterMemberObligation {
+        if (expectedVersion !== this.version)
+            throw new FinancesError('CONCURRENT_MODIFICATION');
+        if (this.remainingAmountInCents === 0)
+            throw new FinancesError('VALIDATION_ERROR', ['obligationId']);
+        if (cycleId !== null && !cycleId.trim())
+            throw new FinancesError('VALIDATION_ERROR', ['settlement.cycleId']);
+        return new InterMemberObligation(
+            this.id,
+            this.spaceId,
+            this.originCommitmentId,
+            this.originDisbursementId,
+            this.debtorMemberId,
+            this.creditorMemberId,
+            this.originalAmountInCents,
+            cycleId,
+            this.factDate,
+            this.registeredAt,
+            this.history.actorId,
+            this.remainingAmountInCents,
+            this.version + 1,
+            this.appliedAllocationIds,
+            this.originKind,
+            this.recognizedAmountInCents,
+            this.reconciled,
+            this.reconciliation,
+            this.originExternalLiabilityId,
+        );
+    }
     applySettlement(
         allocationId: string,
         amountInCents: number,

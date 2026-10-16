@@ -1,4 +1,8 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import {
+    SETTLEMENT_ADJUSTMENT_REPOSITORY,
+    type SettlementAdjustmentRepository,
+} from '../ports/private/settlement-adjustment.repository.js';
 import {
     SPACE_ACCESS_PORT,
     type SpaceAccessPort,
@@ -83,6 +87,9 @@ export class IncomeQueries {
         private readonly cycles: SettlementCycleRepository,
         @Inject(INCOME_REPOSITORY) private readonly incomes: IncomeRepository,
         @Inject(FINANCES_CLOCK) private readonly clock: FinancesClock,
+        @Optional()
+        @Inject(SETTLEMENT_ADJUSTMENT_REPOSITORY)
+        private readonly adjustments?: SettlementAdjustmentRepository,
     ) {}
 
     async options(actor: PersonId, space: SpaceId, cursor?: string) {
@@ -166,6 +173,45 @@ export class IncomeQueries {
         commitmentId: string,
         cursor?: string,
     ) {
+        await this.access.assertCanRead(actor, space);
+        const result = await (this.adjustments
+            ? this.adjustments.readSnapshot(() =>
+                  this.receiptOptionsInSnapshot(
+                      actor,
+                      space,
+                      commitmentId,
+                      cursor,
+                  ),
+              )
+            : this.receiptOptionsInSnapshot(
+                  actor,
+                  space,
+                  commitmentId,
+                  cursor,
+              ));
+        const access = await this.access.assertCanRead(actor, space);
+        if (access.type === 'SHARED') {
+            const latest = await this.context.read(actor, space);
+            return {
+                ...result,
+                expectedSpaceVersion: latest.version,
+                canReceive:
+                    result.remainingAmountInCents > 0 &&
+                    latest.status !== 'CLOSED',
+            };
+        }
+        return {
+            ...result,
+            canReceive:
+                result.remainingAmountInCents > 0 && access.status === 'ACTIVE',
+        };
+    }
+    private async receiptOptionsInSnapshot(
+        actor: PersonId,
+        space: SpaceId,
+        commitmentId: string,
+        cursor?: string,
+    ) {
         const access = await this.access.assertCanRead(actor, space);
         const income = await this.incomes.find(space.value, commitmentId);
         if (!income || income.participation.type !== access.type)
@@ -193,6 +239,18 @@ export class IncomeQueries {
         const p = income.participation;
         if (p.type !== 'SHARED')
             throw new FinancesError('FINANCIAL_COMMITMENT_NOT_FOUND');
+        const settlementRule = this.adjustments
+            ? await this.adjustments.effectiveRule(
+                  space.value,
+                  commitmentId,
+                  p.settlementRuleSnapshot,
+                  p.settlementRuleSourceVersion,
+              )
+            : {
+                  source: 'INHERITED' as const,
+                  rule: p.settlementRuleSnapshot,
+                  version: p.settlementRuleSourceVersion,
+              };
         const after = decodeExpenseCursor(cursor, space.value);
         const cycles = await this.cycles.listOpen(space.value, after);
         await this.context.read(actor, space);
@@ -226,10 +284,11 @@ export class IncomeQueries {
                 rule: p.settlementRuleSnapshot,
                 version: p.settlementRuleSourceVersion,
             },
-            suggestedTargetDate: p.settlementRuleSnapshot
-                ? SettlementRule.from(
-                      p.settlementRuleSnapshot,
-                  ).suggestTargetDate(referenceDate)
+            settlementRule,
+            suggestedTargetDate: settlementRule.rule
+                ? SettlementRule.from(settlementRule.rule).suggestTargetDate(
+                      referenceDate,
+                  )
                 : null,
             openCycles: page.map((c) => ({
                 id: c.id,

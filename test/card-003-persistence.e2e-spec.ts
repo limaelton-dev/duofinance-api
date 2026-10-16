@@ -140,6 +140,7 @@ describe('CARD-003 — persistência e migration', () => {
                 'RecordCreditCardPurchase1792087652424',
                 'ExternalLiabilitySettlements1792110000000',
                 'FinancialCommandAudit1792154979034',
+                'CustomSettlementAssignment1792160969556',
             ]);
             expect(await receipts.find(command)).not.toBeNull();
             expect((await repository.findById(legacy.space.id))?.version).toBe(

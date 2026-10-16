@@ -13,6 +13,7 @@ import type {
     SettlementCycleRepository,
 } from '../ports/private/shared-expense.repositories.js';
 import { ReconcileFinancialOrigin } from './reconcile-financial-origin.js';
+import type { SettlementAdjustmentRepository } from '../ports/private/settlement-adjustment.repository.js';
 const a = 'a',
     b = 'b',
     today = '2026-10-15',
@@ -90,10 +91,31 @@ function setup() {
         ),
         listOpen: vi.fn(),
     };
+    const adjustments: SettlementAdjustmentRepository = {
+        readSnapshot: async <T>(work: () => Promise<T>) => work(),
+        findReceipt: vi.fn(),
+        saveReceipt: vi.fn(),
+        commitment: vi.fn(),
+        saveRule: vi.fn(),
+        effectiveRule: vi.fn<SettlementAdjustmentRepository['effectiveRule']>(
+            async (_space, _commitment, rule, version) => ({
+                source: 'INHERITED',
+                rule,
+                version,
+            }),
+        ),
+        cycle: vi.fn(),
+        cycleForDate: vi.fn(),
+        createCycleForDate: vi.fn(),
+        lockCycles: vi.fn(),
+        saveAssignment: vi.fn(),
+        options: vi.fn(),
+    };
     return {
-        service: new ReconcileFinancialOrigin(repo, cycles),
+        service: new ReconcileFinancialOrigin(repo, cycles, adjustments),
         repo,
         cycles,
+        adjustments,
         obligations,
         settlements,
     };
@@ -338,5 +360,57 @@ describe('ReconcileFinancialOrigin application', () => {
             ),
         ).rejects.toMatchObject({ code: 'INCOME_OPTIONS_CHANGED' });
         expect(f.cycles.lockForDate).not.toHaveBeenCalled();
+    });
+    it('uses the specific rule for a new residual while preserving the inherited snapshot', async () => {
+        const f = setup();
+        const origin = pending().recordReceipt(
+            receipt('one', a, 50000),
+            1,
+            today,
+        );
+        vi.mocked(f.adjustments.effectiveRule).mockResolvedValue({
+            source: 'SPECIFIC',
+            rule: { kind: 'MONTHLY_DAY', dayOfMonth: 31 },
+            version: 3,
+        });
+        await f.service.execute(
+            origin,
+            { mode: 'SUGGESTED', referenceDate: today, expectedRuleVersion: 3 },
+            'author',
+            today,
+            now,
+        );
+        expect(f.cycles.lockForDate).toHaveBeenCalledWith(
+            'space',
+            '2026-10-31',
+        );
+        expect(origin.participation).toMatchObject({
+            settlementRuleSnapshot: { dayOfMonth: 20 },
+            settlementRuleSourceVersion: 2,
+        });
+    });
+    it('rejects a superseded rule version before persisting the residual', async () => {
+        const f = setup();
+        vi.mocked(f.adjustments.effectiveRule).mockResolvedValue({
+            source: 'SPECIFIC',
+            rule: { kind: 'MONTHLY_DAY', dayOfMonth: 31 },
+            version: 3,
+        });
+        await expect(
+            f.service.execute(
+                pending().recordReceipt(receipt('one', a, 50000), 1, today),
+                {
+                    mode: 'SUGGESTED',
+                    referenceDate: today,
+                    expectedRuleVersion: 2,
+                },
+                'author',
+                today,
+                now,
+            ),
+        ).rejects.toMatchObject({ code: 'INCOME_OPTIONS_CHANGED' });
+        expect(f.cycles.lockForDate).not.toHaveBeenCalled();
+        expect(f.repo.save).not.toHaveBeenCalled();
+        expect(f.repo.saveReconciliation).not.toHaveBeenCalled();
     });
 });

@@ -1,4 +1,5 @@
 import { externalLiabilitySettlementOpenApi } from './external-liability-settlement.openapi.js';
+import { settlementAdjustmentOpenApi } from './settlement-adjustment.openapi.js';
 import type {
     OpenAPIObject,
     SchemaObject,
@@ -84,6 +85,7 @@ export const financesOpenApi: Pick<
         },
     ],
     paths: {
+        ...settlementAdjustmentOpenApi.paths,
         ...personalExpenseOpenApi.paths,
         ...sharedCashExpenseOpenApi.paths,
         ...interMemberPositionOpenApi.paths,
@@ -196,6 +198,7 @@ export const financesOpenApi: Pick<
     },
     components: {
         schemas: {
+            ...settlementAdjustmentOpenApi.components?.schemas,
             ...personalExpenseOpenApi.components?.schemas,
             ...sharedCashExpenseOpenApi.components?.schemas,
             ...interMemberPositionOpenApi.components?.schemas,

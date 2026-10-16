@@ -1,4 +1,5 @@
 import { FinancialExternalLiabilitySettlementOrmEntity } from '../entities/external-liability-settlement.orm-entity.js';
+import { FinancialCommitmentSettlementRuleOrmEntity } from '../entities/settlement-adjustment.orm-entity.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
 import type { SharedCashExpenseView } from '../../../application/models/shared-cash-expense.js';
@@ -253,12 +254,33 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
                       id: current.cycleId,
                   })
             : null;
+        const specific = await this.provider
+            .get()
+            .findOneBy(FinancialCommitmentSettlementRuleOrmEntity, {
+                spaceId,
+                commitmentId,
+            });
+        const view = expenseView(
+            c as FinancialCommitment<CommitmentVersion>,
+            null,
+            null,
+        );
         return {
-            ...expenseView(
-                c as FinancialCommitment<CommitmentVersion>,
-                null,
-                null,
-            ),
+            ...view,
+            commitment: {
+                ...view.commitment,
+                settlementRule: specific
+                    ? {
+                          source: 'SPECIFIC',
+                          rule: specific.rule,
+                          version: specific.version,
+                      }
+                    : {
+                          source: 'INHERITED',
+                          rule: view.commitment.settlementRuleSnapshot,
+                          version: view.commitment.settlementRuleSourceVersion,
+                      },
+            },
             obligations: history,
             obligation: current,
             settlementCycle: cycle

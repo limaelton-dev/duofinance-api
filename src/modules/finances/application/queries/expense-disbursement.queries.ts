@@ -1,4 +1,8 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import {
+    SETTLEMENT_ADJUSTMENT_REPOSITORY,
+    type SettlementAdjustmentRepository,
+} from '../ports/private/settlement-adjustment.repository.js';
 import {
     SPACE_ACCESS_PORT,
     type SpaceAccessPort,
@@ -34,8 +38,40 @@ export class GetExpenseDisbursementOptionsQuery {
         @Inject(FINANCES_CLOCK) private readonly clock: FinancesClock,
         @Inject(SETTLEMENT_CYCLE_REPOSITORY)
         private readonly cycles: SettlementCycleRepository,
+        @Optional()
+        @Inject(SETTLEMENT_ADJUSTMENT_REPOSITORY)
+        private readonly adjustments?: SettlementAdjustmentRepository,
     ) {}
     async execute(
+        actor: PersonId,
+        space: SpaceId,
+        commitmentId: string,
+        cursor?: string,
+    ) {
+        await this.access.assertCanRead(actor, space);
+        const result = await (this.adjustments
+            ? this.adjustments.readSnapshot(() =>
+                  this.inSnapshot(actor, space, commitmentId, cursor),
+              )
+            : this.inSnapshot(actor, space, commitmentId, cursor));
+        const access = await this.access.assertCanRead(actor, space);
+        if (access.type === 'SHARED') {
+            const latest = await this.context.read(actor, space);
+            return {
+                ...result,
+                expectedSpaceVersion: latest.version,
+                canDisburse:
+                    result.remainingAmountInCents > 0 &&
+                    latest.status !== 'CLOSED',
+            };
+        }
+        return {
+            ...result,
+            canDisburse:
+                result.remainingAmountInCents > 0 && access.status === 'ACTIVE',
+        };
+    }
+    private async inSnapshot(
         actor: PersonId,
         space: SpaceId,
         commitmentId: string,
@@ -71,6 +107,18 @@ export class GetExpenseDisbursementOptionsQuery {
         const p = c.initialVersion;
         if (!('split' in p))
             throw new FinancesError('FINANCIAL_COMMITMENT_NOT_FOUND');
+        const settlementRule = this.adjustments
+            ? await this.adjustments.effectiveRule(
+                  space.value,
+                  commitmentId,
+                  p.settlementRuleSnapshot,
+                  p.settlementRuleSourceVersion,
+              )
+            : {
+                  source: 'INHERITED' as const,
+                  rule: p.settlementRuleSnapshot,
+                  version: p.settlementRuleSourceVersion,
+              };
         const cycles = await this.cycles.listOpen(
             space.value,
             decodeExpenseCursor(cursor, space.value),
@@ -93,10 +141,11 @@ export class GetExpenseDisbursementOptionsQuery {
                 rule: p.settlementRuleSnapshot,
                 version: p.settlementRuleSourceVersion,
             },
-            suggestedTargetDate: p.settlementRuleSnapshot
-                ? SettlementRule.from(
-                      p.settlementRuleSnapshot,
-                  ).suggestTargetDate(common.referenceDate)
+            settlementRule,
+            suggestedTargetDate: settlementRule.rule
+                ? SettlementRule.from(settlementRule.rule).suggestTargetDate(
+                      common.referenceDate,
+                  )
                 : null,
             openCycles: page.map((s) => ({
                 id: s.id,

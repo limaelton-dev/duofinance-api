@@ -132,7 +132,8 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
             all[0].registeredAt !== registeredAt ||
             new Set(events.map((fact) => fact.id)).size !== events.length ||
             events.some((f, index) => f.sequence !== index + 1) ||
-            (version ?? events.length) !== events.length
+            !Number.isSafeInteger(version ?? events.length) ||
+            (version ?? events.length) < events.length
         )
             invalidExpense();
         if (personal) {
@@ -334,7 +335,7 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
         const settlement: ExternalLiabilitySettlement = {
             ...payment,
             externalLiabilityId,
-            sequence: this.version + 1,
+            sequence: this.nextFactSequence,
             ...('holderMemberId' in liability
                 ? { holderMemberId: liability.holderMemberId }
                 : { holderPersonId: liability.holderPersonId }),
@@ -382,7 +383,7 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
             this.version + 1,
             [
                 ...this.externalLiabilities,
-                { ...liability, sequence: this.version + 1 },
+                { ...liability, sequence: this.nextFactSequence },
             ],
         );
     }
@@ -402,10 +403,24 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
             this.createdByPersonId,
             this.registeredAt,
             this.initialVersion,
-            [...this.disbursements, { ...payment, sequence: this.version + 1 }],
+            [
+                ...this.disbursements,
+                { ...payment, sequence: this.nextFactSequence },
+            ],
             today,
             this.version + 1,
             this.externalLiabilities,
+        );
+    }
+    private get nextFactSequence(): number {
+        return (
+            this.fulfillments.length +
+            this.externalLiabilities.reduce(
+                (count, liability) =>
+                    count + (liability.settlements?.length ?? 0),
+                0,
+            ) +
+            1
         );
     }
 }

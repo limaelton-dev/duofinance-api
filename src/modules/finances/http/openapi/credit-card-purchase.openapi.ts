@@ -381,6 +381,7 @@ export const creditCardPurchaseOpenApi: Pick<
                         canAssume: { type: 'boolean' },
                         responsibilitySplit: { type: 'object' },
                         expectedPayerMemberId: nullable(uuid),
+                        settlementRule: ref('EffectiveSettlementRule'),
                     }),
                 ],
             },

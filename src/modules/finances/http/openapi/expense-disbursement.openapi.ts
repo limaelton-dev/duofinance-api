@@ -127,7 +127,12 @@ const obligation = object({
             version: positive,
             type: {
                 type: 'string',
-                enum: ['CREATED', 'SETTLEMENT_APPLIED', 'RECONCILED'],
+                enum: [
+                    'CREATED',
+                    'SETTLEMENT_APPLIED',
+                    'RECONCILED',
+                    'ASSIGNMENT_CHANGED',
+                ],
             },
             actorId: uuid,
             registeredAt: instant,
@@ -276,6 +281,7 @@ export const expenseDisbursementOpenApi: Pick<
                         },
                         responsibilitySplit: { type: 'object' },
                         expectedPayerMemberId: nullable(uuid),
+                        settlementRule: ref('EffectiveSettlementRule'),
                         defaultSettlementRule: object({
                             rule: nullable(ref('SettlementRule')),
                             version: money,

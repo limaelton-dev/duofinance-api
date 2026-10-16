@@ -1,4 +1,8 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import {
+    SETTLEMENT_ADJUSTMENT_REPOSITORY,
+    type SettlementAdjustmentRepository,
+} from '../ports/private/settlement-adjustment.repository.js';
 import { randomUUID } from 'node:crypto';
 import {
     IncomeCommitment,
@@ -30,6 +34,9 @@ export class ReconcileFinancialOrigin {
         private readonly obligations: InterMemberObligationRepository,
         @Inject(SETTLEMENT_CYCLE_REPOSITORY)
         private readonly cycles: SettlementCycleRepository,
+        @Optional()
+        @Inject(SETTLEMENT_ADJUSTMENT_REPOSITORY)
+        private readonly adjustments?: SettlementAdjustmentRepository,
     ) {}
     async execute(
         origin: IncomeCommitment | FinancialCommitment<ExpenseVersion>,
@@ -107,10 +114,18 @@ export class ReconcileFinancialOrigin {
                     'settlementRuleSourceVersion' in p
                         ? p.settlementRuleSourceVersion
                         : 0;
+                const effective = this.adjustments
+                    ? await this.adjustments.effectiveRule(
+                          origin.spaceId,
+                          origin.id,
+                          snapshot,
+                          source,
+                      )
+                    : { rule: snapshot, version: source };
                 if (
-                    !snapshot ||
+                    !effective.rule ||
                     selection.referenceDate !== today ||
-                    selection.expectedRuleVersion !== source
+                    selection.expectedRuleVersion !== effective.version
                 )
                     throw new FinancesError(
                         income
@@ -120,7 +135,9 @@ export class ReconcileFinancialOrigin {
                 cycleId = (
                     await this.cycles.lockForDate(
                         origin.spaceId,
-                        SettlementRule.from(snapshot).suggestTargetDate(today),
+                        SettlementRule.from(effective.rule).suggestTargetDate(
+                            today,
+                        ),
                     )
                 ).id;
             }

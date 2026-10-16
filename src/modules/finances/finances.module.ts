@@ -1,3 +1,13 @@
+import { settlementAdjustmentEntities } from './infrastructure/typeorm/entities/settlement-adjustment.orm-entity.js';
+import { SETTLEMENT_ADJUSTMENT_REPOSITORY } from './application/ports/private/settlement-adjustment.repository.js';
+import { TypeOrmSettlementAdjustmentRepository } from './infrastructure/typeorm/repositories/typeorm-settlement-adjustment.repository.js';
+import { SettlementAdjustmentHandler } from './application/handlers/settlement-adjustment.handler.js';
+import { SettlementAssignmentOptionsQuery } from './application/queries/settlement-assignment-options.query.js';
+import { SettlementAdjustmentController } from './http/controllers/settlement-adjustment.controller.js';
+import {
+    ConfigureCommitmentSettlementRulePipe,
+    MoveObligationPipe,
+} from './http/dto/settlement-adjustment.dto.js';
 import { FinancialCommandAuditOrmEntity } from './infrastructure/typeorm/entities/financial-command-audit.orm-entity.js';
 import { FinancialReviewController } from './http/controllers/financial-review.controller.js';
 import { FinancialReviewQueries } from './application/queries/financial-review.queries.js';
@@ -133,6 +143,7 @@ import {
         DatabaseModule,
         SpacesModule,
         TypeOrmModule.forFeature([
+            ...settlementAdjustmentEntities,
             FinancialCommandAuditOrmEntity,
             ...sharedExpenseEntities,
             FinancialExternalLiabilitySettlementOrmEntity,
@@ -147,6 +158,7 @@ import {
         ]),
     ],
     controllers: [
+        SettlementAdjustmentController,
         FinancialReviewController,
         ExternalLiabilityController,
         CreditCardPurchaseController,
@@ -160,6 +172,14 @@ import {
         SettlementTransferController,
     ],
     providers: [
+        SettlementAdjustmentHandler,
+        SettlementAssignmentOptionsQuery,
+        ConfigureCommitmentSettlementRulePipe,
+        MoveObligationPipe,
+        {
+            provide: SETTLEMENT_ADJUSTMENT_REPOSITORY,
+            useClass: TypeOrmSettlementAdjustmentRepository,
+        },
         FinancialReviewQueries,
         {
             provide: FINANCIAL_REVIEW_READER,
