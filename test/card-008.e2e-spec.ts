@@ -250,6 +250,8 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
         expect(detailed.body.cycle).toEqual({
             ...listed.body.items[0],
             finalizedAt: null,
+            canFinalize: false,
+            finalizationBlockReason: 'OPEN_OBLIGATIONS',
         });
         expect(
             detailed.body.items.map((i: { id: string }) => i.id).sort(),
@@ -638,7 +640,6 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
         'view=',
         'view=open',
         'view=ARCHIVED',
-        'view=FINALIZED',
         'view=OPEN&view=OPEN',
         'cursor=x&cursor=x',
         'cursor=',
@@ -999,6 +1000,7 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
             'OPEN',
             'UPCOMING',
             'OVERDUE',
+            'FINALIZED',
         ]);
         expect(detail.parameters[2].schema.enum).toEqual([
             'ALL',
@@ -1041,7 +1043,7 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
             expect(summary.properties.totals.properties[amount].type).toBe(
                 'string',
             );
-        expect(summary.properties.status.enum).toEqual(['OPEN']);
+        expect(summary.properties.status.enum).toEqual(['OPEN', 'FINALIZED']);
         expect(cycle.properties.status.enum).toEqual(['OPEN', 'FINALIZED']);
         expect(cycle.properties.finalizedAt.oneOf).toEqual([
             { type: 'null' },

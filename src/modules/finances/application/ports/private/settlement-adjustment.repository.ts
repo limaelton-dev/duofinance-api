@@ -7,15 +7,20 @@ import type {
     ConfigureCommitmentSettlementRuleResult,
     MoveObligationResult,
     EffectiveSettlementRule,
+    FinalizeSettlementCycleResult,
 } from '../../models/settlement-adjustment.js';
 
 export const SETTLEMENT_ADJUSTMENT_REPOSITORY = Symbol(
     'SETTLEMENT_ADJUSTMENT_REPOSITORY',
 );
 export type AdjustmentResult =
-    ConfigureCommitmentSettlementRuleResult | MoveObligationResult;
+    | ConfigureCommitmentSettlementRuleResult
+    | MoveObligationResult
+    | FinalizeSettlementCycleResult;
 export type AdjustmentOperation =
-    'CONFIGURE_COMMITMENT_SETTLEMENT_RULE' | 'MOVE_OBLIGATION';
+    | 'CONFIGURE_COMMITMENT_SETTLEMENT_RULE'
+    | 'MOVE_OBLIGATION'
+    | 'FINALIZE_SETTLEMENT_CYCLE';
 export class SettlementAdjustmentReceiptRaceError extends Error {}
 export interface SettlementAdjustmentRepository {
     readSnapshot<T>(work: () => Promise<T>): Promise<T>;

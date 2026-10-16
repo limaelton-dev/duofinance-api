@@ -32,7 +32,7 @@ const total: SchemaObject = {
 };
 const view: SchemaObject = {
     type: 'string',
-    enum: ['OPEN', 'UPCOMING', 'OVERDUE'],
+    enum: ['OPEN', 'UPCOMING', 'OVERDUE', 'FINALIZED'],
 };
 const direction: SchemaObject = {
     type: 'string',
@@ -109,7 +109,7 @@ const summary = {
     id: uuid,
     version: { ...integer, minimum: 1 },
     targetDate: date,
-    status: { type: 'string' as const, enum: ['OPEN'] },
+    status: { type: 'string' as const, enum: ['OPEN', 'FINALIZED'] },
     isOverdue: { type: 'boolean' as const },
     obligationCount: integer,
     openObligationCount: integer,
@@ -154,9 +154,10 @@ export const settlementCycleOpenApi: Pick<
             get: {
                 operationId: 'getSettlementCycles',
                 tags: ['Finances'],
-                summary: 'Consultar ciclos abertos, próximos e vencidos',
+                summary:
+                    'Consultar ciclos abertos, próximos, vencidos e finalizados',
                 description:
-                    'OPEN inclui ciclos vencidos e zerados. UPCOMING inclui OPEN com data-alvo hoje ou futura. OVERDUE exige OPEN, data-alvo anterior a hoje e restante positivo. Condição calculada, sem persistir estado ou mover ciclos. Ordem data-alvo/UUID crescente, página de 20. Totais da composição inteira e snapshot financeiro único por resposta. Rejeita query desconhecida, duplicada ou inválida. Consulta não escreve nem finaliza ciclos.',
+                    'OPEN inclui ciclos vencidos e zerados. UPCOMING inclui OPEN com data-alvo hoje ou futura. OVERDUE exige OPEN, data-alvo anterior a hoje e restante positivo. FINALIZED recupera ciclos encerrados somente leitura. Ordem data-alvo/UUID crescente, página de 20. Totais da composição inteira e snapshot financeiro único por resposta. Rejeita query desconhecida, duplicada ou inválida. Consulta não escreve nem finaliza ciclos.',
                 security: [{ sessionCookie: [] }],
                 parameters: [
                     spaceParameter,
@@ -183,7 +184,7 @@ export const settlementCycleOpenApi: Pick<
                 tags: ['Finances'],
                 summary: 'Consultar composição e totais de um ciclo',
                 description:
-                    'Detalhe OPEN ou FINALIZED existente. Direção filtra apenas linhas; totais, posição e contagens permanecem completos. Inclui restante zero. Ordem registeredAt/UUID decrescente, preservando microssegundos UTC. Posição líquida informativa não resolve pendências; resolvido não comprova transferência. Snapshot financeiro único por resposta. Rejeita query desconhecida ou duplicada. Origem deve ser consultada com autorização própria.',
+                    'Detalhe OPEN ou FINALIZED existente. Expõe elegibilidade e motivo de bloqueio para finalização. Direção filtra apenas linhas; totais, posição e contagens permanecem completos. Inclui restante zero. Ordem registeredAt/UUID decrescente, preservando microssegundos UTC. Posição líquida informativa não resolve pendências nem permite finalizar enquanto existir valor aberto. Snapshot financeiro único por resposta. Rejeita query desconhecida ou duplicada. Origem deve ser consultada com autorização própria.',
                 security: [{ sessionCookie: [] }],
                 parameters: [
                     spaceParameter,
@@ -207,6 +208,63 @@ export const settlementCycleOpenApi: Pick<
                     200: response(
                         ref('SettlementCycleResponse'),
                         'Composição rastreável e totais brutos exatos; FINALIZED disponível somente leitura.',
+                    ),
+                },
+            },
+        },
+        '/v2/spaces/{spaceId}/settlement-cycles/{cycleId}/finalize': {
+            post: {
+                operationId: 'finalizeSettlementCycle',
+                tags: ['Finances'],
+                summary:
+                    'Finalizar explicitamente um ciclo sem valores abertos',
+                description:
+                    'Exige ausência de restante em todas as pendências. Posição líquida zero com dívidas recíprocas abertas não permite finalizar. Conserva data-alvo, composição e fatos históricos; não reabre automaticamente. Finalização, histórico, auditoria e recibo são atômicos. Repita a chave e entrada originais após resultado incerto.',
+                security: [{ sessionCookie: [] }],
+                parameters: [
+                    spaceParameter,
+                    {
+                        name: 'cycleId',
+                        in: 'path',
+                        required: true,
+                        schema: uuid,
+                    },
+                    {
+                        name: 'Idempotency-Key',
+                        in: 'header',
+                        required: true,
+                        schema: uuid,
+                    },
+                    {
+                        name: 'X-CSRF-Token',
+                        in: 'header',
+                        required: true,
+                        schema: { type: 'string' },
+                    },
+                ],
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: ref('FinalizeSettlementCycleRequest'),
+                        },
+                    },
+                },
+                responses: {
+                    ...errors,
+                    200: response(
+                        ref('FinalizeSettlementCycleResponse'),
+                        'Ciclo finalizado ou replay autorizado da confirmação original.',
+                    ),
+                    403: error('INVALID_CSRF_TOKEN'),
+                    404: error('SPACE_NOT_FOUND', 'SETTLEMENT_CYCLE_NOT_FOUND'),
+                    409: error(
+                        'SPACE_NOT_ACTIVE',
+                        'SHARED_SPACE_REQUIRED',
+                        'CONCURRENT_MODIFICATION',
+                        'SETTLEMENT_CYCLE_FINALIZED',
+                        'SETTLEMENT_CYCLE_HAS_OPEN_OBLIGATIONS',
+                        'IDEMPOTENCY_KEY_REUSED',
                     ),
                 },
             },
@@ -266,6 +324,42 @@ export const settlementCycleOpenApi: Pick<
                         { type: 'string', format: 'date-time' },
                     ],
                 },
+                canFinalize: { type: 'boolean' },
+                finalizationBlockReason: {
+                    oneOf: [
+                        { type: 'null' },
+                        {
+                            type: 'string',
+                            enum: [
+                                'SPACE_CLOSED',
+                                'SETTLEMENT_CYCLE_FINALIZED',
+                                'OPEN_OBLIGATIONS',
+                            ],
+                        },
+                    ],
+                },
+            }),
+            FinalizeSettlementCycleRequest: object({
+                expectedSpaceVersion: { ...integer, minimum: 1 },
+                expectedCycleVersion: { ...integer, minimum: 1 },
+            }),
+            FinalizeSettlementCycleResponse: object({
+                spaceId: uuid,
+                cycle: object({
+                    id: uuid,
+                    targetDate: date,
+                    status: { type: 'string', enum: ['FINALIZED'] },
+                    version: { ...integer, minimum: 1 },
+                    finalizedAt: { type: 'string', format: 'date-time' },
+                    finalizedByPersonId: uuid,
+                }),
+                affectedCycleIds: {
+                    type: 'array',
+                    minItems: 1,
+                    maxItems: 1,
+                    items: uuid,
+                },
+                replayed: { type: 'boolean' },
             }),
             SettlementCycleObligation: object({
                 id: uuid,

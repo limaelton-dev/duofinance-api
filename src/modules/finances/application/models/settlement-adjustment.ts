@@ -54,3 +54,17 @@ export interface MoveObligationResult {
     affectedCycleIds: string[];
     replayed: boolean;
 }
+export interface FinalizeSettlementCycleCommand extends AdjustmentCommand {
+    cycleId: string;
+    expectedCycleVersion: number;
+}
+export interface FinalizeSettlementCycleResult {
+    spaceId: string;
+    cycle: AssignmentCycle & {
+        status: 'FINALIZED';
+        finalizedAt: string;
+        finalizedByPersonId: string;
+    };
+    affectedCycleIds: string[];
+    replayed: boolean;
+}

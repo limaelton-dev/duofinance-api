@@ -330,6 +330,89 @@ describe('ReconcileFinancialOrigin application', () => {
         expect(f.repo.save).not.toHaveBeenCalled();
         expect(f.repo.saveReconciliation).not.toHaveBeenCalled();
     });
+    it('refuses reconciling a finalized cycle when a later receipt eliminates the difference', async () => {
+        const f = setup();
+        const first = pending().recordReceipt(
+            receipt('one', a, 60000),
+            1,
+            today,
+        );
+        await f.service.execute(
+            first,
+            { mode: 'CYCLE', cycleId: 'closed' },
+            'author',
+            today,
+            now,
+        );
+        const original = f.obligations[0];
+        vi.mocked(f.repo.save).mockClear();
+        vi.mocked(f.cycles.lockExisting).mockResolvedValue(
+            new SettlementCycle('closed', 'space', today, 'FINALIZED', 2),
+        );
+
+        await expect(
+            f.service.execute(
+                first.recordReceipt(receipt('two', b, 40000), 2, today),
+                { mode: 'NONE' },
+                'author',
+                today,
+                now,
+            ),
+        ).rejects.toMatchObject({ code: 'SETTLEMENT_CYCLE_FINALIZED' });
+        expect(f.repo.save).not.toHaveBeenCalled();
+        expect(f.repo.saveReconciliation).not.toHaveBeenCalled();
+        expect(f.obligations).toEqual([original]);
+        expect(original).toMatchObject({
+            cycleId: 'closed',
+            remainingAmountInCents: 24000,
+            status: 'OPEN',
+        });
+    });
+    it('locks existing destination and origin cycles in ID order before obligation writes', async () => {
+        const f = setup();
+        const first = pending().recordReceipt(
+            receipt('one', a, 50000),
+            1,
+            today,
+        );
+        await f.service.execute(
+            first,
+            { mode: 'CYCLE', cycleId: 'z-cycle' },
+            'author',
+            today,
+            now,
+        );
+        vi.mocked(f.cycles.lockExisting).mockClear();
+        vi.mocked(f.repo.lockOrigin).mockClear();
+        vi.mocked(f.adjustments.cycleForDate).mockResolvedValue({
+            id: 'a-cycle',
+            targetDate: '2026-10-20',
+            status: 'OPEN',
+            version: 1,
+        });
+
+        await f.service.execute(
+            first.recordReceipt(receipt('two', b, 50000), 2, today),
+            { mode: 'DATE', targetDate: '2026-10-20' },
+            'author',
+            today,
+            now,
+        );
+        expect(vi.mocked(f.cycles.lockExisting).mock.calls).toEqual([
+            ['space', 'a-cycle'],
+            ['space', 'z-cycle'],
+        ]);
+        expect(f.cycles.lockForDate).not.toHaveBeenCalled();
+        expect(
+            vi.mocked(f.cycles.lockExisting).mock.invocationCallOrder[1],
+        ).toBeLessThan(
+            vi.mocked(f.repo.lockOrigin).mock.invocationCallOrder[0],
+        );
+        expect(f.obligations).toMatchObject([
+            { cycleId: 'z-cycle', status: 'RECONCILED' },
+            { cycleId: 'a-cycle', remainingAmountInCents: 10000 },
+        ]);
+    });
     it('uses the original settlement snapshot with a current civil-date reference', async () => {
         const f = setup();
         await f.service.execute(

@@ -10,6 +10,7 @@ export type FinancesErrorCode =
     | 'IDEMPOTENCY_KEY_REUSED'
     | 'EXPENSE_OPTIONS_CHANGED'
     | 'SETTLEMENT_CYCLE_FINALIZED'
+    | 'SETTLEMENT_CYCLE_HAS_OPEN_OBLIGATIONS'
     | 'SETTLEMENT_CYCLE_NOT_FOUND'
     | 'FINANCIAL_COMMITMENT_NOT_FOUND'
     | 'INTER_MEMBER_OBLIGATION_NOT_FOUND'
@@ -34,6 +35,8 @@ const messages: Record<FinancesErrorCode, string> = {
     EXPENSE_OPTIONS_CHANGED:
         'As opções mudaram. Atualize e confirme novamente.',
     SETTLEMENT_CYCLE_FINALIZED: 'Este acerto já foi finalizado.',
+    SETTLEMENT_CYCLE_HAS_OPEN_OBLIGATIONS:
+        'Ainda existem pendências abertas neste acerto. Resolva os valores antes de finalizar.',
     SETTLEMENT_CYCLE_NOT_FOUND: 'Acerto não encontrado.',
     FINANCIAL_COMMITMENT_NOT_FOUND: 'Despesa não encontrada.',
     INTER_MEMBER_OBLIGATION_NOT_FOUND: 'Pendência não encontrada.',

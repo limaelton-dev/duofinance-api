@@ -24,6 +24,7 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
     constructor(private readonly provider: EntityManagerProvider) {}
     async save(o: InterMemberObligation): Promise<void> {
         const m = transaction(this.provider);
+        await this.assertWritableCycle(o.spaceId, o.cycleId);
         await m.insert(InterMemberObligationOrmEntity, obligationRow(o));
         await m.insert(
             InterMemberObligationChangeOrmEntity,
@@ -112,6 +113,7 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
         after: InterMemberObligation,
     ): Promise<void> {
         const m = transaction(this.provider);
+        await this.assertWritableCycle(before.spaceId, before.cycleId);
         const changed = await m.update(
             InterMemberObligationOrmEntity,
             { id: before.id, spaceId: before.spaceId, version: before.version },
@@ -220,5 +222,17 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
             });
         }
         return result;
+    }
+    private async assertWritableCycle(spaceId: string, cycleId: string | null) {
+        if (!cycleId) return;
+        const [cycle]: { status: string }[] = await transaction(
+            this.provider,
+        ).query(
+            'SELECT status FROM settlement_cycles WHERE space_id=$1 AND id=$2 FOR SHARE',
+            [spaceId, cycleId],
+        );
+        if (!cycle) throw new FinancesError('SETTLEMENT_CYCLE_NOT_FOUND');
+        if (cycle.status !== 'OPEN')
+            throw new FinancesError('SETTLEMENT_CYCLE_FINALIZED');
     }
 }

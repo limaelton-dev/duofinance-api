@@ -11,7 +11,7 @@ import { InterMemberPositionQueryDto } from './inter-member-position-query.dto.j
 import { SettlementRuleParamsDto } from './configure-default-settlement-rule.dto.js';
 export class SettlementCyclesQueryDto {
     @ValidateIf((_, value) => value !== undefined)
-    @IsIn(['OPEN', 'UPCOMING', 'OVERDUE'], {
+    @IsIn(['OPEN', 'UPCOMING', 'OVERDUE', 'FINALIZED'], {
         message: 'Informe uma consulta válida.',
     })
     view?: SettlementCycleView;

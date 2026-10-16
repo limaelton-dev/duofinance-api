@@ -56,7 +56,7 @@ export function encodeSettlementListCursor(
         space,
         actor,
         view,
-        view !== 'OPEN' ? referenceDate : null,
+        view === 'UPCOMING' || view === 'OVERDUE' ? referenceDate : null,
         key.targetDate,
         key.id,
     ]);
@@ -78,7 +78,10 @@ export function decodeSettlementListCursor(
             v[2] !== space ||
             v[3] !== actor ||
             v[4] !== view ||
-            v[5] !== (view !== 'OPEN' ? referenceDate : null) ||
+            v[5] !==
+                (view === 'UPCOMING' || view === 'OVERDUE'
+                    ? referenceDate
+                    : null) ||
             typeof v[6] !== 'string' ||
             typeof v[7] !== 'string' ||
             !uuid.test(v[7])
@@ -175,7 +178,7 @@ export class GetSettlementCyclesQuery implements SettlementCycleQueryPort {
         cursor?: string,
     ): Promise<SettlementCyclesResponse> {
         const authorized = await this.access.read(actor, space);
-        if (!['OPEN', 'UPCOMING', 'OVERDUE'].includes(view))
+        if (!['OPEN', 'UPCOMING', 'OVERDUE', 'FINALIZED'].includes(view))
             throw new FinancesError('VALIDATION_ERROR', ['view']);
         const referenceDate = civilDate(this.clock.today());
         const after = decodeSettlementListCursor(
@@ -353,7 +356,21 @@ export class GetSettlementCycleQuery {
             actorMemberId: context.actorMemberId,
             members: context.members,
             referenceDate,
-            cycle: settlementCycleSummary(result.cycle, referenceDate),
+            cycle: {
+                ...settlementCycleSummary(result.cycle, referenceDate),
+                canFinalize:
+                    context.status !== 'CLOSED' &&
+                    result.cycle.status === 'OPEN' &&
+                    result.cycle.openObligationCount === 0,
+                finalizationBlockReason:
+                    context.status === 'CLOSED'
+                        ? 'SPACE_CLOSED'
+                        : result.cycle.status === 'FINALIZED'
+                          ? 'SETTLEMENT_CYCLE_FINALIZED'
+                          : result.cycle.openObligationCount > 0
+                            ? 'OPEN_OBLIGATIONS'
+                            : null,
+            },
             items,
             page: {
                 direction,

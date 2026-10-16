@@ -162,8 +162,8 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
         const rows: CycleRow[] = await this.managers.get().query(
             `
             WITH page AS MATERIALIZED (
-                SELECT * FROM settlement_cycles WHERE space_id=$1 AND status='OPEN'
-                AND ($3='OPEN' OR ($3='UPCOMING' AND target_date >= $4::date) OR ($3='OVERDUE' AND target_date < $4::date AND EXISTS (SELECT 1 FROM inter_member_obligations overdue WHERE overdue.space_id=$1 AND overdue.cycle_id=settlement_cycles.id AND overdue.remaining_amount_in_cents>0)))
+                SELECT * FROM settlement_cycles WHERE space_id=$1 AND status=CASE WHEN $3='FINALIZED' THEN 'FINALIZED' ELSE 'OPEN' END
+                AND ($3 IN ('OPEN','FINALIZED') OR ($3='UPCOMING' AND target_date >= $4::date) OR ($3='OVERDUE' AND target_date < $4::date AND EXISTS (SELECT 1 FROM inter_member_obligations overdue WHERE overdue.space_id=$1 AND overdue.cycle_id=settlement_cycles.id AND overdue.remaining_amount_in_cents>0)))
                 AND ($5::date IS NULL OR (target_date,id)>($5::date,$6::uuid))
                 ORDER BY target_date ASC,id ASC LIMIT 21
             )

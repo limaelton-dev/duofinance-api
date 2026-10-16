@@ -75,35 +75,16 @@ export class ReconcileFinancialOrigin {
         );
         const matching = plan.reusedObligation;
         let cycleId: string | null = matching?.cycleId ?? null;
-        if (difference && matching?.cycleId) {
-            const cycle = await this.cycles.lockExisting(
-                origin.spaceId,
-                matching.cycleId,
-            );
-            if (!cycle) throw new FinancesError('SETTLEMENT_CYCLE_NOT_FOUND');
-            cycle.assertOpen();
-        }
+        let targetDate: string | null = null;
         if (difference && !matching) {
             if (selection.mode === 'CYCLE') {
-                const cycle = await this.cycles.lockExisting(
-                    origin.spaceId,
-                    selection.cycleId,
-                );
-                if (!cycle)
-                    throw new FinancesError('SETTLEMENT_CYCLE_NOT_FOUND');
-                cycle.assertOpen();
-                cycleId = cycle.id;
+                cycleId = selection.cycleId;
             } else if (selection.mode === 'DATE') {
                 if (civilDate(selection.targetDate) < today)
                     throw new FinancesError('VALIDATION_ERROR', [
                         'settlement.targetDate',
                     ]);
-                cycleId = (
-                    await this.cycles.lockForDate(
-                        origin.spaceId,
-                        selection.targetDate,
-                    )
-                ).id;
+                targetDate = selection.targetDate;
             } else if (selection.mode === 'SUGGESTED') {
                 const p = income ? origin.participation : origin.initialVersion;
                 const snapshot =
@@ -132,17 +113,61 @@ export class ReconcileFinancialOrigin {
                             ? 'INCOME_OPTIONS_CHANGED'
                             : 'EXPENSE_OPTIONS_CHANGED',
                     );
-                cycleId = (
-                    await this.cycles.lockForDate(
-                        origin.spaceId,
-                        SettlementRule.from(effective.rule).suggestTargetDate(
-                            today,
-                        ),
-                    )
-                ).id;
+                targetDate = SettlementRule.from(
+                    effective.rule,
+                ).suggestTargetDate(today);
             }
         }
-        await this.obligations.lockOrigin(origin.spaceId, origin.id);
+        if (targetDate) {
+            const existing = await this.adjustments?.cycleForDate(
+                origin.spaceId,
+                targetDate,
+            );
+            cycleId =
+                existing?.id ??
+                (await this.cycles.lockForDate(origin.spaceId, targetDate)).id;
+        }
+        const affectedCycles = [
+            ...new Set(
+                [
+                    ...plan.changes.map((change) => change.obligation.cycleId),
+                    ...(difference ? [cycleId] : []),
+                ].filter((id): id is string => id !== null),
+            ),
+        ].sort();
+        const cycleIds = [
+            ...new Set(
+                [
+                    ...state.obligations.map(
+                        (obligation) => obligation.cycleId,
+                    ),
+                    ...affectedCycles,
+                ].filter((id): id is string => id !== null),
+            ),
+        ].sort();
+        for (const id of cycleIds) {
+            const cycle = await this.cycles.lockExisting(origin.spaceId, id);
+            if (!cycle) throw new FinancesError('SETTLEMENT_CYCLE_NOT_FOUND');
+            if (affectedCycles.includes(id)) cycle.assertOpen();
+        }
+        const locked = await this.obligations.lockOrigin(
+            origin.spaceId,
+            origin.id,
+        );
+        if (
+            locked.obligations.length !== state.obligations.length ||
+            locked.obligations.some((obligation) => {
+                const previous = state.obligations.find(
+                    (o) => o.id === obligation.id,
+                );
+                return (
+                    !previous ||
+                    previous.version !== obligation.version ||
+                    previous.cycleId !== obligation.cycleId
+                );
+            })
+        )
+            throw new FinancesError('CONCURRENT_MODIFICATION');
         for (const change of plan.changes) {
             const before = change.obligation;
             await this.obligations.saveReconciliation(

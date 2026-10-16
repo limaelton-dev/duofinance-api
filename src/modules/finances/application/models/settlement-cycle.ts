@@ -4,7 +4,7 @@ import type {
     PositionDirection,
     PositionSummary,
 } from './inter-member-position.js';
-export type SettlementCycleView = 'OPEN' | 'UPCOMING' | 'OVERDUE';
+export type SettlementCycleView = 'OPEN' | 'UPCOMING' | 'OVERDUE' | 'FINALIZED';
 export interface SettlementCycleKey {
     targetDate: string;
     id: string;
@@ -28,6 +28,12 @@ export interface SettlementCycleSummary extends SettlementCycleKey {
 }
 export interface SettlementCycleDetail extends SettlementCycleSummary {
     finalizedAt: string | null;
+    canFinalize?: boolean;
+    finalizationBlockReason?:
+        | 'SPACE_CLOSED'
+        | 'SETTLEMENT_CYCLE_FINALIZED'
+        | 'OPEN_OBLIGATIONS'
+        | null;
 }
 export interface SettlementObligationView extends Omit<
     OpenObligationView,

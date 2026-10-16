@@ -1,5 +1,11 @@
 import { settlementAdjustmentEntities } from './infrastructure/typeorm/entities/settlement-adjustment.orm-entity.js';
 import { settlementOffsetEntities } from './infrastructure/typeorm/entities/settlement-offset.orm-entity.js';
+import { SettlementCycleChangeOrmEntity } from './infrastructure/typeorm/entities/settlement-cycle-change.orm-entity.js';
+import { SETTLEMENT_CYCLE_FINALIZATION_REPOSITORY } from './application/ports/private/settlement-cycle-finalization.repository.js';
+import { TypeOrmSettlementCycleFinalizationRepository } from './infrastructure/typeorm/repositories/typeorm-settlement-cycle-finalization.repository.js';
+import { FinalizeSettlementCycleHandler } from './application/handlers/finalize-settlement-cycle.handler.js';
+import { FinalizeSettlementCyclePipe } from './http/dto/finalize-settlement-cycle.dto.js';
+import { SettlementCycleFinalizationController } from './http/controllers/settlement-cycle-finalization.controller.js';
 import { SETTLEMENT_OFFSET_REPOSITORY } from './application/ports/private/settlement-offset.repository.js';
 import { TypeOrmSettlementOffsetRepository } from './infrastructure/typeorm/repositories/typeorm-settlement-offset.repository.js';
 import { RecordSettlementOffsetHandler } from './application/handlers/record-settlement-offset.handler.js';
@@ -153,6 +159,7 @@ import {
         TypeOrmModule.forFeature([
             ...settlementAdjustmentEntities,
             ...settlementOffsetEntities,
+            SettlementCycleChangeOrmEntity,
             FinancialCommandAuditOrmEntity,
             ...sharedExpenseEntities,
             FinancialExternalLiabilitySettlementOrmEntity,
@@ -167,6 +174,7 @@ import {
         ]),
     ],
     controllers: [
+        SettlementCycleFinalizationController,
         SettlementOffsetController,
         SettlementAdjustmentController,
         FinancialReviewController,
@@ -182,6 +190,12 @@ import {
         SettlementTransferController,
     ],
     providers: [
+        FinalizeSettlementCycleHandler,
+        FinalizeSettlementCyclePipe,
+        {
+            provide: SETTLEMENT_CYCLE_FINALIZATION_REPOSITORY,
+            useClass: TypeOrmSettlementCycleFinalizationRepository,
+        },
         SettlementAdjustmentHandler,
         RecordSettlementOffsetHandler,
         RecordSettlementOffsetPipe,

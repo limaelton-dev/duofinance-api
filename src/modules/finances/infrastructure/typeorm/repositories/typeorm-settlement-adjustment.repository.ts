@@ -123,17 +123,24 @@ export class TypeOrmSettlementAdjustmentRepository implements SettlementAdjustme
                 targetId:
                     'commitmentId' in result
                         ? result.commitmentId
-                        : result.obligation.id,
+                        : 'obligation' in result
+                          ? result.obligation.id
+                          : result.cycle.id,
                 payload:
                     'commitmentId' in result
                         ? {
                               commitmentVersion: result.commitmentVersion,
                               ruleVersion: result.settlementRule.version,
                           }
-                        : {
-                              obligationVersion: result.obligation.version,
-                              affectedCycleIds: result.affectedCycleIds,
-                          },
+                        : 'obligation' in result
+                          ? {
+                                obligationVersion: result.obligation.version,
+                                affectedCycleIds: result.affectedCycleIds,
+                            }
+                          : {
+                                cycleVersion: result.cycle.version,
+                                finalizedAt: result.cycle.finalizedAt,
+                            },
                 registeredAt: new Date(now),
             });
     }
