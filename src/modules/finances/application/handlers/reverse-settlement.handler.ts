@@ -328,6 +328,8 @@ export class ReverseSettlementHandler {
                             undefined,
                             null,
                             source.originExternalLiabilityId,
+                            false,
+                            source.occurrenceId,
                         );
                         created.push(next);
                         effectId = next.id;

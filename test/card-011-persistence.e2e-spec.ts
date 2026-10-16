@@ -416,8 +416,13 @@ describe('CARD-011 PostgreSQL transaction and migration compatibility', () => {
             commitment: await db.query(
                 'SELECT id,space_id,kind,modality,description,created_by,version,registered_at FROM financial_commitments',
             ),
-            versions: await db.query(
-                'SELECT * FROM financial_commitment_versions',
+            versions: (
+                await db.query('SELECT * FROM financial_commitment_versions')
+            ).map(
+                ({
+                    expected_payment_date: _expectedPaymentDate,
+                    ...legacy
+                }: Record<string, unknown>) => legacy,
             ),
             shares: await db.query(
                 'SELECT * FROM financial_commitment_shares ORDER BY member_id',
@@ -432,6 +437,7 @@ describe('CARD-011 PostgreSQL transaction and migration compatibility', () => {
                     receipt_id: _receiptId,
                     external_liability_id: _externalLiabilityId,
                     recognized_amount_in_cents: _recognized,
+                    occurrence_id: _occurrenceId,
                     ...legacy
                 }: Record<string, unknown>) => legacy,
             ),

@@ -43,7 +43,9 @@ export class TypeOrmPersonalExpenseReader implements PersonalExpenseReader {
             id: string;
             description: string;
             amount: string;
-            factDate: string;
+            factDate: string | null;
+            expectedPaymentDate: string | null;
+            relevantDate: string;
             paid: string;
             assumed: string;
             outstanding: string;
@@ -53,14 +55,16 @@ export class TypeOrmPersonalExpenseReader implements PersonalExpenseReader {
             >;
         }[] = await this.provider.get().query(
             `WITH page AS MATERIALIZED (
-                SELECT c.id,c.space_id,c.description,v.amount_in_cents,v.fact_date
+                SELECT c.id,c.space_id,c.description,v.amount_in_cents,v.fact_date,v.expected_payment_date,
+                    COALESCE(v.expected_payment_date,v.fact_date) AS relevant_date
                 FROM financial_commitments c JOIN financial_commitment_versions v
                     ON v.space_id=c.space_id AND v.commitment_id=c.id AND v.version=1
                 WHERE c.space_id=$1 AND c.kind='EXPENSE' AND c.personal_owner_person_id IS NOT NULL
-                    AND ($2::date IS NULL OR (v.fact_date,c.id)<($2::date,$3::uuid))
-                ORDER BY v.fact_date DESC,c.id DESC LIMIT 21
+                    AND ($2::date IS NULL OR (COALESCE(v.expected_payment_date,v.fact_date),c.id)<($2::date,$3::uuid))
+                ORDER BY relevant_date DESC,c.id DESC LIMIT 21
             )
             SELECT p.id,p.description,p.amount_in_cents::text AS amount,p.fact_date::text AS "factDate",
+                p.expected_payment_date::text AS "expectedPaymentDate",p.relevant_date::text AS "relevantDate",
                 COALESCE(d.paid,0)::text AS paid,COALESCE(f.assumed,0)::text AS assumed,
                 COALESCE(f.outstanding,0)::text AS outstanding,
                 (SELECT jsonb_build_object('amountInCents',amount_in_cents,'method',method)
@@ -78,7 +82,7 @@ export class TypeOrmPersonalExpenseReader implements PersonalExpenseReader {
                     jsonb_agg(x."externalLiability" ORDER BY (x."externalLiability"->>'sequence')::int) AS liabilities
                 FROM (${externalLiabilityProjection} WHERE c.space_id=p.space_id AND c.id=p.id) x
             ) f ON true
-            ORDER BY p.fact_date DESC,p.id DESC`,
+            ORDER BY p.relevant_date DESC,p.id DESC`,
             [spaceId, after?.factDate ?? null, after?.id ?? null],
         );
         return rows.map((r) => {
@@ -87,12 +91,32 @@ export class TypeOrmPersonalExpenseReader implements PersonalExpenseReader {
             const supported = paid + assumed;
             const remaining = Number(r.amount) - supported;
             const fulfillmentStatus =
-                remaining === 0 ? 'FULFILLED' : 'PARTIALLY_FULFILLED';
+                paid + assumed === 0
+                    ? 'PENDING'
+                    : remaining === 0
+                      ? 'FULFILLED'
+                      : 'PARTIALLY_FULFILLED';
             return {
                 id: r.id,
                 description: r.description,
                 amountInCents: Number(r.amount),
                 factDate: r.factDate,
+                ...(r.expectedPaymentDate
+                    ? { expectedPaymentDate: r.expectedPaymentDate }
+                    : {}),
+                relevantDate: r.relevantDate,
+                ...(r.expectedPaymentDate
+                    ? {
+                          overdue:
+                              r.expectedPaymentDate <
+                                  new Intl.DateTimeFormat('en-CA', {
+                                      timeZone: 'America/Sao_Paulo',
+                                      year: 'numeric',
+                                      month: '2-digit',
+                                      day: '2-digit',
+                                  }).format(new Date()) && remaining > 0,
+                      }
+                    : {}),
                 disbursement: r.disbursement,
                 externalLiabilities: r.externalLiabilities,
                 assumedAmountInCents: assumed,
@@ -101,11 +125,14 @@ export class TypeOrmPersonalExpenseReader implements PersonalExpenseReader {
                 fulfillmentStatus,
                 paidAmountInCents: paid,
                 remainingAmountInCents: remaining,
-                status: r.externalLiabilities.length
-                    ? fulfillmentStatus
-                    : remaining === 0
-                      ? 'PAID'
-                      : 'PARTIALLY_PAID',
+                status:
+                    fulfillmentStatus === 'PENDING'
+                        ? 'PENDING'
+                        : r.externalLiabilities.length
+                          ? fulfillmentStatus
+                          : remaining === 0
+                            ? 'PAID'
+                            : 'PARTIALLY_PAID',
             };
         });
     }

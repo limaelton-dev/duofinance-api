@@ -29,6 +29,7 @@ export function versionRow(c: FinancialCommitment<ExpenseVersion>) {
             version: 1,
             amountInCents: v.amount.amountInCents,
             factDate: v.factDate,
+            expectedPaymentDate: v.expectedPaymentDate ?? null,
             expectedPayerMemberId: null,
             splitMode: null,
             splitInput: null,
@@ -43,6 +44,7 @@ export function versionRow(c: FinancialCommitment<ExpenseVersion>) {
         amountInCents: v.split.total.amountInCents,
         expectedPayerMemberId: v.expectedPayerMemberId,
         factDate: v.factDate,
+        expectedPaymentDate: v.expectedPaymentDate ?? null,
         splitMode: v.split.original.mode,
         splitInput: v.split.original,
         ruleSnapshot: v.settlementRuleSnapshot,
@@ -91,6 +93,7 @@ export function obligationRow(o: InterMemberObligation) {
         id: o.id,
         spaceId: o.spaceId,
         commitmentId: o.originCommitmentId,
+        occurrenceId: o.occurrenceId,
         disbursementId:
             o.originKind === 'EXPENSE' && !o.originExternalLiabilityId
                 ? o.originDisbursementId
@@ -118,6 +121,7 @@ export function obligationChangeRow(o: InterMemberObligation) {
         type: 'CREATED',
         snapshot: {
             originCommitmentId: o.originCommitmentId,
+            ...(o.occurrenceId ? { occurrenceId: o.occurrenceId } : {}),
             ...(o.originKind === 'EXPENSE'
                 ? o.originExternalLiabilityId
                     ? { originExternalLiabilityId: o.originExternalLiabilityId }

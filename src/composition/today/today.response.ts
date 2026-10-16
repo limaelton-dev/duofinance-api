@@ -1,6 +1,7 @@
 import type { SpaceAccessContext } from '../../modules/spaces/application/ports/public/space-access.port.js';
 import type { FinanceTodaySettlementSummary } from '../../modules/finances/application/ports/public/finance-today-query.port.js';
 import type { IncomeTodayQueryPort } from '../../modules/finances/application/ports/public/income-today-query.port.js';
+import type { PlannedTodayQueryPort } from '../../modules/finances/application/ports/public/planned-today-query.port.js';
 
 export interface TodayResponse {
     spaceId: string;
@@ -11,9 +12,19 @@ export interface TodayResponse {
         | {
               status: 'AVAILABLE';
               data: {
-                  upcomingCommitments: Awaited<
-                      ReturnType<IncomeTodayQueryPort['readUpcoming']>
-                  >;
+                  upcomingCommitments: {
+                      items: (
+                          | Awaited<
+                                ReturnType<IncomeTodayQueryPort['readUpcoming']>
+                            >['items'][number]
+                          | Awaited<
+                                ReturnType<
+                                    PlannedTodayQueryPort['readUpcoming']
+                                >
+                            >['items'][number]
+                      )[];
+                      totalCount: number;
+                  };
                   settlements: FinanceTodaySettlementSummary | null;
               };
           }

@@ -2,6 +2,7 @@ export type FinancialReviewView = 'CALENDAR' | 'HISTORY';
 export type FinancialReviewItemType =
     | 'EXPENSE'
     | 'EXPECTED_INCOME'
+    | 'EXPECTED_EXPENSE'
     | 'DISBURSEMENT'
     | 'RECEIPT'
     | 'EXTERNAL_LIABILITY'
@@ -27,9 +28,11 @@ export interface FinancialReviewItem {
     memberIds: string[];
 }
 export interface FinancialForecastItem extends FinancialReviewItem {
-    type: 'EXPECTED_INCOME';
+    type: 'EXPECTED_INCOME' | 'EXPECTED_EXPENSE';
     receivedAmountInCents: number;
+    fulfilledAmountInCents?: number;
     remainingAmountInCents: number;
+    overdue?: boolean;
 }
 export interface FinancialReviewMetrics {
     expenseAmountInCents: string;
@@ -67,6 +70,9 @@ export interface FinancialForecast extends FinancialReviewContext {
         expectedAmountInCents: string;
         receivedAmountInCents: string;
         remainingAmountInCents: string;
+        expectedExpenseAmountInCents?: string;
+        fulfilledExpenseAmountInCents?: string;
+        remainingExpenseAmountInCents?: string;
     };
     nextCursor: string | null;
 }

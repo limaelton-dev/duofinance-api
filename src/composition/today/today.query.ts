@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
     SPACE_ACCESS_PORT,
     type SpaceAccessPort,
@@ -16,6 +16,10 @@ import {
     type IncomeTodayQueryPort,
 } from '../../modules/finances/application/ports/public/income-today-query.port.js';
 import {
+    PLANNED_TODAY_QUERY_PORT,
+    type PlannedTodayQueryPort,
+} from '../../modules/finances/application/ports/public/planned-today-query.port.js';
+import {
     TODAY_CLOCK,
     todayReferenceDate,
     type TodayClock,
@@ -31,6 +35,9 @@ export class TodayQuery {
         @Inject(TODAY_CLOCK) private readonly clock: TodayClock,
         @Inject(INCOME_TODAY_QUERY_PORT)
         private readonly incomes: IncomeTodayQueryPort,
+        @Optional()
+        @Inject(PLANNED_TODAY_QUERY_PORT)
+        private readonly planned?: PlannedTodayQueryPort,
     ) {}
 
     async execute(actor: PersonId, space: SpaceId): Promise<TodayResponse> {
@@ -49,6 +56,33 @@ export class TodayQuery {
                 space,
                 referenceDate,
             );
+            if (this.planned) {
+                const planned = await this.planned.readUpcoming(
+                    actor,
+                    space,
+                    referenceDate,
+                );
+                const income = finance.data.upcomingCommitments;
+                finance.data.upcomingCommitments = {
+                    items: [...income.items, ...planned.items]
+                        .sort((a, b) => {
+                            const left =
+                                'expectedDate' in a
+                                    ? a.expectedDate
+                                    : a.expectedReceiptDate;
+                            const right =
+                                'expectedDate' in b
+                                    ? b.expectedDate
+                                    : b.expectedReceiptDate;
+                            return (
+                                left.localeCompare(right) ||
+                                a.commitmentId.localeCompare(b.commitmentId)
+                            );
+                        })
+                        .slice(0, 4),
+                    totalCount: income.totalCount + planned.totalCount,
+                };
+            }
             if (authorized.type === 'SHARED') {
                 const result = await this.finances.read(
                     actor,

@@ -145,6 +145,8 @@ describe('CARD-003 — persistência e migration', () => {
                 'FinalizeSettlementCycle1792162609967',
                 'WaiveInterMemberObligation1792163371690',
                 'ReverseSettlementResolution1792164211588',
+                'PlannedExpenses1792165000000',
+                'FixedRecurringCommitments1792165100000',
             ]);
             expect(await receipts.find(command)).not.toBeNull();
             expect((await repository.findById(legacy.space.id))?.version).toBe(

@@ -55,7 +55,7 @@ export const todayOpenApi: Pick<
                 tags: ['Today'],
                 summary: 'Consultar Hoje no espaço atual',
                 description:
-                    'Compõe contratos públicos de Finanças. Próximos compromissos traz até quatro receitas únicas com restante positivo, inclusive parcialmente recebidas, de hoje ou futuras e sua contagem. Preserva valor original e informa recebido e restante. Despesas pagas e datas de acerto não se tornam vencimentos. Pessoal retorna settlements null sem chamar leitura exclusiva SHARED. Autoriza antes e depois. Falha técnica financeira permite UNAVAILABLE com contexto preservado. GET não escreve.',
+                    'Compõe contratos públicos de Finanças. Próximos compromissos traz até quatro receitas únicas e despesas avulsas ou recorrentes com restante positivo, sua data prevista e contagem. Datas de acerto não se tornam vencimentos. Pessoal retorna settlements null. Autoriza antes e depois. Falha técnica financeira permite UNAVAILABLE com contexto preservado. GET não escreve.',
                 security: [{ sessionCookie: [] }],
                 parameters: [
                     {
@@ -112,30 +112,68 @@ export const todayOpenApi: Pick<
                         items: {
                             type: 'array',
                             maxItems: 4,
-                            items: object({
-                                commitmentId: uuid,
-                                kind: { type: 'string', enum: ['INCOME'] },
-                                description: { type: 'string' },
-                                expectedReceiptDate: {
-                                    type: 'string',
-                                    format: 'date',
-                                },
-                                amountInCents: {
-                                    type: 'integer',
-                                    minimum: 1,
-                                    maximum: Number.MAX_SAFE_INTEGER,
-                                },
-                                receivedAmountInCents: {
-                                    type: 'integer',
-                                    minimum: 0,
-                                    maximum: Number.MAX_SAFE_INTEGER,
-                                },
-                                remainingAmountInCents: {
-                                    type: 'integer',
-                                    minimum: 1,
-                                    maximum: Number.MAX_SAFE_INTEGER,
-                                },
-                            }),
+                            items: {
+                                oneOf: [
+                                    object({
+                                        commitmentId: uuid,
+                                        kind: {
+                                            type: 'string',
+                                            enum: ['INCOME'],
+                                        },
+                                        description: { type: 'string' },
+                                        expectedReceiptDate: {
+                                            type: 'string',
+                                            format: 'date',
+                                        },
+                                        amountInCents: {
+                                            type: 'integer',
+                                            minimum: 1,
+                                            maximum: Number.MAX_SAFE_INTEGER,
+                                        },
+                                        receivedAmountInCents: {
+                                            type: 'integer',
+                                            minimum: 0,
+                                            maximum: Number.MAX_SAFE_INTEGER,
+                                        },
+                                        remainingAmountInCents: {
+                                            type: 'integer',
+                                            minimum: 1,
+                                            maximum: Number.MAX_SAFE_INTEGER,
+                                        },
+                                    }),
+                                    object({
+                                        commitmentId: uuid,
+                                        occurrenceId: {
+                                            oneOf: [uuid, { type: 'null' }],
+                                        },
+                                        kind: {
+                                            type: 'string',
+                                            enum: ['EXPENSE', 'INCOME'],
+                                        },
+                                        description: { type: 'string' },
+                                        expectedDate: {
+                                            type: 'string',
+                                            format: 'date',
+                                        },
+                                        amountInCents: {
+                                            type: 'integer',
+                                            minimum: 1,
+                                            maximum: Number.MAX_SAFE_INTEGER,
+                                        },
+                                        fulfilledAmountInCents: {
+                                            type: 'integer',
+                                            minimum: 0,
+                                            maximum: Number.MAX_SAFE_INTEGER,
+                                        },
+                                        remainingAmountInCents: {
+                                            type: 'integer',
+                                            minimum: 1,
+                                            maximum: Number.MAX_SAFE_INTEGER,
+                                        },
+                                        overdue: { type: 'boolean' },
+                                    }),
+                                ],
+                            },
                         },
                         totalCount: { type: 'integer', minimum: 0 },
                     }),

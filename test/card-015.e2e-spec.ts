@@ -898,7 +898,6 @@ describe('CARD-015 external liability settlement HTTP/PostgreSQL', () => {
         ).body;
         const result = (await a.post(path, settleBody(1, 6000)).expect(201))
             .body;
-        const before = await snapshot();
         await expect(
             db.query(
                 'UPDATE financial_external_liability_settlements SET amount_in_cents=0 WHERE id=$1',
@@ -937,6 +936,7 @@ describe('CARD-015 external liability settlement HTTP/PostgreSQL', () => {
                 "SELECT conname,pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE connamespace='public'::regnamespace ORDER BY conname",
             );
         await rewindToExternalLiabilityMigration();
+        const before = await snapshot();
         const constraints = await schema(),
             migrations = await db.query('SELECT * FROM migrations ORDER BY id');
         await expect(migrationSource.undoLastMigration()).rejects.toThrow();

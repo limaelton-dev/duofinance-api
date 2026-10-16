@@ -459,6 +459,7 @@ export const settlementCycleOpenApi: Pick<
                 ],
                 properties: {
                     commitmentId: uuid,
+                    occurrenceId: uuid,
                     description: { type: 'string' },
                     disbursementId: uuid,
                     receiptId: uuid,

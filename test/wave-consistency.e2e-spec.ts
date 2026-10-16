@@ -344,7 +344,7 @@ describe('Wave 0–2 financial read consistency and technical audit', () => {
         expect(page).toHaveLength(21);
         const last = page.at(-1)!;
         const rest = await reader.list(spaceId.value, {
-            factDate: last.factDate,
+            factDate: last.relevantDate ?? last.factDate!,
             id: last.id,
         });
         expect(rest).toHaveLength(2);

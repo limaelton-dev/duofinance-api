@@ -15,7 +15,7 @@ import {
 @Unique('UQ_external_settlement_sequence', ['commitmentId', 'sequence'])
 @Check(
     'CHK_external_settlement_values',
-    "amount_in_cents BETWEEN 1 AND 9007199254740991 AND sequence > 1 AND fact_date <= (registered_at AT TIME ZONE 'America/Sao_Paulo')::date AND num_nonnulls(holder_member_id,holder_person_id)=1 AND receipt_operation='SETTLE_EXTERNAL_LIABILITY'",
+    "amount_in_cents BETWEEN 1 AND 9007199254740991 AND sequence > 1 AND fact_date <= (registered_at AT TIME ZONE 'America/Sao_Paulo')::date AND num_nonnulls(holder_member_id,holder_person_id)=1 AND ((receipt_operation='SETTLE_EXTERNAL_LIABILITY' AND idempotency_key IS NOT NULL) OR (receipt_operation IS NULL AND idempotency_key IS NULL))",
 )
 @ForeignKey(
     () => FinancialExternalLiabilityOrmEntity,
@@ -53,9 +53,15 @@ export class FinancialExternalLiabilitySettlementOrmEntity {
     holderPersonId!: string | null;
     @Column({ name: 'recorded_by_person_id', type: 'uuid' })
     recordedByPersonId!: string;
-    @Column({ name: 'receipt_operation', type: 'varchar', length: 40 })
-    receiptOperation!: string;
-    @Column({ name: 'idempotency_key', type: 'uuid' }) idempotencyKey!: string;
+    @Column({
+        name: 'receipt_operation',
+        type: 'varchar',
+        length: 40,
+        nullable: true,
+    })
+    receiptOperation!: string | null;
+    @Column({ name: 'idempotency_key', type: 'uuid', nullable: true })
+    idempotencyKey!: string | null;
     @Column({
         name: 'amount_in_cents',
         type: 'bigint',

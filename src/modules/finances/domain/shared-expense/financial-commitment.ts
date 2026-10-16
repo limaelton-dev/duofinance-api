@@ -9,7 +9,8 @@ export interface CommitmentVersion {
     readonly version: 1;
     readonly split: ResponsibilitySplit;
     readonly expectedPayerMemberId: string | null;
-    readonly factDate: string;
+    readonly factDate: string | null;
+    readonly expectedPaymentDate?: string | null;
     readonly settlementRuleSnapshot: SettlementRuleSnapshot | null;
     readonly settlementRuleSourceVersion: number;
     readonly suggestedTargetDate: string | null;
@@ -58,7 +59,8 @@ export interface PersonalCommitmentVersion {
     readonly version: 1;
     readonly ownerPersonId: string;
     readonly amount: Money;
-    readonly factDate: string;
+    readonly factDate: string | null;
+    readonly expectedPaymentDate?: string | null;
 }
 export interface PersonalDisbursement extends Omit<
     Disbursement,
@@ -83,12 +85,17 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
     readonly externalOutstandingAmountInCents: number;
     readonly externalSettledAmountInCents: number;
     readonly supportedAmountInCents: number;
-    readonly fulfillmentStatus: 'PARTIALLY_FULFILLED' | 'FULFILLED';
+    readonly fulfillmentStatus: 'PENDING' | 'PARTIALLY_FULFILLED' | 'FULFILLED';
     readonly version: number;
     readonly paidAmountInCents: number;
     readonly remainingAmountInCents: number;
+    readonly overdue: boolean;
     readonly status:
-        'PARTIALLY_PAID' | 'PAID' | 'PARTIALLY_FULFILLED' | 'FULFILLED';
+        | 'PENDING'
+        | 'PARTIALLY_PAID'
+        | 'PAID'
+        | 'PARTIALLY_FULFILLED'
+        | 'FULFILLED';
     constructor(
         readonly id: string,
         readonly spaceId: string,
@@ -126,14 +133,21 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
             description !== description.trim() ||
             description.length > 160 ||
             !Number.isFinite(Date.parse(registeredAt)) ||
-            civilDate(initialVersion.factDate) > civilDate(today) ||
-            all.length < 1 ||
-            all[0].factDate !== initialVersion.factDate ||
-            all[0].registeredAt !== registeredAt ||
+            (initialVersion.factDate !== null &&
+                civilDate(initialVersion.factDate) > civilDate(today)) ||
+            (initialVersion.factDate === null &&
+                !initialVersion.expectedPaymentDate) ||
+            (initialVersion.expectedPaymentDate !== undefined &&
+                initialVersion.expectedPaymentDate !== null &&
+                !civilDate(initialVersion.expectedPaymentDate)) ||
+            (initialVersion.factDate !== null &&
+                (all.length < 1 ||
+                    all[0].factDate !== initialVersion.factDate ||
+                    all[0].registeredAt !== registeredAt)) ||
             new Set(events.map((fact) => fact.id)).size !== events.length ||
             events.some((f, index) => f.sequence !== index + 1) ||
-            !Number.isSafeInteger(version ?? events.length) ||
-            (version ?? events.length) < events.length
+            !Number.isSafeInteger(version ?? Math.max(1, events.length)) ||
+            (version ?? Math.max(1, events.length)) < Math.max(1, events.length)
         )
             invalidExpense();
         if (personal) {
@@ -294,22 +308,31 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
             ),
         );
         this.disbursement = this.disbursements[0] ?? null;
-        this.version = version ?? events.length;
+        this.version = version ?? Math.max(1, events.length);
         this.assumedAmountInCents = Number(assumed);
         this.externalOutstandingAmountInCents = Number(assumed - settled);
         this.externalSettledAmountInCents = Number(settled);
         this.supportedAmountInCents = Number(total + assumed);
         this.paidAmountInCents = Number(total);
         this.remainingAmountInCents = original - this.supportedAmountInCents;
+        this.overdue =
+            initialVersion.expectedPaymentDate != null &&
+            initialVersion.expectedPaymentDate < today &&
+            this.remainingAmountInCents > 0;
         this.fulfillmentStatus =
-            this.remainingAmountInCents === 0
-                ? 'FULFILLED'
-                : 'PARTIALLY_FULFILLED';
-        this.status = liabilities.length
-            ? this.fulfillmentStatus
-            : this.remainingAmountInCents === 0
-              ? 'PAID'
-              : 'PARTIALLY_PAID';
+            events.length === 0
+                ? 'PENDING'
+                : this.remainingAmountInCents === 0
+                  ? 'FULFILLED'
+                  : 'PARTIALLY_FULFILLED';
+        this.status =
+            events.length === 0
+                ? 'PENDING'
+                : liabilities.length
+                  ? this.fulfillmentStatus
+                  : this.remainingAmountInCents === 0
+                    ? 'PAID'
+                    : 'PARTIALLY_PAID';
         Object.freeze(this);
     }
     settleExternalLiability(

@@ -134,6 +134,7 @@ export const interMemberPositionOpenApi: Pick<
                     object({
                         kind: { type: 'string', enum: ['EXPENSE'] },
                         commitmentId: uuid,
+                        occurrenceId: { oneOf: [uuid, { type: 'null' }] },
                         externalLiabilityId: uuid,
                         description: {
                             type: 'string',
@@ -143,6 +144,7 @@ export const interMemberPositionOpenApi: Pick<
                     }),
                     object({
                         commitmentId: uuid,
+                        occurrenceId: { oneOf: [uuid, { type: 'null' }] },
                         disbursementId: uuid,
                         description: {
                             type: 'string',
@@ -153,6 +155,7 @@ export const interMemberPositionOpenApi: Pick<
                     object({
                         kind: { type: 'string', enum: ['INCOME'] },
                         commitmentId: uuid,
+                        occurrenceId: { oneOf: [uuid, { type: 'null' }] },
                         receiptId: uuid,
                         description: {
                             type: 'string',

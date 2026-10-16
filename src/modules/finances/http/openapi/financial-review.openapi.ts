@@ -30,6 +30,7 @@ const itemProperties = {
         enum: [
             'EXPENSE',
             'EXPECTED_INCOME',
+            'EXPECTED_EXPENSE',
             'DISBURSEMENT',
             'RECEIPT',
             'EXTERNAL_LIABILITY',
@@ -108,15 +109,23 @@ const schemas = {
             maxItems: 20,
             items: object({
                 ...itemProperties,
-                type: { type: 'string', enum: ['EXPECTED_INCOME'] },
+                type: {
+                    type: 'string',
+                    enum: ['EXPECTED_INCOME', 'EXPECTED_EXPENSE'],
+                },
                 receivedAmountInCents: money,
+                fulfilledAmountInCents: money,
                 remainingAmountInCents: money,
+                overdue: { type: 'boolean' },
             }),
         },
         totals: object({
             expectedAmountInCents: total,
             receivedAmountInCents: total,
             remainingAmountInCents: total,
+            expectedExpenseAmountInCents: total,
+            fulfilledExpenseAmountInCents: total,
+            remainingExpenseAmountInCents: total,
         }),
         nextCursor: cursor,
     }),
@@ -155,7 +164,7 @@ export const financialReviewOpenApi: Pick<
                     tags: ['Finances'],
                     summary: `Consultar ${operation} financeiro por mês calendário`,
                     description:
-                        'Somente leitura. Datas civis; referência em America/Sao_Paulo. memberId seleciona membro autorizado apenas no compartilhado. Overview: totals do espaço sem filtro ou do membro selecionado; byMember.expense é responsabilidade e realizedIncome é participação acumulada realizada, received é dinheiro recebido. Transferências internas mostram montantes registrados, revertidos e efetivos no período do fato original; a reversão aparece na timeline com sua própria data e autoria. Aberto atual abrange todas as datas e possui referência própria. Forecast usa apenas receitas conhecidas pendentes com previsão a partir da referência, total original/recebido/restante de todos os compromissos selecionados, sem mover atrasos. Timeline conserva montantes originais e fatos independentes; previsão permanece na data original. CALENDAR e HISTORY usam os mesmos fatos, apresentação agrupável por relevantDate. Página de 20; cursor vincula ator/espaço/operação/visão/mês/membro. Snapshot único por resposta, sem snapshot entre páginas. Sem agregados novos e sem escrita.',
+                        'Somente leitura. Datas civis; referência em America/Sao_Paulo. memberId seleciona membro autorizado apenas no compartilhado. Overview separa o fato econômico da previsão; forecast informa receitas e despesas pendentes com totais próprios e mantém atrasos na data original. Transferências internas mostram montantes registrados, revertidos e efetivos no período do fato original. CALENDAR e HISTORY usam os mesmos fatos, apresentação agrupável por relevantDate. Página de 20; cursor vincula ator/espaço/operação/visão/mês/membro. Snapshot único por resposta, sem snapshot entre páginas.',
                     security: [{ sessionCookie: [] }],
                     parameters: [
                         {

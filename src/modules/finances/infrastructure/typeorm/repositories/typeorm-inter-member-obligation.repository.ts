@@ -33,12 +33,17 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
             obligationChangeRow(o),
         );
     }
-    async originState(spaceId: string, commitmentId: string, lock = false) {
+    async originState(
+        spaceId: string,
+        commitmentId: string,
+        occurrenceId: string | null = null,
+        lock = false,
+    ) {
         const m = transaction(this.provider);
         if (lock) {
             const cycles: { id: string }[] = await m.query(
-                `SELECT DISTINCT cycle_id AS id FROM inter_member_obligations WHERE space_id=$1 AND commitment_id=$2 AND cycle_id IS NOT NULL ORDER BY cycle_id`,
-                [spaceId, commitmentId],
+                `SELECT DISTINCT cycle_id AS id FROM inter_member_obligations WHERE space_id=$1 AND commitment_id=$2 AND occurrence_id IS NOT DISTINCT FROM $3::uuid AND cycle_id IS NOT NULL ORDER BY cycle_id`,
+                [spaceId, commitmentId, occurrenceId],
             );
             for (const cycle of cycles)
                 await m.query(
@@ -48,10 +53,14 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
         }
         const query = m
             .createQueryBuilder(InterMemberObligationOrmEntity, 'o')
-            .where('o.space_id=:spaceId AND o.commitment_id=:commitmentId', {
-                spaceId,
-                commitmentId,
-            })
+            .where(
+                'o.space_id=:spaceId AND o.commitment_id=:commitmentId AND o.occurrence_id IS NOT DISTINCT FROM :occurrenceId',
+                {
+                    spaceId,
+                    commitmentId,
+                    occurrenceId,
+                },
+            )
             .orderBy('o.id', 'ASC');
         if (lock) query.setLock('pessimistic_write');
         const rows = await query.getMany();
@@ -85,22 +94,23 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
                     null,
                     o.externalLiabilityId,
                     o.status === 'WAIVED',
+                    o.occurrenceId,
                 ),
             );
         }
         const chronology: { id: string }[] = await m.query(
-            `SELECT o.id FROM inter_member_obligations o LEFT JOIN financial_disbursements d ON d.space_id=o.space_id AND d.commitment_id=o.commitment_id AND d.id=o.disbursement_id LEFT JOIN financial_receipts r ON r.space_id=o.space_id AND r.commitment_id=o.commitment_id AND r.id=o.receipt_id LEFT JOIN financial_external_liabilities e ON e.space_id=o.space_id AND e.commitment_id=o.commitment_id AND e.id=o.external_liability_id WHERE o.space_id=$1 AND o.commitment_id=$2 ORDER BY COALESCE(d.sequence,r.sequence,e.sequence),o.registered_at,o.id`,
-            [spaceId, commitmentId],
+            `SELECT o.id FROM inter_member_obligations o LEFT JOIN financial_disbursements d ON d.space_id=o.space_id AND d.commitment_id=o.commitment_id AND d.id=o.disbursement_id LEFT JOIN financial_receipts r ON r.space_id=o.space_id AND r.commitment_id=o.commitment_id AND r.id=o.receipt_id LEFT JOIN financial_external_liabilities e ON e.space_id=o.space_id AND e.commitment_id=o.commitment_id AND e.id=o.external_liability_id WHERE o.space_id=$1 AND o.commitment_id=$2 AND o.occurrence_id IS NOT DISTINCT FROM $3::uuid ORDER BY COALESCE(d.sequence,r.sequence,e.sequence),o.registered_at,o.id`,
+            [spaceId, commitmentId, occurrenceId],
         );
         const order = new Map(chronology.map((row, index) => [row.id, index]));
         obligations.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
         const settlements: OriginSettlement[] = await m.query(
-            `SELECT t.payer_member_id AS "payerMemberId",t.recipient_member_id AS "recipientMemberId",a.amount_in_cents::text AS "amountInCents" FROM settlement_allocations a JOIN settlement_transfers t ON t.space_id=a.space_id AND t.id=a.transfer_id JOIN inter_member_obligations o ON o.space_id=a.space_id AND o.id=a.obligation_id WHERE o.space_id=$1 AND o.commitment_id=$2
+            `SELECT t.payer_member_id AS "payerMemberId",t.recipient_member_id AS "recipientMemberId",a.amount_in_cents::text AS "amountInCents" FROM settlement_allocations a JOIN settlement_transfers t ON t.space_id=a.space_id AND t.id=a.transfer_id JOIN inter_member_obligations o ON o.space_id=a.space_id AND o.id=a.obligation_id WHERE o.space_id=$1 AND o.commitment_id=$2 AND o.occurrence_id IS NOT DISTINCT FROM $3::uuid
             UNION ALL
-            SELECT o.debtor_member_id AS "payerMemberId",o.creditor_member_id AS "recipientMemberId",ch.snapshot->>'appliedAmountInCents' AS "amountInCents" FROM inter_member_obligation_changes ch JOIN inter_member_obligations o ON o.space_id=ch.space_id AND o.id=ch.obligation_id WHERE o.space_id=$1 AND o.commitment_id=$2 AND ch.type IN ('OFFSET_APPLIED','WAIVED')
+            SELECT o.debtor_member_id AS "payerMemberId",o.creditor_member_id AS "recipientMemberId",ch.snapshot->>'appliedAmountInCents' AS "amountInCents" FROM inter_member_obligation_changes ch JOIN inter_member_obligations o ON o.space_id=ch.space_id AND o.id=ch.obligation_id WHERE o.space_id=$1 AND o.commitment_id=$2 AND o.occurrence_id IS NOT DISTINCT FROM $3::uuid AND ch.type IN ('OFFSET_APPLIED','WAIVED')
             UNION ALL
-            SELECT a.creditor_member_id,a.debtor_member_id,a.amount_in_cents::text FROM settlement_reversal_applications a JOIN inter_member_obligations o ON o.space_id=a.space_id AND o.id=a.original_obligation_id WHERE o.space_id=$1 AND o.commitment_id=$2`,
-            [spaceId, commitmentId],
+            SELECT a.creditor_member_id,a.debtor_member_id,a.amount_in_cents::text FROM settlement_reversal_applications a JOIN inter_member_obligations o ON o.space_id=a.space_id AND o.id=a.original_obligation_id WHERE o.space_id=$1 AND o.commitment_id=$2 AND o.occurrence_id IS NOT DISTINCT FROM $3::uuid`,
+            [spaceId, commitmentId, occurrenceId],
         );
         return {
             obligations,
@@ -110,8 +120,12 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
             })),
         };
     }
-    lockOrigin(spaceId: string, commitmentId: string) {
-        return this.originState(spaceId, commitmentId, true);
+    lockOrigin(
+        spaceId: string,
+        commitmentId: string,
+        occurrenceId: string | null = null,
+    ) {
+        return this.originState(spaceId, commitmentId, occurrenceId, true);
     }
     async saveReconciliation(
         before: InterMemberObligation,

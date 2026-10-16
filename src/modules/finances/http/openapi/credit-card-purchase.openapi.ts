@@ -29,7 +29,13 @@ const nullable = (schema: SchemaObject | ReferenceObject): SchemaObject => ({
 });
 export const expenseStatusSchema: SchemaObject = {
     type: 'string',
-    enum: ['PARTIALLY_PAID', 'PAID', 'PARTIALLY_FULFILLED', 'FULFILLED'],
+    enum: [
+        'PENDING',
+        'PARTIALLY_PAID',
+        'PAID',
+        'PARTIALLY_FULFILLED',
+        'FULFILLED',
+    ],
 };
 export const expenseSupportProperties: Record<
     string,

@@ -48,6 +48,7 @@ export class InterMemberObligation {
         reconciliation: ObligationReconciliation | null = null,
         readonly originExternalLiabilityId: string | null = null,
         readonly waived = false,
+        readonly occurrenceId: string | null = null,
     ) {
         if (
             debtorMemberId === creditorMemberId ||
@@ -117,6 +118,7 @@ export class InterMemberObligation {
             this.reconciliation,
             this.originExternalLiabilityId,
             this.waived,
+            this.occurrenceId,
         );
     }
     applySettlement(
@@ -154,6 +156,7 @@ export class InterMemberObligation {
             null,
             this.originExternalLiabilityId,
             this.waived,
+            this.occurrenceId,
         );
     }
     reconcile(
@@ -198,6 +201,7 @@ export class InterMemberObligation {
             },
             this.originExternalLiabilityId,
             this.waived && remainingAmountInCents === 0,
+            this.occurrenceId,
         );
     }
     waive(
@@ -239,6 +243,7 @@ export class InterMemberObligation {
             null,
             this.originExternalLiabilityId,
             remaining === 0,
+            this.occurrenceId,
         );
     }
     reverseResolution(
@@ -278,6 +283,7 @@ export class InterMemberObligation {
             null,
             this.originExternalLiabilityId,
             this.waived && remainingAmountInCents === 0,
+            this.occurrenceId,
         );
     }
 }
