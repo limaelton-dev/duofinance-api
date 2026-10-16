@@ -1,8 +1,5 @@
-import {
-    BadRequestException,
-    Injectable,
-    type PipeTransform,
-} from '@nestjs/common';
+import { parseZodInput } from '../../../../shared/technical/http/validation/parse-zod-input.js';
+import { Injectable, type PipeTransform } from '@nestjs/common';
 import { z } from 'zod';
 import { civilDate } from '../../domain/shared-expense/settlement-cycle.js';
 const integer = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
@@ -28,17 +25,6 @@ export type SettleExternalLiabilityDto = z.infer<
 @Injectable()
 export class SettleExternalLiabilityPipe implements PipeTransform {
     transform(input: unknown): SettleExternalLiabilityDto {
-        const parsed = externalLiabilitySettlementInputSchema.safeParse(input);
-        if (parsed.success) return parsed.data;
-        throw new BadRequestException({
-            code: 'VALIDATION_ERROR',
-            message: 'Verifique os dados informados.',
-            details: {
-                fields: parsed.error.issues.map((issue) => ({
-                    field: issue.path.join('.'),
-                    messages: [issue.message],
-                })),
-            },
-        });
+        return parseZodInput(externalLiabilitySettlementInputSchema, input);
     }
 }

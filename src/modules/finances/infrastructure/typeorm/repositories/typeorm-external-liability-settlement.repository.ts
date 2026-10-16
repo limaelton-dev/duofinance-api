@@ -16,7 +16,7 @@ import {
 } from '../entities/shared-expense.orm-entity.js';
 import { FinancialExternalLiabilitySettlementOrmEntity } from '../entities/external-liability-settlement.orm-entity.js';
 // Every consumer reads version, balance and settlement history in one snapshot.
-const externalLiabilityProjection = `
+export const externalLiabilityProjection = `
             SELECT c.id AS "commitmentId",c.version AS "commitmentVersion",c.description,
                 jsonb_strip_nulls(jsonb_build_object(
                     'id',f.id,'sequence',f.sequence,'holderMemberId',f.holder_member_id,'holderPersonId',f.holder_person_id,

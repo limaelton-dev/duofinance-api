@@ -1,8 +1,5 @@
-import {
-    BadRequestException,
-    Injectable,
-    type PipeTransform,
-} from '@nestjs/common';
+import { parseZodInput } from '../../../../shared/technical/http/validation/parse-zod-input.js';
+import { Injectable, type PipeTransform } from '@nestjs/common';
 import { z } from 'zod';
 import { civilDate } from '../../domain/shared-expense/settlement-cycle.js';
 const uuid = z.uuid().transform((v) => v.toLowerCase());
@@ -50,17 +47,6 @@ export type RecordExpenseDisbursementDto = z.infer<
 @Injectable()
 export class RecordExpenseDisbursementPipe implements PipeTransform {
     transform(input: unknown): RecordExpenseDisbursementDto {
-        const parsed = expenseDisbursementInputSchema.safeParse(input);
-        if (parsed.success) return parsed.data;
-        throw new BadRequestException({
-            code: 'VALIDATION_ERROR',
-            message: 'Verifique os dados informados.',
-            details: {
-                fields: parsed.error.issues.map((issue) => ({
-                    field: issue.path.join('.'),
-                    messages: [issue.message],
-                })),
-            },
-        });
+        return parseZodInput(expenseDisbursementInputSchema, input);
     }
 }

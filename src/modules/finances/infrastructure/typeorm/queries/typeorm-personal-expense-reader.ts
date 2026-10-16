@@ -1,3 +1,4 @@
+import { externalLiabilityProjection } from '../repositories/typeorm-external-liability-settlement.repository.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
 import type { PersonalExpenseReader } from '../../../application/ports/private/personal-expense.ports.js';
@@ -36,42 +37,76 @@ export class TypeOrmPersonalExpenseReader implements PersonalExpenseReader {
         spaceId: string,
         after: { factDate: string; id: string } | null,
     ): Promise<PersonalExpenseSummary[]> {
-        const rows: { id: string }[] = await this.provider
-            .get()
-            .query(
-                `SELECT c.id FROM financial_commitments c JOIN financial_commitment_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id AND v.version=1 WHERE c.space_id=$1 AND c.kind='EXPENSE' AND c.personal_owner_person_id IS NOT NULL AND ($2::date IS NULL OR (v.fact_date,c.id)<($2::date,$3::uuid)) ORDER BY v.fact_date DESC,c.id DESC LIMIT 21`,
-                [spaceId, after?.factDate ?? null, after?.id ?? null],
-            );
-        return Promise.all(
-            rows.map(async (r) => {
-                const c = await this.commitments.find(spaceId, r.id);
-                if (!c || !('ownerPersonId' in c.initialVersion))
-                    throw new Error('Personal expense missing');
-                const view = personalExpenseView(
-                    c as FinancialCommitment<PersonalCommitmentVersion>,
-                );
-                return {
-                    id: r.id,
-                    description: view.commitment.description,
-                    amountInCents: view.commitment.amountInCents,
-                    factDate: view.commitment.factDate,
-                    disbursement: view.disbursement
-                        ? {
-                              amountInCents: view.disbursement.amountInCents,
-                              method: view.disbursement.method,
-                          }
-                        : null,
-                    externalLiabilities: view.externalLiabilities,
-                    assumedAmountInCents: view.assumedAmountInCents,
-                    externalOutstandingAmountInCents:
-                        view.externalOutstandingAmountInCents,
-                    supportedAmountInCents: view.supportedAmountInCents,
-                    fulfillmentStatus: view.fulfillmentStatus,
-                    paidAmountInCents: view.paidAmountInCents,
-                    remainingAmountInCents: view.remainingAmountInCents,
-                    status: view.status,
-                };
-            }),
+        // Limit roots first. Totals, first disbursement and the existing liability
+        // contract are projected together in one statement/snapshot.
+        const rows: {
+            id: string;
+            description: string;
+            amount: string;
+            factDate: string;
+            paid: string;
+            assumed: string;
+            outstanding: string;
+            disbursement: PersonalExpenseSummary['disbursement'];
+            externalLiabilities: NonNullable<
+                PersonalExpenseSummary['externalLiabilities']
+            >;
+        }[] = await this.provider.get().query(
+            `WITH page AS MATERIALIZED (
+                SELECT c.id,c.space_id,c.description,v.amount_in_cents,v.fact_date
+                FROM financial_commitments c JOIN financial_commitment_versions v
+                    ON v.space_id=c.space_id AND v.commitment_id=c.id AND v.version=1
+                WHERE c.space_id=$1 AND c.kind='EXPENSE' AND c.personal_owner_person_id IS NOT NULL
+                    AND ($2::date IS NULL OR (v.fact_date,c.id)<($2::date,$3::uuid))
+                ORDER BY v.fact_date DESC,c.id DESC LIMIT 21
+            )
+            SELECT p.id,p.description,p.amount_in_cents::text AS amount,p.fact_date::text AS "factDate",
+                COALESCE(d.paid,0)::text AS paid,COALESCE(f.assumed,0)::text AS assumed,
+                COALESCE(f.outstanding,0)::text AS outstanding,
+                (SELECT jsonb_build_object('amountInCents',amount_in_cents,'method',method)
+                    FROM financial_disbursements WHERE space_id=p.space_id AND commitment_id=p.id
+                    ORDER BY sequence LIMIT 1) AS disbursement,
+                COALESCE(f.liabilities,'[]'::jsonb) AS "externalLiabilities"
+            FROM page p
+            LEFT JOIN LATERAL (
+                SELECT SUM(amount_in_cents) AS paid FROM financial_disbursements
+                WHERE space_id=p.space_id AND commitment_id=p.id
+            ) d ON true
+            LEFT JOIN LATERAL (
+                SELECT SUM((x."externalLiability"->>'amountInCents')::bigint) AS assumed,
+                    SUM((x."externalLiability"->>'remainingAmountInCents')::bigint) AS outstanding,
+                    jsonb_agg(x."externalLiability" ORDER BY (x."externalLiability"->>'sequence')::int) AS liabilities
+                FROM (${externalLiabilityProjection} WHERE c.space_id=p.space_id AND c.id=p.id) x
+            ) f ON true
+            ORDER BY p.fact_date DESC,p.id DESC`,
+            [spaceId, after?.factDate ?? null, after?.id ?? null],
         );
+        return rows.map((r) => {
+            const paid = Number(r.paid),
+                assumed = Number(r.assumed);
+            const supported = paid + assumed;
+            const remaining = Number(r.amount) - supported;
+            const fulfillmentStatus =
+                remaining === 0 ? 'FULFILLED' : 'PARTIALLY_FULFILLED';
+            return {
+                id: r.id,
+                description: r.description,
+                amountInCents: Number(r.amount),
+                factDate: r.factDate,
+                disbursement: r.disbursement,
+                externalLiabilities: r.externalLiabilities,
+                assumedAmountInCents: assumed,
+                externalOutstandingAmountInCents: Number(r.outstanding),
+                supportedAmountInCents: supported,
+                fulfillmentStatus,
+                paidAmountInCents: paid,
+                remainingAmountInCents: remaining,
+                status: r.externalLiabilities.length
+                    ? fulfillmentStatus
+                    : remaining === 0
+                      ? 'PAID'
+                      : 'PARTIALLY_PAID',
+            };
+        });
     }
 }

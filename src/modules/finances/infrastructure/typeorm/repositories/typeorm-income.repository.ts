@@ -88,6 +88,15 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
         commitmentId: string,
         lock = false,
     ): Promise<IncomeCommitment | null> {
+        return this.provider.readSnapshot(() =>
+            this.findInSnapshot(spaceId, commitmentId, lock),
+        );
+    }
+    private async findInSnapshot(
+        spaceId: string,
+        commitmentId: string,
+        lock: boolean,
+    ): Promise<IncomeCommitment | null> {
         const m = this.provider.get();
         const query = m
             .createQueryBuilder(FinancialCommitmentOrmEntity, 'c')
@@ -162,6 +171,14 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
         );
     }
     async detail(
+        spaceId: string,
+        commitmentId: string,
+    ): Promise<IncomeView | null> {
+        return this.provider.readSnapshot(() =>
+            this.detailInSnapshot(spaceId, commitmentId),
+        );
+    }
+    private async detailInSnapshot(
         spaceId: string,
         commitmentId: string,
     ): Promise<IncomeView | null> {
@@ -303,6 +320,11 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
         );
     }
     async upcoming(spaceId: string, referenceDate: string) {
+        return this.provider.readSnapshot(() =>
+            this.upcomingInSnapshot(spaceId, referenceDate),
+        );
+    }
+    private async upcomingInSnapshot(spaceId: string, referenceDate: string) {
         const query = this.summaryQuery(spaceId).andWhere(
             `${this.remainingSql} AND v.expected_receipt_date>=:referenceDate`,
             { referenceDate },

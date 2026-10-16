@@ -96,6 +96,15 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
         commitmentId: string,
         lock = false,
     ): Promise<FinancialCommitment<ExpenseVersion> | null> {
+        return this.provider.readSnapshot(() =>
+            this.findInSnapshot(spaceId, commitmentId, lock),
+        );
+    }
+    private async findInSnapshot(
+        spaceId: string,
+        commitmentId: string,
+        lock: boolean,
+    ): Promise<FinancialCommitment<ExpenseVersion> | null> {
         const m = this.provider.get();
         const query = m
             .createQueryBuilder(FinancialCommitmentOrmEntity, 'c')
@@ -218,6 +227,14 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
         );
     }
     async detail(
+        spaceId: string,
+        commitmentId: string,
+    ): Promise<SharedCashExpenseView | null> {
+        return this.provider.readSnapshot(() =>
+            this.detailInSnapshot(spaceId, commitmentId),
+        );
+    }
+    private async detailInSnapshot(
         spaceId: string,
         commitmentId: string,
     ): Promise<SharedCashExpenseView | null> {

@@ -1,8 +1,5 @@
-import {
-    BadRequestException,
-    Injectable,
-    type PipeTransform,
-} from '@nestjs/common';
+import { parseZodInput } from '../../../../shared/technical/http/validation/parse-zod-input.js';
+import { Injectable, type PipeTransform } from '@nestjs/common';
 import { z } from 'zod';
 import { civilDate } from '../../domain/shared-expense/settlement-cycle.js';
 export const personalExpenseInputSchema = z
@@ -36,31 +33,6 @@ export type RecordPersonalExpenseDto = z.infer<
 @Injectable()
 export class RecordPersonalExpensePipe implements PipeTransform {
     transform(input: unknown): RecordPersonalExpenseDto {
-        const parsed = personalExpenseInputSchema.safeParse(input);
-        if (!parsed.success)
-            throw new BadRequestException({
-                code: 'VALIDATION_ERROR',
-                message: 'Verifique os dados informados.',
-                details: {
-                    fields: parsed.error.issues.flatMap((issue) =>
-                        issue.code === 'unrecognized_keys'
-                            ? issue.keys.map((key) => ({
-                                  field: [...issue.path, key].join('.'),
-                                  messages: ['Este campo não é permitido.'],
-                              }))
-                            : [
-                                  {
-                                      field: issue.path.join('.'),
-                                      messages: [
-                                          issue.code === 'custom'
-                                              ? issue.message
-                                              : 'Informe um valor válido para este campo.',
-                                      ],
-                                  },
-                              ],
-                    ),
-                },
-            });
-        return parsed.data;
+        return parseZodInput(personalExpenseInputSchema, input);
     }
 }

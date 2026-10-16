@@ -1,8 +1,5 @@
-import {
-    BadRequestException,
-    Injectable,
-    type PipeTransform,
-} from '@nestjs/common';
+import { parseZodInput } from '../../../../shared/technical/http/validation/parse-zod-input.js';
+import { Injectable, type PipeTransform } from '@nestjs/common';
 import { z } from 'zod';
 import { expenseInputSchema } from './record-shared-cash-expense.dto.js';
 import { civilDate } from '../../domain/shared-expense/settlement-cycle.js';
@@ -62,29 +59,16 @@ export type RecordCreditCardPurchaseDto = z.infer<
 export type RecordExternalLiabilityDto = z.infer<
     typeof externalLiabilityInputSchema
 >;
-function parse<T>(schema: z.ZodType<T>, input: unknown): T {
-    const parsed = schema.safeParse(input);
-    if (parsed.success) return parsed.data;
-    throw new BadRequestException({
-        code: 'VALIDATION_ERROR',
-        message: 'Verifique os dados informados.',
-        details: {
-            fields: parsed.error.issues.map((i) => ({
-                field: i.path.join('.'),
-                messages: [i.message],
-            })),
-        },
-    });
-}
+
 @Injectable()
 export class RecordCreditCardPurchasePipe implements PipeTransform {
     transform(input: unknown): RecordCreditCardPurchaseDto {
-        return parse(creditCardPurchaseInputSchema, input);
+        return parseZodInput(creditCardPurchaseInputSchema, input);
     }
 }
 @Injectable()
 export class RecordExternalLiabilityPipe implements PipeTransform {
     transform(input: unknown): RecordExternalLiabilityDto {
-        return parse(externalLiabilityInputSchema, input);
+        return parseZodInput(externalLiabilityInputSchema, input);
     }
 }

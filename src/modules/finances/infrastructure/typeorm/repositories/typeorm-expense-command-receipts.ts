@@ -1,3 +1,4 @@
+import { recordFinancialCommandAudit } from './record-financial-command-audit.js';
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { QueryFailedError } from 'typeorm';
@@ -112,5 +113,12 @@ export class TypeOrmExpenseCommandReceipts implements ExpenseCommandReceipts {
                 throw new ExpenseReceiptRaceError();
             throw error;
         }
+        await recordFinancialCommandAudit(
+            this.provider.get(),
+            c,
+            'RECORD_SHARED_CASH_EXPENSE',
+            result.commitment.id,
+            registeredAt,
+        );
     }
 }

@@ -434,6 +434,7 @@ describe('CARD-001 — PostgreSQL e HTTP', () => {
             'PartialFinancialFulfillment1792022400000',
             'RecordCreditCardPurchase1792087652424',
             'ExternalLiabilitySettlements1792110000000',
+            'FinancialCommandAudit1792154979034',
         ]);
         expect(await counts()).toEqual([0, 0, 0, 0]);
 
