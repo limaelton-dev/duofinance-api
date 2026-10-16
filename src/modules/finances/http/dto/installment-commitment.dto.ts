@@ -168,6 +168,60 @@ export const installmentAnticipationSchema = z.union([
         })
         .strict(),
 ]);
+const resolutionVersions = z
+    .array(
+        z
+            .object({
+                installmentId: uuid,
+                expectedInstallmentVersion: integer.min(1),
+            })
+            .strict(),
+    )
+    .min(1)
+    .max(1200);
+export const installmentPayoffPreviewSchema = z
+    .object({
+        paidAmountInCents: integer.min(1),
+        factDate: date,
+        payerMemberId: uuid.optional(),
+        method: z.enum(['PIX', 'DEBIT', 'CASH']).optional(),
+        settlement: settlement.optional(),
+        expectedCommitmentVersion: integer.min(1).optional(),
+        expectedSpaceVersion: integer.min(1).optional(),
+    })
+    .strict();
+export const installmentPayoffSchema = z.union([
+    z
+        .object({
+            paidAmountInCents: integer.min(1),
+            factDate: date,
+            installments: resolutionVersions,
+            method: z.enum(['PIX', 'DEBIT', 'CASH']),
+            expectedCommitmentVersion: integer.min(1),
+        })
+        .strict(),
+    z
+        .object({
+            paidAmountInCents: integer.min(1),
+            factDate: date,
+            installments: resolutionVersions,
+            method: z.enum(['PIX', 'DEBIT', 'CASH']),
+            payerMemberId: uuid,
+            expectedCommitmentVersion: integer.min(1),
+            expectedSpaceVersion: integer.min(1),
+            settlement,
+        })
+        .strict(),
+]);
+export const installmentCancellationSchema = z
+    .object({
+        installments: resolutionVersions,
+        reason: z.string().trim().min(1).max(500),
+        factDate: date,
+        expectedCommitmentVersion: integer.min(1),
+        expectedSpaceVersion: integer.min(1).optional(),
+    })
+    .strict();
 export type InstallmentDisbursementDto = z.infer<
     typeof installmentDisbursementSchema
 >;
@@ -182,6 +236,13 @@ export type InstallmentAnticipationPreviewDto = z.infer<
 >;
 export type InstallmentAnticipationDto = z.infer<
     typeof installmentAnticipationSchema
+>;
+export type InstallmentPayoffPreviewDto = z.infer<
+    typeof installmentPayoffPreviewSchema
+>;
+export type InstallmentPayoffDto = z.infer<typeof installmentPayoffSchema>;
+export type InstallmentCancellationDto = z.infer<
+    typeof installmentCancellationSchema
 >;
 
 @Injectable()
@@ -218,5 +279,23 @@ export class InstallmentAnticipationPreviewPipe implements PipeTransform {
 export class InstallmentAnticipationPipe implements PipeTransform {
     transform(input: unknown): InstallmentAnticipationDto {
         return parseZodInput(installmentAnticipationSchema, input);
+    }
+}
+@Injectable()
+export class InstallmentPayoffPreviewPipe implements PipeTransform {
+    transform(input: unknown): InstallmentPayoffPreviewDto {
+        return parseZodInput(installmentPayoffPreviewSchema, input);
+    }
+}
+@Injectable()
+export class InstallmentPayoffPipe implements PipeTransform {
+    transform(input: unknown): InstallmentPayoffDto {
+        return parseZodInput(installmentPayoffSchema, input);
+    }
+}
+@Injectable()
+export class InstallmentCancellationPipe implements PipeTransform {
+    transform(input: unknown): InstallmentCancellationDto {
+        return parseZodInput(installmentCancellationSchema, input);
     }
 }

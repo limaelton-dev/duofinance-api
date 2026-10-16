@@ -43,6 +43,27 @@ export interface AnticipationPlanItem {
     effectiveEconomicShares: readonly EconomicShare[] | null;
 }
 
+export interface InstallmentResolutionItem {
+    installmentId: string;
+    position: number;
+    dueDate: string;
+    plannedAmountInCents: number;
+    previouslyFulfilledAmountInCents: number;
+    expectedRemainingAmountInCents: number;
+    expectedInstallmentVersion: number;
+    remainingEconomicShares: readonly EconomicShare[] | null;
+}
+
+export interface InstallmentPayoffImpact {
+    items: readonly InstallmentResolutionItem[];
+    expectedRemainingAmountInCents: number;
+    paidAmountInCents: number;
+    adjustmentInCents: number;
+    expectedRemainingShares: readonly EconomicShare[] | null;
+    effectiveEconomicShares: readonly EconomicShare[] | null;
+    recognizedRemainingShares: readonly EconomicShare[] | null;
+}
+
 export class InstallmentCommitment {
     readonly kind = 'EXPENSE';
     readonly modality = 'INSTALLMENT';
@@ -133,6 +154,137 @@ export class InstallmentCommitment {
         if (!item || item.position !== position)
             throw new FinancesError('FINANCIAL_COMMITMENT_NOT_FOUND');
         return item.anticipation?.economicShares ?? this.sharesFor(position);
+    }
+
+    resolutionOptions(): readonly InstallmentResolutionItem[] {
+        return Object.freeze(
+            this.plan.installments.map((item) => {
+                const planned = this.sharesFor(item.position);
+                const realized =
+                    planned &&
+                    item.remainingAmountInCents > 0 &&
+                    item.fulfilledAmountInCents > 0
+                        ? ResponsibilitySplit.create(
+                              item.amountInCents,
+                              planned.map((share) => share.memberId),
+                              {
+                                  mode: 'AMOUNTS',
+                                  shares: planned.map((share) => ({
+                                      ...share,
+                                  })),
+                              },
+                          ).realizedShares(item.fulfilledAmountInCents)
+                        : (planned?.map((share) => ({
+                              memberId: share.memberId,
+                              amountInCents: 0,
+                          })) ?? null);
+                return Object.freeze({
+                    installmentId: item.id,
+                    position: item.position,
+                    dueDate: item.dueDate,
+                    plannedAmountInCents: item.amountInCents,
+                    previouslyFulfilledAmountInCents:
+                        item.fulfilledAmountInCents,
+                    expectedRemainingAmountInCents: item.remainingAmountInCents,
+                    expectedInstallmentVersion: item.stateVersion,
+                    remainingEconomicShares:
+                        planned?.map((share, index) => ({
+                            memberId: share.memberId,
+                            amountInCents:
+                                item.remainingAmountInCents === 0
+                                    ? 0
+                                    : share.amountInCents -
+                                      realized![index]!.amountInCents,
+                        })) ?? null,
+                });
+            }),
+        );
+    }
+
+    payoffImpact(
+        paidAmountInCents: number,
+        actorMemberId: string | null,
+    ): InstallmentPayoffImpact {
+        if (
+            this.plan.payoff ||
+            !Number.isSafeInteger(paidAmountInCents) ||
+            paidAmountInCents < 1
+        )
+            throw new FinancesError('VALIDATION_ERROR', ['paidAmountInCents']);
+        const items = this.resolutionOptions().filter(
+            (item) => item.expectedRemainingAmountInCents > 0,
+        );
+        if (!items.length)
+            throw new FinancesError('OCCURRENCE_ALREADY_RESOLVED');
+        const expectedBig = items.reduce(
+            (sum, item) => sum + BigInt(item.expectedRemainingAmountInCents),
+            0n,
+        );
+        if (expectedBig > BigInt(Number.MAX_SAFE_INTEGER))
+            throw new FinancesError('VALIDATION_ERROR', ['amountInCents']);
+        const expected = Number(expectedBig);
+        const fulfilledBefore = this.plan.installments.reduce(
+            (sum, item) => sum + BigInt(item.fulfilledAmountInCents),
+            0n,
+        );
+        if (
+            fulfilledBefore + BigInt(paidAmountInCents) >
+            BigInt(Number.MAX_SAFE_INTEGER)
+        )
+            throw new FinancesError('VALIDATION_ERROR', ['paidAmountInCents']);
+        let expectedShares: readonly EconomicShare[] | null = null;
+        let effectiveShares: readonly EconomicShare[] | null = null;
+        let recognizedShares: readonly EconomicShare[] | null = null;
+        if (this.participation.type === 'SHARED') {
+            const members = this.participation.distribution.shares.map(
+                (share) => share.memberId,
+            );
+            if (!actorMemberId || !members.includes(actorMemberId))
+                throw new FinancesError('VALIDATION_ERROR', ['actorMemberId']);
+            const sumShares = (
+                selected: readonly InstallmentResolutionItem[],
+            ) =>
+                members.map((memberId) => ({
+                    memberId,
+                    amountInCents: selected.reduce(
+                        (sum, item) =>
+                            sum +
+                            (item.remainingEconomicShares?.find(
+                                (share) => share.memberId === memberId,
+                            )?.amountInCents ?? 0),
+                        0,
+                    ),
+                }));
+            expectedShares = sumShares(items);
+            recognizedShares = sumShares(
+                items.filter(
+                    (item) => item.previouslyFulfilledAmountInCents > 0,
+                ),
+            );
+            effectiveShares =
+                paidAmountInCents <= expected
+                    ? ResponsibilitySplit.create(expected, members, {
+                          mode: 'AMOUNTS',
+                          shares: expectedShares.map((share) => ({ ...share })),
+                      }).realizedShares(paidAmountInCents)
+                    : expectedShares.map((share) => ({
+                          memberId: share.memberId,
+                          amountInCents:
+                              share.amountInCents +
+                              (share.memberId === actorMemberId
+                                  ? paidAmountInCents - expected
+                                  : 0),
+                      }));
+        }
+        return Object.freeze({
+            items,
+            expectedRemainingAmountInCents: expected,
+            paidAmountInCents,
+            adjustmentInCents: paidAmountInCents - expected,
+            expectedRemainingShares: expectedShares,
+            effectiveEconomicShares: effectiveShares,
+            recognizedRemainingShares: recognizedShares,
+        });
     }
 
     selectForAnticipation(

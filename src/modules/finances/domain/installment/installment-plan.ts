@@ -3,7 +3,32 @@ import type { EconomicShare } from '../shared-expense/responsibility-split.js';
 import { civilDate } from '../shared-expense/settlement-cycle.js';
 
 export type InstallmentCadence = 'MONTHLY' | 'ANNUAL';
-export type InstallmentStatus = 'PENDING' | 'PARTIALLY_FULFILLED' | 'FULFILLED';
+export type InstallmentStatus =
+    'PENDING' | 'PARTIALLY_FULFILLED' | 'FULFILLED' | 'PAID_OFF' | 'CANCELLED';
+
+export interface InstallmentResolution {
+    id: string;
+    type: 'PAYOFF' | 'CANCELLED';
+    payoffId: string | null;
+    expectedRemainingAmountInCents: number;
+    factDate: string;
+    actorId: string;
+    registeredAt: string;
+    reason: string | null;
+}
+
+export interface InstallmentPayoff {
+    id: string;
+    factId: string;
+    factDate: string;
+    actorId: string;
+    registeredAt: string;
+    expectedRemainingAmountInCents: number;
+    paidAmountInCents: number;
+    adjustmentInCents: number;
+    economicShares: readonly EconomicShare[] | null;
+    recognizedRemainingShares: readonly EconomicShare[] | null;
+}
 
 export interface InstallmentScheduleInput {
     count: number;
@@ -159,6 +184,7 @@ export class Installment {
         readonly fulfilledAmountInCents = 0,
         readonly stateVersion = 1,
         readonly anticipation: InstallmentAnticipation | null = null,
+        readonly resolution: InstallmentResolution | null = null,
     ) {
         if (!id || !Number.isSafeInteger(position) || position < 1)
             invalid('installments');
@@ -193,15 +219,38 @@ export class Installment {
                 fulfilledAmountInCents !== this.effectiveAmountInCents)
         )
             invalid('anticipation');
+        if (resolution) validDate(resolution.factDate, 'factDate');
+        if (
+            resolution &&
+            (!resolution.id ||
+                !resolution.actorId ||
+                !Number.isFinite(Date.parse(resolution.registeredAt)) ||
+                (resolution.type === 'CANCELLED' &&
+                    resolution.factDate >= dueDate) ||
+                resolution.expectedRemainingAmountInCents !==
+                    amountInCents - fulfilledAmountInCents ||
+                resolution.expectedRemainingAmountInCents < 1 ||
+                (resolution.type === 'PAYOFF') !==
+                    (resolution.payoffId !== null) ||
+                (resolution.type === 'CANCELLED') !==
+                    (resolution.reason !== null) ||
+                anticipation !== null)
+        )
+            invalid('resolution');
         const actualStatus =
-            fulfilledAmountInCents === 0
-                ? 'PENDING'
-                : fulfilledAmountInCents === this.effectiveAmountInCents
-                  ? 'FULFILLED'
-                  : 'PARTIALLY_FULFILLED';
+            resolution?.type === 'PAYOFF'
+                ? 'PAID_OFF'
+                : resolution?.type === 'CANCELLED'
+                  ? 'CANCELLED'
+                  : fulfilledAmountInCents === 0
+                    ? 'PENDING'
+                    : fulfilledAmountInCents === this.effectiveAmountInCents
+                      ? 'FULFILLED'
+                      : 'PARTIALLY_FULFILLED';
         if (status !== actualStatus) invalid('status');
-        this.remainingAmountInCents =
-            this.effectiveAmountInCents - fulfilledAmountInCents;
+        this.remainingAmountInCents = resolution
+            ? 0
+            : this.effectiveAmountInCents - fulfilledAmountInCents;
         Object.freeze(this);
     }
 }
@@ -217,6 +266,7 @@ export class InstallmentPlan {
         readonly commitmentId: string,
         readonly spaceId: string,
         installments: readonly Installment[],
+        readonly payoff: InstallmentPayoff | null = null,
     ) {
         if (!id || !commitmentId || !spaceId || installments.length < 1)
             invalid('installments');
@@ -236,10 +286,27 @@ export class InstallmentPlan {
         }
         if (total > BigInt(Number.MAX_SAFE_INTEGER)) invalid('installments');
         this.installments = Object.freeze([...installments]);
+        if (
+            payoff &&
+            (payoff.expectedRemainingAmountInCents < 1 ||
+                payoff.paidAmountInCents < 1 ||
+                payoff.adjustmentInCents !==
+                    payoff.paidAmountInCents -
+                        payoff.expectedRemainingAmountInCents ||
+                !installments.some(
+                    (item) => item.resolution?.payoffId === payoff.id,
+                ) ||
+                installments.some(
+                    (item) =>
+                        item.resolution?.type === 'PAYOFF' &&
+                        item.resolution.payoffId !== payoff.id,
+                ))
+        )
+            invalid('payoff');
         this.count = installments.length;
         this.totalAmountInCents = Number(total);
         this.status = installments.every(
-            (installment) => installment.status === 'FULFILLED',
+            (installment) => installment.remainingAmountInCents === 0,
         )
             ? 'COMPLETED'
             : 'OPEN';

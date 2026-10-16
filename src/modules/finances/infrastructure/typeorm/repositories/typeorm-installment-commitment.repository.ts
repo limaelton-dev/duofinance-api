@@ -4,7 +4,11 @@ import { In } from 'typeorm';
 import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
 import type { InstallmentCommitmentRepository } from '../../../application/ports/private/installment-commitment.repository.js';
 import { FinancesError } from '../../../domain/errors/finances.error.js';
-import { InstallmentCommitment } from '../../../domain/installment/installment-commitment.js';
+import {
+    InstallmentCommitment,
+    type InstallmentPayoffImpact,
+    type InstallmentResolutionItem,
+} from '../../../domain/installment/installment-commitment.js';
 import {
     Installment,
     InstallmentPlan,
@@ -22,6 +26,8 @@ import {
 import { FinancialOccurrenceOrmEntity } from '../entities/recurrence.orm-entity.js';
 import {
     FinancialInstallmentAnticipationOrmEntity,
+    FinancialInstallmentPayoffOrmEntity,
+    FinancialInstallmentResolutionOrmEntity,
     FinancialInstallmentCommandReceiptOrmEntity,
     FinancialInstallmentOrmEntity,
     FinancialInstallmentPlanOrmEntity,
@@ -147,6 +153,13 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
             FinancialInstallmentAnticipationOrmEntity,
             { where: { spaceId, commitmentId } },
         );
+        const payoffs = await m.find(FinancialInstallmentPayoffOrmEntity, {
+            where: { spaceId, commitmentId },
+        });
+        const resolutions = await m.find(
+            FinancialInstallmentResolutionOrmEntity,
+            { where: { spaceId, commitmentId } },
+        );
         const fulfilled: { installment_id: string; amount: string }[] =
             await m.query(
                 `SELECT installment_id,SUM(amount_in_cents)::text AS amount FROM (
@@ -163,7 +176,13 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
                 row.position,
                 row.dueDate,
                 row.amountInCents,
-                state.status as Installment['status'],
+                (resolutions.find((item) => item.installmentId === row.id)
+                    ?.type === 'PAYOFF'
+                    ? 'PAID_OFF'
+                    : resolutions.find((item) => item.installmentId === row.id)
+                            ?.type === 'CANCELLED'
+                      ? 'CANCELLED'
+                      : state.status) as Installment['status'],
                 Number(
                     fulfilled.find((item) => item.installment_id === row.id)
                         ?.amount ?? '0',
@@ -189,6 +208,25 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
                           }
                         : null;
                 })(),
+                (() => {
+                    const resolution = resolutions.find(
+                        (item) => item.installmentId === row.id,
+                    );
+                    return resolution
+                        ? {
+                              id: resolution.id,
+                              type: resolution.type,
+                              payoffId: resolution.payoffId,
+                              expectedRemainingAmountInCents:
+                                  resolution.expectedRemainingAmountInCents,
+                              factDate: resolution.factDate,
+                              actorId: resolution.actorId,
+                              registeredAt:
+                                  resolution.registeredAt.toISOString(),
+                              reason: resolution.reason,
+                          }
+                        : null;
+                })(),
             );
         });
         return new InstallmentCommitment(
@@ -198,7 +236,28 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
             c.createdBy,
             c.registeredAt.toISOString(),
             c.version,
-            new InstallmentPlan(plan.id, c.id, c.spaceId, installments),
+            new InstallmentPlan(
+                plan.id,
+                c.id,
+                c.spaceId,
+                installments,
+                payoffs[0]
+                    ? {
+                          id: payoffs[0].id,
+                          factId: payoffs[0].factId,
+                          factDate: payoffs[0].factDate,
+                          actorId: payoffs[0].actorId,
+                          registeredAt: payoffs[0].registeredAt.toISOString(),
+                          expectedRemainingAmountInCents:
+                              payoffs[0].expectedRemainingAmountInCents,
+                          paidAmountInCents: payoffs[0].paidAmountInCents,
+                          adjustmentInCents: payoffs[0].adjustmentInCents,
+                          economicShares: payoffs[0].economicShares,
+                          recognizedRemainingShares:
+                              payoffs[0].recognizedRemainingShares,
+                      }
+                    : null,
+            ),
             c.personalOwnerPersonId
                 ? { type: 'PERSONAL', ownerPersonId: c.personalOwnerPersonId }
                 : {
@@ -456,6 +515,119 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
                 factDate: anticipation.factDate,
                 registeredAt: new Date(anticipation.registeredAt),
                 actorId: anticipation.actorId,
+            });
+    }
+
+    private async resolveState(
+        root: InstallmentCommitment,
+        items: readonly InstallmentResolutionItem[],
+    ) {
+        const m = this.manager();
+        const changed = await m.update(
+            FinancialCommitmentOrmEntity,
+            { id: root.id, spaceId: root.spaceId, version: root.version },
+            { version: root.version + 1 },
+        );
+        if (changed.affected !== 1)
+            throw new FinancesError('CONCURRENT_MODIFICATION');
+        for (const item of items) {
+            const state = await m.update(
+                FinancialOccurrenceOrmEntity,
+                {
+                    id: item.installmentId,
+                    spaceId: root.spaceId,
+                    commitmentId: root.id,
+                    stateVersion: item.expectedInstallmentVersion,
+                },
+                { stateVersion: item.expectedInstallmentVersion + 1 },
+            );
+            if (state.affected !== 1)
+                throw new FinancesError('CONCURRENT_MODIFICATION');
+        }
+    }
+
+    async payoff(
+        root: InstallmentCommitment,
+        impact: InstallmentPayoffImpact,
+        fact: Extract<OccurrenceFact, { kind: 'DISBURSEMENT' }>,
+        payoffId: string,
+    ) {
+        const m = this.manager();
+        await this.resolveState(root, impact.items);
+        const sequence = await this.nextSequence(root);
+        await m.insert(FinancialDisbursementOrmEntity, {
+            id: fact.id,
+            spaceId: root.spaceId,
+            commitmentId: root.id,
+            occurrenceId: null,
+            sequence,
+            version: 1,
+            recordedByPersonId: fact.recordedByPersonId,
+            payerMemberId: fact.payerMemberId,
+            payerPersonId: fact.payerPersonId,
+            amountInCents: fact.amountInCents,
+            method: fact.method,
+            factDate: fact.factDate,
+            registeredAt: new Date(fact.registeredAt),
+        });
+        await m.insert(FinancialInstallmentPayoffOrmEntity, {
+            id: payoffId,
+            spaceId: root.spaceId,
+            commitmentId: root.id,
+            factId: fact.id,
+            expectedRemainingAmountInCents:
+                impact.expectedRemainingAmountInCents,
+            paidAmountInCents: impact.paidAmountInCents,
+            adjustmentInCents: impact.adjustmentInCents,
+            economicShares: impact.effectiveEconomicShares,
+            recognizedRemainingShares: impact.recognizedRemainingShares,
+            factDate: fact.factDate,
+            actorId: fact.recordedByPersonId,
+            registeredAt: new Date(fact.registeredAt),
+        });
+        for (const item of impact.items)
+            await m.insert(FinancialInstallmentResolutionOrmEntity, {
+                id: randomUUID(),
+                spaceId: root.spaceId,
+                commitmentId: root.id,
+                installmentId: item.installmentId,
+                type: 'PAYOFF',
+                payoffId,
+                expectedRemainingAmountInCents:
+                    item.expectedRemainingAmountInCents,
+                factDate: fact.factDate,
+                actorId: fact.recordedByPersonId,
+                registeredAt: new Date(fact.registeredAt),
+                reason: null,
+                economicShares: item.remainingEconomicShares,
+            });
+    }
+
+    async cancelFuture(
+        root: InstallmentCommitment,
+        items: readonly InstallmentResolutionItem[],
+        reason: string,
+        actorId: string,
+        factDate: string,
+        now: string,
+    ) {
+        const m = this.manager();
+        await this.resolveState(root, items);
+        for (const item of items)
+            await m.insert(FinancialInstallmentResolutionOrmEntity, {
+                id: randomUUID(),
+                spaceId: root.spaceId,
+                commitmentId: root.id,
+                installmentId: item.installmentId,
+                type: 'CANCELLED',
+                payoffId: null,
+                expectedRemainingAmountInCents:
+                    item.expectedRemainingAmountInCents,
+                factDate,
+                actorId,
+                registeredAt: new Date(now),
+                reason,
+                economicShares: item.remainingEconomicShares,
             });
     }
 

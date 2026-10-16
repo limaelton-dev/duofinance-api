@@ -50,6 +50,15 @@ const facts = `WITH facts AS (
     FROM financial_installment_anticipations a JOIN financial_commitments c ON c.space_id=a.space_id AND c.id=a.commitment_id
     WHERE a.space_id=$1 AND a.adjustment_in_cents<>0
     UNION ALL
+    SELECT p.id,'EXPENSE_PAYOFF',c.id,NULL,c.description,p.paid_amount_in_cents,p.fact_date,p.registered_at,p.actor_id,NULL,c.personal_owner_person_id,NULL,
+        ARRAY(SELECT s.member_id FROM financial_installment_shares s WHERE s.commitment_id=c.id)
+    FROM financial_installment_payoffs p JOIN financial_commitments c ON c.space_id=p.space_id AND c.id=p.commitment_id WHERE p.space_id=$1
+    UNION ALL
+    SELECT r.id,'EXPENSE_CANCELLATION',c.id,NULL,c.description,r.expected_remaining_amount_in_cents,r.fact_date,r.registered_at,r.actor_id,NULL,c.personal_owner_person_id,NULL,
+        ARRAY(SELECT s.member_id FROM financial_installment_shares s WHERE s.installment_id=r.installment_id)
+    FROM financial_installment_resolutions r JOIN financial_commitments c ON c.space_id=r.space_id AND c.id=r.commitment_id
+    WHERE r.space_id=$1 AND r.type='CANCELLED'
+    UNION ALL
     SELECT c.id,'EXPECTED_EXPENSE',c.id,NULL,c.description,v.amount_in_cents,v.expected_payment_date,c.registered_at,c.created_by,
         v.expected_payer_member_id,c.personal_owner_person_id,NULL,
         ARRAY(SELECT s.member_id FROM financial_commitment_shares s WHERE s.space_id=c.space_id AND s.commitment_id=c.id AND s.version=v.version)
@@ -62,7 +71,7 @@ const facts = `WITH facts AS (
     FROM financial_installments i JOIN financial_commitments c ON c.space_id=i.space_id AND c.id=i.commitment_id
     JOIN financial_installment_plans p ON p.id=i.plan_id
     JOIN financial_occurrences o ON o.installment_id=i.id AND o.space_id=i.space_id
-    WHERE i.space_id=$1 AND c.modality='INSTALLMENT' AND o.status<>'FULFILLED'
+    WHERE i.space_id=$1 AND c.modality='INSTALLMENT' AND o.status<>'FULFILLED' AND NOT EXISTS (SELECT 1 FROM financial_installment_resolutions resolved WHERE resolved.installment_id=i.id)
     UNION ALL
     SELECT COALESCE(o.id,c.id),'EXPECTED_EXPENSE',c.id,NULL,v.description,CASE WHEN v.value_mode='VARIABLE' THEN o.amount_in_cents ELSE COALESCE(o.amount_in_cents,v.amount_in_cents) END,${recurringDate},c.registered_at,c.created_by,
         v.expected_member_id,v.owner_person_id,NULL,
@@ -403,6 +412,23 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                 SELECT a.space_id,a.commitment_id,1,a.adjustment_in_cents,c.personal_owner_person_id,'INSTALLMENT_ADJUSTMENT',a.installment_id
                 FROM financial_installment_anticipations a JOIN financial_commitments c ON c.space_id=a.space_id AND c.id=a.commitment_id
                 WHERE a.space_id=$1 AND a.fact_date >= $2::date AND a.fact_date < $3::date
+                UNION ALL
+                SELECT p.space_id,p.commitment_id,1,p.paid_amount_in_cents-COALESCE(SUM(r.expected_remaining_amount_in_cents) FILTER (WHERE EXISTS (
+                    SELECT 1 FROM financial_disbursements d WHERE d.occurrence_id=r.installment_id
+                    UNION ALL SELECT 1 FROM financial_external_liabilities l WHERE l.occurrence_id=r.installment_id
+                )),0),c.personal_owner_person_id,'INSTALLMENT_PAYOFF',NULL::uuid
+                FROM financial_installment_payoffs p JOIN financial_commitments c ON c.space_id=p.space_id AND c.id=p.commitment_id
+                JOIN financial_installment_resolutions r ON r.payoff_id=p.id
+                WHERE p.space_id=$1 AND p.fact_date >= $2::date AND p.fact_date < $3::date
+                GROUP BY p.id,c.personal_owner_person_id
+                UNION ALL
+                SELECT r.space_id,r.commitment_id,1,CASE WHEN EXISTS (
+                    SELECT 1 FROM financial_disbursements d WHERE d.occurrence_id=r.installment_id
+                    UNION ALL SELECT 1 FROM financial_external_liabilities l WHERE l.occurrence_id=r.installment_id
+                ) THEN -r.expected_remaining_amount_in_cents ELSE 0 END,
+                    c.personal_owner_person_id,'INSTALLMENT_CANCELLATION',r.installment_id
+                FROM financial_installment_resolutions r JOIN financial_commitments c ON c.space_id=r.space_id AND c.id=r.commitment_id
+                WHERE r.space_id=$1 AND r.type='CANCELLED' AND r.fact_date >= $2::date AND r.fact_date < $3::date
             ),
             period_receipts AS (SELECT r.* FROM financial_receipts r WHERE r.space_id=$1),
             contributions AS (
@@ -412,6 +438,14 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                 UNION ALL SELECT s.member_id,'expenseAmountInCents',SUM(s.amount_in_cents) FROM expenses e JOIN financial_occurrence_shares s ON s.occurrence_id=e.occurrence_id WHERE e.modality='RECURRING' GROUP BY s.member_id
                 UNION ALL SELECT s.member_id,'expenseAmountInCents',SUM(s.amount_in_cents) FROM expenses e JOIN financial_installment_shares s ON s.installment_id=e.occurrence_id WHERE e.modality='INSTALLMENT' GROUP BY s.member_id
                 UNION ALL SELECT x."memberId",'expenseAmountInCents',SUM(x."amountInCents"-s.amount_in_cents) FROM expenses e JOIN financial_installment_anticipations a ON a.installment_id=e.occurrence_id CROSS JOIN LATERAL jsonb_to_recordset(a.economic_shares) AS x("memberId" uuid,"amountInCents" bigint) JOIN financial_installment_shares s ON s.installment_id=a.installment_id AND s.member_id=x."memberId" WHERE e.modality='INSTALLMENT_ADJUSTMENT' GROUP BY x."memberId"
+                UNION ALL SELECT x."memberId",'expenseAmountInCents',SUM(x."amountInCents"-COALESCE((SELECT y."amountInCents" FROM jsonb_to_recordset(p.recognized_remaining_shares) AS y("memberId" uuid,"amountInCents" bigint) WHERE y."memberId"=x."memberId"),0))
+                    FROM expenses e JOIN financial_installment_payoffs p ON p.commitment_id=e.commitment_id
+                    CROSS JOIN LATERAL jsonb_to_recordset(p.economic_shares) AS x("memberId" uuid,"amountInCents" bigint)
+                    WHERE e.modality='INSTALLMENT_PAYOFF' GROUP BY x."memberId"
+                UNION ALL SELECT x."memberId",'expenseAmountInCents',-SUM(x."amountInCents")
+                    FROM expenses e JOIN financial_installment_resolutions r ON r.installment_id=e.occurrence_id
+                    CROSS JOIN LATERAL jsonb_to_recordset(r.economic_shares) AS x("memberId" uuid,"amountInCents" bigint)
+                    WHERE e.modality='INSTALLMENT_CANCELLATION' AND e.amount_in_cents<0 GROUP BY x."memberId"
                 UNION ALL SELECT NULL,'realizedIncomeAmountInCents',SUM(amount_in_cents) FROM period_receipts WHERE fact_date >= $2::date AND fact_date < $3::date
                 UNION ALL SELECT payer_member_id,'paidAmountInCents',SUM(amount_in_cents) FROM financial_disbursements WHERE space_id=$1 AND fact_date >= $2::date AND fact_date < $3::date GROUP BY GROUPING SETS((),(payer_member_id)) HAVING GROUPING(payer_member_id)=1 OR payer_member_id IS NOT NULL
                 UNION ALL SELECT recipient_member_id,'receivedAmountInCents',SUM(amount_in_cents) FROM period_receipts WHERE fact_date >= $2::date AND fact_date < $3::date GROUP BY GROUPING SETS((),(recipient_member_id)) HAVING GROUPING(recipient_member_id)=1 OR recipient_member_id IS NOT NULL

@@ -686,6 +686,7 @@ describe('CARD-028 installment anticipations', () => {
         await migrationSource.initialize();
         try {
             await migrationSource.undoLastMigration();
+            await migrationSource.undoLastMigration();
             expect(
                 (
                     await migrationSource.query(
@@ -730,6 +731,7 @@ describe('CARD-028 installment anticipations', () => {
             .expect(201);
         await migrationSource.initialize();
         try {
+            await migrationSource.undoLastMigration();
             await expect(migrationSource.undoLastMigration()).rejects.toThrow(
                 'Cannot revert installment anticipations',
             );
@@ -741,6 +743,7 @@ describe('CARD-028 installment anticipations', () => {
                 )[0].n,
             ).toBe(1);
         } finally {
+            await migrationSource.runMigrations();
             await migrationSource.destroy();
         }
     });

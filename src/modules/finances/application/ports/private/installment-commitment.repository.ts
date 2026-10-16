@@ -1,4 +1,8 @@
-import type { InstallmentCommitment } from '../../../domain/installment/installment-commitment.js';
+import type {
+    InstallmentCommitment,
+    InstallmentPayoffImpact,
+    InstallmentResolutionItem,
+} from '../../../domain/installment/installment-commitment.js';
 import type { InstallmentAnticipation } from '../../../domain/installment/installment-plan.js';
 import type {
     FinancialOccurrence,
@@ -33,6 +37,20 @@ export interface InstallmentCommitmentRepository {
         occurrence: FinancialOccurrence,
         fact: OccurrenceFact,
         anticipation?: InstallmentAnticipation,
+    ): Promise<void>;
+    payoff(
+        commitment: InstallmentCommitment,
+        impact: InstallmentPayoffImpact,
+        fact: Extract<OccurrenceFact, { kind: 'DISBURSEMENT' }>,
+        payoffId: string,
+    ): Promise<void>;
+    cancelFuture(
+        commitment: InstallmentCommitment,
+        items: readonly InstallmentResolutionItem[],
+        reason: string,
+        actorId: string,
+        factDate: string,
+        now: string,
     ): Promise<void>;
     settleExternal(
         commitment: InstallmentCommitment,

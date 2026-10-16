@@ -687,10 +687,11 @@ describe('CARD-005 — contrato HTTP e persistência PostgreSQL', () => {
             expect(
                 (
                     await source.query(
-                        'SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 20',
+                        'SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 21',
                     )
                 ).map((m: { name: string }) => m.name),
             ).toEqual([
+                'InstallmentResolutions1792165600000',
                 'InstallmentAnticipations1792165500000',
                 'FiniteInstallmentCommitments1792165400000',
                 'RecurringMaintenance1792165300000',
@@ -758,6 +759,7 @@ describe('CARD-005 — contrato HTTP e persistência PostgreSQL', () => {
                 'RecurringMaintenance1792165300000',
                 'FiniteInstallmentCommitments1792165400000',
                 'InstallmentAnticipations1792165500000',
+                'InstallmentResolutions1792165600000',
             ]);
         } finally {
             await source.destroy();

@@ -27,12 +27,18 @@ import {
     InstallmentSettlementPipe,
     InstallmentAnticipationPreviewPipe,
     InstallmentAnticipationPipe,
+    InstallmentPayoffPreviewPipe,
+    InstallmentPayoffPipe,
+    InstallmentCancellationPipe,
     type InstallmentCommitmentDto,
     type InstallmentDisbursementDto,
     type InstallmentLiabilityDto,
     type InstallmentSettlementDto,
     type InstallmentAnticipationPreviewDto,
     type InstallmentAnticipationDto,
+    type InstallmentPayoffPreviewDto,
+    type InstallmentPayoffDto,
+    type InstallmentCancellationDto,
 } from '../dto/installment-commitment.dto.js';
 
 @Controller('spaces/:spaceId/installment-commitments')
@@ -170,6 +176,81 @@ export class InstallmentCommitmentController {
         @Res({ passthrough: true }) response: Response,
     ) {
         const result = await this.handler.anticipate({
+            ...this.ids(actor, spaceId),
+            ...input,
+            commitmentId: this.id(id, 'id'),
+            idempotencyKey,
+        });
+        if ((result as { replayed: boolean }).replayed) response.status(200);
+        return result;
+    }
+
+    @Get(':id/resolution-options')
+    @Header('Cache-Control', 'no-store')
+    resolutionOptions(
+        @CurrentActor() actor: RequestActor,
+        @Param('spaceId') spaceId: string,
+        @Param('id') id: string,
+        @Query('cursor') cursor?: string,
+    ) {
+        const ids = this.ids(actor, spaceId);
+        return this.handler.resolutionOptions(
+            ids.actorId,
+            ids.spaceId,
+            this.id(id, 'id'),
+            cursor,
+        );
+    }
+
+    @Post(':id/payoff-preview')
+    @HttpCode(200)
+    @Header('Cache-Control', 'no-store')
+    payoffPreview(
+        @CurrentActor() actor: RequestActor,
+        @Param('spaceId') spaceId: string,
+        @Param('id') id: string,
+        @Body(InstallmentPayoffPreviewPipe) input: InstallmentPayoffPreviewDto,
+    ) {
+        const ids = this.ids(actor, spaceId);
+        return this.handler.payoffPreview(
+            ids.actorId,
+            ids.spaceId,
+            this.id(id, 'id'),
+            input,
+        );
+    }
+
+    @Post(':id/payoffs')
+    @Header('Cache-Control', 'no-store')
+    async payoff(
+        @CurrentActor() actor: RequestActor,
+        @Param('spaceId') spaceId: string,
+        @Param('id') id: string,
+        @IdempotencyKey() idempotencyKey: string,
+        @Body(InstallmentPayoffPipe) input: InstallmentPayoffDto,
+        @Res({ passthrough: true }) response: Response,
+    ) {
+        const result = await this.handler.payoff({
+            ...this.ids(actor, spaceId),
+            ...input,
+            commitmentId: this.id(id, 'id'),
+            idempotencyKey,
+        });
+        if ((result as { replayed: boolean }).replayed) response.status(200);
+        return result;
+    }
+
+    @Post(':id/future-installment-cancellations')
+    @Header('Cache-Control', 'no-store')
+    async cancelFuture(
+        @CurrentActor() actor: RequestActor,
+        @Param('spaceId') spaceId: string,
+        @Param('id') id: string,
+        @IdempotencyKey() idempotencyKey: string,
+        @Body(InstallmentCancellationPipe) input: InstallmentCancellationDto,
+        @Res({ passthrough: true }) response: Response,
+    ) {
+        const result = await this.handler.cancelFuture({
             ...this.ids(actor, spaceId),
             ...input,
             commitmentId: this.id(id, 'id'),

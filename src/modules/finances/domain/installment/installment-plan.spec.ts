@@ -291,4 +291,72 @@ describe('finite installment plan', () => {
             ),
         ).toThrow(FinancesError);
     });
+
+    it('allocates a global payoff on remaining shares while preserving prior partial fulfillment', () => {
+        const root = new InstallmentCommitment(
+            'root',
+            'space',
+            'Plano',
+            'author',
+            '2026-10-01T12:00:00Z',
+            2,
+            new InstallmentPlan('plan', 'root', 'space', [
+                new Installment(
+                    'first',
+                    1,
+                    '2026-11-20',
+                    10000,
+                    'PARTIALLY_FULFILLED',
+                    2000,
+                    2,
+                ),
+                new Installment('second', 2, '2026-12-20', 10000),
+            ]),
+            {
+                type: 'SHARED',
+                distribution: {
+                    mode: 'AMOUNTS',
+                    shares: [
+                        { memberId: 'a', amountInCents: 10000 },
+                        { memberId: 'b', amountInCents: 10000 },
+                    ],
+                },
+                expectedMemberId: 'a',
+                settlementRuleSnapshot: null,
+                settlementRuleSourceVersion: 0,
+            },
+            'MONTHLY',
+            null,
+        );
+        const discount = root.payoffImpact(15000, 'a');
+        expect(
+            discount.items.map((item) => item.expectedRemainingAmountInCents),
+        ).toEqual([8000, 10000]);
+        expect(discount.items.map((item) => item.dueDate)).toEqual([
+            '2026-11-20',
+            '2026-12-20',
+        ]);
+        expect(
+            discount.expectedRemainingShares?.map(
+                (share) => share.amountInCents,
+            ),
+        ).toEqual([9000, 9000]);
+        expect(
+            discount.effectiveEconomicShares?.reduce(
+                (sum, share) => sum + share.amountInCents,
+                0,
+            ),
+        ).toBe(15000);
+        const exact = root.payoffImpact(18000, 'a');
+        expect(exact.adjustmentInCents).toBe(0);
+        expect(
+            exact.effectiveEconomicShares?.map((share) => share.amountInCents),
+        ).toEqual([9000, 9000]);
+        const surcharge = root.payoffImpact(20000, 'a');
+        expect(
+            surcharge.effectiveEconomicShares?.map(
+                (share) => share.amountInCents,
+            ),
+        ).toEqual([11000, 9000]);
+    });
 });
