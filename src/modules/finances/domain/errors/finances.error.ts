@@ -1,4 +1,8 @@
 export type FinancesErrorCode =
+    | 'FINANCIAL_REVERSAL_NOT_FOUND'
+    | 'FINANCIAL_REVERSAL_EXCEEDS_AVAILABLE'
+    | 'FINANCIAL_REVERSAL_SETTLEMENT_REQUIRED'
+    | 'FINANCIAL_REVERSAL_FULL_REQUIRED'
     | 'FINANCIAL_ADJUSTMENT_BELOW_FULFILLED'
     | 'FINANCIAL_COMMITMENT_CANCELLED'
     | 'FINANCIAL_CANCELLATION_NOT_ALLOWED'
@@ -35,6 +39,14 @@ export type FinancesErrorCode =
     | 'RECURRENCE_ACCEPTANCE_REQUIRED'
     | 'RECURRENCE_ALREADY_TERMINATED';
 const messages: Record<FinancesErrorCode, string> = {
+    FINANCIAL_REVERSAL_NOT_FOUND:
+        'Realização financeira não encontrada nesta origem.',
+    FINANCIAL_REVERSAL_EXCEEDS_AVAILABLE:
+        'O valor supera o saldo válido que ainda pode ser revertido.',
+    FINANCIAL_REVERSAL_SETTLEMENT_REQUIRED:
+        'Reverta explicitamente as liquidações necessárias antes de reduzir esta obrigação externa.',
+    FINANCIAL_REVERSAL_FULL_REQUIRED:
+        'Esta quitação global exige reversão integral do desembolso para desfazer sua resolução.',
     FINANCIAL_ADJUSTMENT_BELOW_FULFILLED:
         'O ajuste deixaria o valor abaixo do que já foi realizado. Corrija a realização antes de confirmar.',
     FINANCIAL_COMMITMENT_CANCELLED:

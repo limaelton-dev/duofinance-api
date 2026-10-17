@@ -2,6 +2,7 @@ import { FinancesError } from '../errors/finances.error.js';
 import type { EconomicShare } from '../shared-expense/responsibility-split.js';
 import { civilDate } from '../shared-expense/settlement-cycle.js';
 import type { FinancialAdjustment } from '../corrections/financial-correction.js';
+import type { FinancialFulfillmentReversal } from '../reversals/financial-fulfillment-reversal.js';
 
 export type InstallmentCadence = 'MONTHLY' | 'ANNUAL';
 export type InstallmentStatus =
@@ -16,6 +17,7 @@ export interface InstallmentResolution {
     actorId: string;
     registeredAt: string;
     reason: string | null;
+    compensated?: boolean;
 }
 
 export interface InstallmentPayoff {
@@ -29,6 +31,12 @@ export interface InstallmentPayoff {
     adjustmentInCents: number;
     economicShares: readonly EconomicShare[] | null;
     recognizedRemainingShares: readonly EconomicShare[] | null;
+    compensated?: boolean;
+    expectedEconomicShares?: readonly EconomicShare[] | null;
+    recognizedManualAdjustments?: {
+        amountInCents: number;
+        shareChanges: readonly EconomicShare[] | null;
+    } | null;
 }
 
 export interface InstallmentScheduleInput {
@@ -191,6 +199,8 @@ export class Installment {
         readonly economicVersion = 1,
         readonly expectedMemberId: string | null | undefined = undefined,
         readonly adjustments: readonly FinancialAdjustment[] = [],
+        readonly reversals: readonly FinancialFulfillmentReversal[] = [],
+        readonly resolutionHistory: readonly InstallmentResolution[] = [],
     ) {
         if (!id || !Number.isSafeInteger(position) || position < 1)
             invalid('installments');
@@ -233,14 +243,16 @@ export class Installment {
                 !anticipation.actorId ||
                 !Number.isFinite(Date.parse(anticipation.registeredAt)) ||
                 validDate(anticipation.factDate, 'factDate') >= dueDate ||
-                anticipation.expectedRemainingAmountInCents !==
-                    amountInCents -
-                        (fulfilledAmountInCents -
-                            anticipation.paidAmountInCents) ||
+                (reversals.length === 0 &&
+                    anticipation.expectedRemainingAmountInCents !==
+                        amountInCents -
+                            (fulfilledAmountInCents -
+                                anticipation.paidAmountInCents)) ||
                 anticipation.adjustmentInCents !==
                     anticipation.paidAmountInCents -
                         anticipation.expectedRemainingAmountInCents ||
-                fulfilledAmountInCents !== this.effectiveAmountInCents)
+                (reversals.length === 0 &&
+                    fulfilledAmountInCents !== this.effectiveAmountInCents))
         )
             invalid('anticipation');
         if (resolution) validDate(resolution.factDate, 'factDate');
@@ -286,6 +298,9 @@ export class InstallmentPlan {
     readonly count: number;
     readonly totalAmountInCents: number;
     readonly status: 'OPEN' | 'COMPLETED';
+    readonly globalAdjustmentInCents: number;
+    readonly globalAdjustmentShares: readonly EconomicShare[] | null;
+    readonly remainingAmountInCents: number;
 
     constructor(
         readonly id: string,
@@ -293,6 +308,7 @@ export class InstallmentPlan {
         readonly spaceId: string,
         installments: readonly Installment[],
         readonly payoff: InstallmentPayoff | null = null,
+        readonly payoffHistory: readonly InstallmentPayoff[] = [],
     ) {
         if (!id || !commitmentId || !spaceId || installments.length < 1)
             invalid('installments');
@@ -331,11 +347,51 @@ export class InstallmentPlan {
             invalid('payoff');
         this.count = installments.length;
         this.totalAmountInCents = Number(total);
-        this.status = installments.every(
-            (installment) => installment.remainingAmountInCents === 0,
+        const compensated = payoffHistory.filter((item) => item.compensated);
+        const globalAdjustment = compensated.reduce(
+            (sum, item) => sum + BigInt(item.adjustmentInCents),
+            0n,
+        );
+        if (
+            globalAdjustment < -BigInt(Number.MAX_SAFE_INTEGER) ||
+            globalAdjustment > BigInt(Number.MAX_SAFE_INTEGER)
         )
-            ? 'COMPLETED'
-            : 'OPEN';
+            invalid('globalAdjustmentInCents');
+        this.globalAdjustmentInCents = Number(globalAdjustment);
+        const memberIds = [
+            ...new Set(
+                compensated.flatMap(
+                    (item) =>
+                        item.economicShares?.map((share) => share.memberId) ??
+                        [],
+                ),
+            ),
+        ].sort();
+        this.globalAdjustmentShares = memberIds.length
+            ? memberIds.map((memberId) => ({
+                  memberId,
+                  amountInCents: compensated.reduce(
+                      (sum, item) =>
+                          sum +
+                          (item.economicShares?.find(
+                              (share) => share.memberId === memberId,
+                          )?.amountInCents ?? 0) -
+                          (item.expectedEconomicShares?.find(
+                              (share) => share.memberId === memberId,
+                          )?.amountInCents ?? 0),
+                      0,
+                  ),
+              }))
+            : null;
+        const remaining =
+            installments.reduce(
+                (sum, item) => sum + BigInt(item.remainingAmountInCents),
+                0n,
+            ) + (payoff ? 0n : globalAdjustment);
+        if (remaining < 0n || remaining > BigInt(Number.MAX_SAFE_INTEGER))
+            invalid('remainingAmountInCents');
+        this.remainingAmountInCents = Number(remaining);
+        this.status = this.remainingAmountInCents === 0 ? 'COMPLETED' : 'OPEN';
         Object.freeze(this);
     }
 }

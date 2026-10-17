@@ -421,6 +421,10 @@ export class ResolveInstallmentCommitmentHandler {
                         today,
                         now,
                         null,
+                        undefined,
+                        root.plan.payoffHistory.some(
+                            (payoff) => payoff.compensated,
+                        ),
                     );
                 const updated = (await this.repository.find(
                     root.spaceId,

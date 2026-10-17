@@ -410,7 +410,7 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                     LEFT JOIN financial_income_versions i ON i.space_id=c.space_id AND i.commitment_id=c.id
                     LEFT JOIN financial_recurrence_versions r ON r.space_id=c.space_id AND r.commitment_id=c.id AND r.version=o.economic_version
                     LEFT JOIN financial_installments fi ON fi.space_id=c.space_id AND fi.commitment_id=c.id AND fi.id=p0.occurrence_id
-                    LEFT JOIN financial_installment_payoffs ip ON ip.space_id=c.space_id AND ip.commitment_id=c.id AND p0.occurrence_id IS NULL
+                    LEFT JOIN public.financial_installment_payoffs ip ON ip.space_id=c.space_id AND ip.commitment_id=c.id AND ip.fact_id=COALESCE(p0.disbursement_id,p0.external_liability_id) AND p0.occurrence_id IS NULL
                     WHERE c.space_id=$1
                 )
                 SELECT jsonb_build_object('id',p.id,'version',p.version,'status',p.status,'debtorMemberId',p.debtor_member_id,'creditorMemberId',p.creditor_member_id,

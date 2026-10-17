@@ -8,6 +8,11 @@ import type {
     FinancialAdjustment,
     FinancialCancellation,
 } from '../corrections/financial-correction.js';
+import {
+    assertFinancialReversalHistory,
+    validFinancialAmount,
+    type FinancialFulfillmentReversal,
+} from '../reversals/financial-fulfillment-reversal.js';
 
 export interface IncomeReceipt {
     id: string;
@@ -35,6 +40,7 @@ export class IncomeCommitment {
     readonly version: number;
     readonly receipt: IncomeReceipt | null;
     readonly receipts: readonly IncomeReceipt[];
+    readonly validReceipts: readonly IncomeReceipt[];
     readonly receivedAmountInCents: number;
     readonly remainingAmountInCents: number;
     readonly status:
@@ -55,12 +61,19 @@ export class IncomeCommitment {
             1,
         readonly adjustments: readonly FinancialAdjustment[] = [],
         readonly cancellation: FinancialCancellation | null = null,
+        readonly reversals: readonly FinancialFulfillmentReversal[] = [],
     ) {
         const receipts: readonly IncomeReceipt[] = Array.isArray(receipt)
             ? receipt
             : receipt
               ? [receipt as IncomeReceipt]
               : [];
+        assertFinancialReversalHistory(
+            reversals,
+            receipts.map((fact) => ({ ...fact, kind: 'RECEIPT' as const })),
+            spaceId,
+            id,
+        );
         Money.from(amountInCents);
         civilDate(expectedReceiptDate);
         if (
@@ -118,7 +131,14 @@ export class IncomeCommitment {
                       ))
             )
                 throw new FinancesError('VALIDATION_ERROR');
-            total += BigInt(receipt.amountInCents);
+            total += BigInt(
+                validFinancialAmount(
+                    receipt.amountInCents,
+                    reversals,
+                    'RECEIPT',
+                    receipt.id,
+                ),
+            );
         }
         if (total > BigInt(amountInCents))
             throw new FinancesError('VALIDATION_ERROR');
@@ -140,6 +160,19 @@ export class IncomeCommitment {
             receipts.map((r) => Object.freeze({ ...r })),
         );
         this.receipt = this.receipts[0] ?? null;
+        this.validReceipts = Object.freeze(
+            this.receipts
+                .map((fact) => ({
+                    ...fact,
+                    amountInCents: validFinancialAmount(
+                        fact.amountInCents,
+                        reversals,
+                        'RECEIPT',
+                        fact.id,
+                    ),
+                }))
+                .filter((fact) => fact.amountInCents > 0),
+        );
         this.receivedAmountInCents = Number(total);
         this.remainingAmountInCents =
             amountInCents - this.receivedAmountInCents;
@@ -181,6 +214,7 @@ export class IncomeCommitment {
             this.version + 1,
             this.adjustments,
             this.cancellation,
+            this.reversals,
         );
     }
 }
@@ -193,15 +227,14 @@ export function incomeDifference(
     creditorMemberId: string;
     amountInCents: number;
 } | null {
-    if (income.participation.type === 'PERSONAL' || !income.receipt)
-        return null;
+    if (income.participation.type === 'PERSONAL') return null;
     const shares = income.participation.split.realizedShares(
         income.receivedAmountInCents,
     );
     if (shares.length < 2) return null;
     const member = shares[0].memberId;
     let excess =
-        income.receipts.reduce(
+        income.validReceipts.reduce(
             (sum, r) =>
                 sum +
                 (r.recipientMemberId === member ? BigInt(r.amountInCents) : 0n),

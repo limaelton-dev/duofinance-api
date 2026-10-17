@@ -288,7 +288,12 @@ export const creditCardPurchaseOpenApi: Pick<
             ExternalLiability: {
                 oneOf: [
                     {
-                        ...object({ ...fact, holderMemberId: uuid }),
+                        ...object({
+                            ...fact,
+                            holderMemberId: uuid,
+                            originalAmountInCents: positive,
+                            validAmountInCents: money,
+                        }),
                         required: [
                             ...Object.keys(fact).filter(
                                 (k) => k !== 'settlements',
@@ -297,7 +302,12 @@ export const creditCardPurchaseOpenApi: Pick<
                         ],
                     },
                     {
-                        ...object({ ...fact, holderPersonId: uuid }),
+                        ...object({
+                            ...fact,
+                            holderPersonId: uuid,
+                            originalAmountInCents: positive,
+                            validAmountInCents: money,
+                        }),
                         required: [
                             ...Object.keys(fact).filter(
                                 (k) => k !== 'settlements',

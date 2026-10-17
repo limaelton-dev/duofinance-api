@@ -191,7 +191,10 @@ export class FinancialInstallmentAnticipationOrmEntity {
 }
 
 @Entity('financial_installment_payoffs')
-@Unique('UQ_installment_payoff_commitment', ['spaceId', 'commitmentId'])
+@Index('UQ_installment_payoff_active', ['spaceId', 'commitmentId'], {
+    unique: true,
+    where: 'compensated=false',
+})
 @Unique('UQ_installment_payoff_scope', ['spaceId', 'commitmentId', 'id'])
 @Unique('UQ_installment_payoff_fact', ['factId'])
 @Check(
@@ -216,6 +219,7 @@ export class FinancialInstallmentAnticipationOrmEntity {
 })
 export class FinancialInstallmentPayoffOrmEntity {
     @PrimaryColumn('uuid') id!: string;
+    @Column({ type: 'boolean', default: false }) compensated!: boolean;
     @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
     @Column({ name: 'commitment_id', type: 'uuid' }) commitmentId!: string;
     @Column({ name: 'fact_id', type: 'uuid' }) factId!: string;
@@ -239,6 +243,17 @@ export class FinancialInstallmentPayoffOrmEntity {
     adjustmentInCents!: number;
     @Column({ name: 'economic_shares', type: 'jsonb', nullable: true })
     economicShares!: readonly EconomicShare[] | null;
+    @Column({ name: 'expected_economic_shares', type: 'jsonb', nullable: true })
+    expectedEconomicShares!: readonly EconomicShare[] | null;
+    @Column({
+        name: 'recognized_manual_adjustments',
+        type: 'jsonb',
+        nullable: true,
+    })
+    recognizedManualAdjustments!: {
+        amountInCents: number;
+        shareChanges: readonly EconomicShare[] | null;
+    } | null;
     @Column({
         name: 'recognized_remaining_shares',
         type: 'jsonb',
@@ -251,7 +266,10 @@ export class FinancialInstallmentPayoffOrmEntity {
 }
 
 @Entity('financial_installment_resolutions')
-@Unique('UQ_installment_resolution_installment', ['installmentId'])
+@Index('UQ_installment_resolution_active', ['installmentId'], {
+    unique: true,
+    where: 'compensated=false',
+})
 @Check(
     'CHK_installment_resolution_values',
     `expected_remaining_amount_in_cents BETWEEN 1 AND 9007199254740991 AND ((type='PAYOFF' AND payoff_id IS NOT NULL AND reason IS NULL) OR (type='CANCELLED' AND payoff_id IS NULL AND length(trim(reason)) BETWEEN 1 AND 500))`,
@@ -274,6 +292,7 @@ export class FinancialInstallmentPayoffOrmEntity {
 })
 export class FinancialInstallmentResolutionOrmEntity {
     @PrimaryColumn('uuid') id!: string;
+    @Column({ type: 'boolean', default: false }) compensated!: boolean;
     @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
     @Column({ name: 'commitment_id', type: 'uuid' }) commitmentId!: string;
     @Column({ name: 'installment_id', type: 'uuid' }) installmentId!: string;

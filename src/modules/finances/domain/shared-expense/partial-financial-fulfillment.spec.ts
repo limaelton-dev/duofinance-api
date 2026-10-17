@@ -7,6 +7,7 @@ import { ResponsibilitySplit } from './responsibility-split.js';
 import { Money } from './money.js';
 import {
     expenseDifference,
+    correctedExpenseDifference,
     planObligationReconciliation,
 } from './obligation-reconciler.js';
 import {
@@ -27,6 +28,52 @@ function split(total = 50000) {
         ],
     });
 }
+describe('expense support corrections preserve prior transfers', () => {
+    it.each([
+        [50000, 20000, null],
+        [
+            40000,
+            20000,
+            { debtorMemberId: a, creditorMemberId: b, amountInCents: 10000 },
+        ],
+        [
+            0,
+            20000,
+            { debtorMemberId: a, creditorMemberId: b, amountInCents: 20000 },
+        ],
+        [
+            0,
+            10000,
+            { debtorMemberId: a, creditorMemberId: b, amountInCents: 10000 },
+        ],
+        [
+            40000,
+            0,
+            { debtorMemberId: b, creditorMemberId: a, amountInCents: 10000 },
+        ],
+    ] as const)(
+        'reconciles valid support %i after actual transfer %i',
+        (support, transferred, expected) => {
+            expect(
+                correctedExpenseDifference(
+                    split(),
+                    support
+                        ? [{ payerMemberId: a, amountInCents: support }]
+                        : [],
+                    transferred
+                        ? [
+                              {
+                                  payerMemberId: b,
+                                  recipientMemberId: a,
+                                  amountInCents: transferred,
+                              },
+                          ]
+                        : [],
+                ),
+            ).toEqual(expected);
+        },
+    );
+});
 function receipt(id: string, member: string, amountInCents: number) {
     return {
         id,

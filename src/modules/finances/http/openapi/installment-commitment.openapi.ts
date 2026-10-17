@@ -174,6 +174,28 @@ const plan = object({
     installments: { type: 'array', items: ref('Installment') },
     payoff: nullable({ type: 'object', additionalProperties: true }),
 });
+installment.properties = {
+    ...installment.properties,
+    reversals: { type: 'array', items: ref('FinancialFulfillmentReversal') },
+    validFacts: installment.properties!.facts,
+    validExternalSettlements: installment.properties!.externalSettlements,
+    resolutionHistory: {
+        type: 'array',
+        items: { type: 'object', additionalProperties: true },
+    },
+};
+plan.properties = {
+    ...plan.properties,
+    globalAdjustmentInCents: {
+        type: 'integer',
+        minimum: -Number.MAX_SAFE_INTEGER,
+        maximum: Number.MAX_SAFE_INTEGER,
+    },
+    payoffHistory: {
+        type: 'array',
+        items: { type: 'object', additionalProperties: true },
+    },
+};
 const commitment = object({
     id: uuid,
     spaceId: uuid,
@@ -978,6 +1000,26 @@ export const installmentCommitmentOpenApi: Pick<
                     type: 'array',
                     items: { type: 'object', additionalProperties: true },
                 }),
+                recognizedManualAdjustments: nullable(
+                    object({
+                        amountInCents: {
+                            type: 'integer',
+                            minimum: -Number.MAX_SAFE_INTEGER,
+                            maximum: Number.MAX_SAFE_INTEGER,
+                        },
+                        shareChanges: nullable({
+                            type: 'array',
+                            items: object({
+                                memberId: uuid,
+                                amountInCents: {
+                                    type: 'integer',
+                                    minimum: -Number.MAX_SAFE_INTEGER,
+                                    maximum: Number.MAX_SAFE_INTEGER,
+                                },
+                            }),
+                        }),
+                    }),
+                ),
                 adjustmentPolicy: {
                     type: 'string',
                     enum: ['PERSONAL', 'DISCOUNT_PROPORTIONAL_SURCHARGE_ACTOR'],

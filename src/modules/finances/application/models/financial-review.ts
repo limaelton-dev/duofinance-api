@@ -14,6 +14,10 @@ export type FinancialReviewItemType =
     | 'RECEIPT'
     | 'EXTERNAL_LIABILITY'
     | 'EXTERNAL_SETTLEMENT'
+    | 'DISBURSEMENT_REVERSAL'
+    | 'RECEIPT_REVERSAL'
+    | 'EXTERNAL_LIABILITY_REVERSAL'
+    | 'EXTERNAL_SETTLEMENT_REVERSAL'
     | 'INTERNAL_TRANSFER'
     | 'INTERNAL_OFFSET'
     | 'INTERNAL_WAIVER'
@@ -34,6 +38,13 @@ export interface FinancialReviewItem {
     recipientMemberId: string | null;
     memberIds: string[];
     reason?: string | null;
+    originalKind?:
+        | 'DISBURSEMENT'
+        | 'RECEIPT'
+        | 'EXTERNAL_LIABILITY'
+        | 'EXTERNAL_SETTLEMENT'
+        | null;
+    originalId?: string | null;
 }
 export interface FinancialForecastItem extends FinancialReviewItem {
     type: 'EXPECTED_INCOME' | 'EXPECTED_EXPENSE';
@@ -75,6 +86,11 @@ export interface FinancialTimeline extends FinancialReviewContext {
 }
 export interface FinancialForecast extends FinancialReviewContext {
     items: FinancialForecastItem[];
+    globalCorrections?: {
+        commitmentId: string;
+        globalAdjustmentInCents: string;
+        globalRemainingAmountInCents: string;
+    }[];
     totals: {
         expectedAmountInCents: string;
         receivedAmountInCents: string;

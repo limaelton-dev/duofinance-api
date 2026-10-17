@@ -4,6 +4,15 @@ import {
     FinancialCommitmentCancellationOrmEntity,
 } from './infrastructure/typeorm/entities/financial-correction.orm-entity.js';
 import { FinancialCorrectionController } from './http/controllers/financial-correction.controller.js';
+import { FinancialReversalController } from './http/controllers/financial-reversal.controller.js';
+import { FinancialFulfillmentReversals } from './application/handlers/financial-fulfillment-reversals.js';
+import {
+    FinancialReversalPipe,
+    FinancialReversalListPipe,
+} from './http/dto/financial-reversal.dto.js';
+import { FINANCIAL_FULFILLMENT_REVERSAL_REPOSITORY } from './application/ports/private/financial-fulfillment-reversal.repository.js';
+import { TypeOrmFinancialFulfillmentReversalRepository } from './infrastructure/typeorm/repositories/typeorm-financial-fulfillment-reversal.repository.js';
+import { FinancialFulfillmentReversalOrmEntity } from './infrastructure/typeorm/entities/financial-fulfillment-reversal.orm-entity.js';
 import { FinancialCommitmentAdjustments } from './application/handlers/financial-commitment-adjustments.js';
 import { FinancialCommitmentCancellations } from './application/handlers/financial-commitment-cancellations.js';
 import {
@@ -239,6 +248,7 @@ import {
             ...financialChangeEntities,
             FinancialCommitmentAdjustmentOrmEntity,
             FinancialCommitmentCancellationOrmEntity,
+            FinancialFulfillmentReversalOrmEntity,
             FinancialNonRecurringVersionOrmEntity,
             ...settlementAdjustmentEntities,
             ...settlementOffsetEntities,
@@ -263,6 +273,7 @@ import {
     controllers: [
         FinancialChangeController,
         FinancialCorrectionController,
+        FinancialReversalController,
         PlannedExpenseController,
         RecurringCommitmentController,
         InstallmentCommitmentController,
@@ -287,6 +298,13 @@ import {
         FinancialCommitmentChangesHandler,
         FinancialCommitmentAdjustments,
         FinancialCommitmentCancellations,
+        FinancialFulfillmentReversals,
+        FinancialReversalPipe,
+        FinancialReversalListPipe,
+        {
+            provide: FINANCIAL_FULFILLMENT_REVERSAL_REPOSITORY,
+            useClass: TypeOrmFinancialFulfillmentReversalRepository,
+        },
         AdjustmentPipe,
         CancellationPipe,
         {

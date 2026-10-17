@@ -7,6 +7,7 @@ import {
 } from '../shared-expense/responsibility-split.js';
 import type { SettlementRuleSnapshot } from '../settlement-rule/settlement-rule.js';
 import type { OccurrenceFact } from '../recurrence/financial-occurrence.js';
+import type { FinancialFulfillmentReversal } from '../reversals/financial-fulfillment-reversal.js';
 
 export interface FinancialAdjustment {
     id: string;
@@ -70,6 +71,7 @@ export interface FinancialCorrectionState {
     facts: readonly OccurrenceFact[];
     adjustments: readonly FinancialAdjustment[];
     cancellation: FinancialCancellation | null;
+    reversals: readonly FinancialFulfillmentReversal[];
 }
 
 export function proportionalCorrectionShares(

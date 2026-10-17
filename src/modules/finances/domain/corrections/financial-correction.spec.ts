@@ -43,6 +43,7 @@ const shared: FinancialCorrectionState = {
     facts: [],
     adjustments: [],
     cancellation: null,
+    reversals: [],
 };
 describe('financial adjustments', () => {
     it('allocates the delta using the original percentages before rounding', () => {

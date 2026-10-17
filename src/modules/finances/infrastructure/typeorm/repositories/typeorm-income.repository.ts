@@ -1,4 +1,5 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
+import { financialFulfillmentReversals } from '../queries/financial-fulfillment-reversal-projection.js';
 import {
     financialCorrections,
     applyFinancialAdjustments,
@@ -206,6 +207,7 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
             c.version,
             corrections.adjustments,
             corrections.cancellation,
+            await financialFulfillmentReversals(m, spaceId, commitmentId, c.id),
         );
     }
     async saveReceipt(
@@ -315,6 +317,12 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
             receipt: income.receipt,
             receipts: income.receipts,
             status: income.status,
+            ...(income.reversals.length
+                ? {
+                      reversals: income.reversals,
+                      validReceipts: income.validReceipts,
+                  }
+                : {}),
             ...(income.adjustments.length || income.cancellation
                 ? {
                       adjustments: income.adjustments,
@@ -361,7 +369,7 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
             .addSelect('v.expected_receipt_date::text', 'expectedReceiptDate')
             .addSelect('c.registered_at', 'registeredAt')
             .addSelect(
-                `COALESCE((SELECT SUM(r.amount_in_cents) FROM financial_receipts r WHERE r.space_id=c.space_id AND r.commitment_id=c.id),0)::text`,
+                `COALESCE((SELECT SUM(r.amount_in_cents-COALESCE((SELECT SUM(rev.amount_in_cents) FROM financial_fulfillment_reversals rev WHERE rev.space_id=r.space_id AND rev.original_id=r.id AND rev.original_kind='RECEIPT'),0)) FROM financial_receipts r WHERE r.space_id=c.space_id AND r.commitment_id=c.id),0)::text`,
                 'received',
             )
             .where('c.space_id=:spaceId AND c.kind=:kind', {
@@ -396,7 +404,7 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
                       : 'PARTIALLY_RECEIVED',
         }));
     }
-    private readonly remainingSql = `COALESCE((SELECT SUM(r.amount_in_cents) FROM financial_receipts r WHERE r.space_id=c.space_id AND r.commitment_id=c.id),0)<v.amount_in_cents`;
+    private readonly remainingSql = `COALESCE((SELECT SUM(r.amount_in_cents-COALESCE((SELECT SUM(rev.amount_in_cents) FROM financial_fulfillment_reversals rev WHERE rev.space_id=r.space_id AND rev.original_id=r.id AND rev.original_kind='RECEIPT'),0)) FROM financial_receipts r WHERE r.space_id=c.space_id AND r.commitment_id=c.id),0)<v.amount_in_cents`;
     async list(
         spaceId: string,
         status: 'ALL' | 'PENDING' | 'RECEIVED',

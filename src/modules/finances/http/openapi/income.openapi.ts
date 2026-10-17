@@ -476,6 +476,14 @@ export const incomeOpenApi: Pick<OpenAPIObject, 'paths' | 'components'> = {
                     },
                     receipt: nullable(ref('IncomeReceipt')),
                     receipts: { type: 'array', items: ref('IncomeReceipt') },
+                    reversals: {
+                        type: 'array',
+                        items: ref('FinancialFulfillmentReversal'),
+                    },
+                    validReceipts: {
+                        type: 'array',
+                        items: ref('IncomeReceipt'),
+                    },
                     status: {
                         type: 'string',
                         enum: ['PENDING', 'PARTIALLY_RECEIVED', 'RECEIVED'],

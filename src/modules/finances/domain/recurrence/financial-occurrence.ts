@@ -3,6 +3,11 @@ import { Money } from '../shared-expense/money.js';
 import { civilDate } from '../shared-expense/settlement-cycle.js';
 import type { FinancialAdjustment } from '../corrections/financial-correction.js';
 import type { EconomicShare } from '../shared-expense/responsibility-split.js';
+import {
+    assertFinancialReversalHistory,
+    validFinancialAmount,
+    type FinancialFulfillmentReversal,
+} from '../reversals/financial-fulfillment-reversal.js';
 
 export type OccurrenceFact =
     | {
@@ -62,7 +67,9 @@ export interface OccurrenceCancellation {
 
 export class FinancialOccurrence {
     readonly facts: readonly OccurrenceFact[];
+    readonly validFacts: readonly OccurrenceFact[];
     readonly externalSettlements: readonly OccurrenceExternalSettlement[];
+    readonly validExternalSettlements: readonly OccurrenceExternalSettlement[];
     readonly valueHistory: readonly OccurrenceValueChange[];
     readonly fulfilledAmountInCents: number;
     readonly remainingAmountInCents: number | null;
@@ -86,9 +93,22 @@ export class FinancialOccurrence {
         readonly cancellation: OccurrenceCancellation | null = null,
         readonly adjustments: readonly FinancialAdjustment[] = [],
         readonly economicShares: readonly EconomicShare[] | null = null,
+        readonly reversals: readonly FinancialFulfillmentReversal[] = [],
     ) {
         if (amountInCents !== null) Money.from(amountInCents);
         civilDate(referenceDate);
+        assertFinancialReversalHistory(
+            reversals,
+            [
+                ...facts,
+                ...settlements.map((fact) => ({
+                    ...fact,
+                    kind: 'EXTERNAL_SETTLEMENT' as const,
+                })),
+            ],
+            spaceId,
+            commitmentId,
+        );
         if (
             !id ||
             !commitmentId ||
@@ -118,7 +138,14 @@ export class FinancialOccurrence {
                         fact.remainingAmountInCents > fact.amountInCents))
             )
                 throw new FinancesError('VALIDATION_ERROR');
-            fulfilled += BigInt(fact.amountInCents);
+            fulfilled += BigInt(
+                validFinancialAmount(
+                    fact.amountInCents,
+                    reversals,
+                    fact.kind,
+                    fact.id,
+                ),
+            );
         }
         if (amountInCents === null && fulfilled > 0n)
             throw new FinancesError('OCCURRENCE_VALUE_REQUIRED');
@@ -176,12 +203,28 @@ export class FinancialOccurrence {
             const paid = settlements
                 .filter((item) => item.externalLiabilityId === fact.id)
                 .reduce(
-                    (total, item) => total + BigInt(item.amountInCents),
+                    (total, item) =>
+                        total +
+                        BigInt(
+                            validFinancialAmount(
+                                item.amountInCents,
+                                reversals,
+                                'EXTERNAL_SETTLEMENT',
+                                item.id,
+                            ),
+                        ),
                     0n,
                 );
             if (
                 paid !==
-                BigInt(fact.amountInCents - fact.remainingAmountInCents)
+                BigInt(
+                    validFinancialAmount(
+                        fact.amountInCents,
+                        reversals,
+                        'EXTERNAL_LIABILITY',
+                        fact.id,
+                    ) - fact.remainingAmountInCents,
+                )
             )
                 throw new FinancesError('VALIDATION_ERROR');
         }
@@ -201,6 +244,32 @@ export class FinancialOccurrence {
         );
         this.externalSettlements = Object.freeze(
             settlements.map((item) => Object.freeze({ ...item })),
+        );
+        this.validFacts = Object.freeze(
+            this.facts
+                .map((fact) => ({
+                    ...fact,
+                    amountInCents: validFinancialAmount(
+                        fact.amountInCents,
+                        reversals,
+                        fact.kind,
+                        fact.id,
+                    ),
+                }))
+                .filter((fact) => fact.amountInCents > 0),
+        );
+        this.validExternalSettlements = Object.freeze(
+            this.externalSettlements
+                .map((fact) => ({
+                    ...fact,
+                    amountInCents: validFinancialAmount(
+                        fact.amountInCents,
+                        reversals,
+                        'EXTERNAL_SETTLEMENT',
+                        fact.id,
+                    ),
+                }))
+                .filter((fact) => fact.amountInCents > 0),
         );
         this.valueHistory = Object.freeze(
             valueHistory.map((item) => Object.freeze({ ...item })),
@@ -264,6 +333,7 @@ export class FinancialOccurrence {
             { actorId, registeredAt: now },
             this.adjustments,
             this.economicShares,
+            this.reversals,
         );
     }
 
@@ -296,6 +366,7 @@ export class FinancialOccurrence {
             this.cancellation,
             this.adjustments,
             this.economicShares,
+            this.reversals,
         );
     }
 

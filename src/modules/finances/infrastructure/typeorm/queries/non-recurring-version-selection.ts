@@ -36,6 +36,7 @@ export function applicableNonRecurringVersion(
 export function nonRecurringReadModels(
     referenceDate = "(CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date",
     todayReference = "(CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date",
+    preserveCancelledHistory = false,
 ) {
     const reference = (target: string, source: string) =>
         referenceDate === 'TARGET_DATE'
@@ -48,10 +49,10 @@ export function nonRecurringReadModels(
     ) => `LEFT JOIN LATERAL (
         SELECT v.* FROM financial_non_recurring_versions v WHERE v.space_id=${source}.space_id AND v.commitment_id=${source}.commitment_id AND v.target_id=${target}
         AND v.effective_from<=LEAST((${reference(target, source)})::date,COALESCE((SELECT MIN(fact_date) FROM (
-            SELECT fact_date FROM financial_disbursements d WHERE d.space_id=${source}.space_id AND ${factPredicate.replaceAll('FACT', 'd')}
-            UNION ALL SELECT fact_date FROM financial_external_liabilities l WHERE l.space_id=${source}.space_id AND ${factPredicate.replaceAll('FACT', 'l')}
-            UNION ALL SELECT fact_date FROM financial_receipts r WHERE r.space_id=${source}.space_id AND ${factPredicate.replaceAll('FACT', 'r')}
-            UNION ALL SELECT fact_date FROM financial_installment_resolutions resolved WHERE resolved.space_id=${source}.space_id AND resolved.installment_id=${target}
+            SELECT fact_date FROM public.financial_disbursements d WHERE d.space_id=${source}.space_id AND ${factPredicate.replaceAll('FACT', 'd')}
+            UNION ALL SELECT fact_date FROM public.financial_external_liabilities l WHERE l.space_id=${source}.space_id AND ${factPredicate.replaceAll('FACT', 'l')}
+            UNION ALL SELECT fact_date FROM public.financial_receipts r WHERE r.space_id=${source}.space_id AND ${factPredicate.replaceAll('FACT', 'r')}
+            UNION ALL SELECT fact_date FROM public.financial_installment_resolutions resolved WHERE resolved.space_id=${source}.space_id AND resolved.installment_id=${target}
         ) valid_dates),(${reference(target, source)})::date)) ORDER BY v.effective_from DESC,v.version DESC LIMIT 1
     ) applied ON true`;
     const delta = (target: string, source = 'base') =>
@@ -73,12 +74,12 @@ export function nonRecurringReadModels(
         SELECT adjusted.*,COALESCE(applied.version,1) AS economic_base_version FROM public.financial_commitment_versions base
         ${selected('base.commitment_id', 'FACT.commitment_id=base.commitment_id')}
         CROSS JOIN LATERAL jsonb_populate_record(NULL::public.financial_commitment_versions,to_jsonb(base) || jsonb_build_object('amount_in_cents',COALESCE(applied.amount_in_cents,base.amount_in_cents)+${delta('base.commitment_id')},'split_input',${correctedInput('COALESCE(applied.distribution,base.split_input)', 'base.commitment_id', 'financial_commitment_shares')},'split_mode',CASE WHEN base.split_input IS NULL THEN NULL WHEN EXISTS (SELECT 1 FROM financial_commitment_adjustments a WHERE a.space_id=base.space_id AND a.target_id=base.commitment_id AND a.commitment_version>COALESCE(applied.version,1)) THEN 'AMOUNTS' ELSE COALESCE(applied.distribution->>'mode',base.split_mode) END,'expected_payer_member_id',CASE WHEN applied.id IS NULL THEN base.expected_payer_member_id ELSE applied.expected_member_id END)) adjusted
-        WHERE NOT EXISTS (SELECT 1 FROM financial_commitment_cancellations cancelled WHERE cancelled.space_id=base.space_id AND cancelled.commitment_id=base.commitment_id)
+        WHERE ${preserveCancelledHistory ? 'true' : 'NOT EXISTS (SELECT 1 FROM financial_commitment_cancellations cancelled WHERE cancelled.space_id=base.space_id AND cancelled.commitment_id=base.commitment_id)'}
     ), financial_income_versions AS (
         SELECT adjusted.*,COALESCE(applied.version,1) AS economic_base_version FROM public.financial_income_versions base
         ${selected('base.commitment_id', 'FACT.commitment_id=base.commitment_id')}
         CROSS JOIN LATERAL jsonb_populate_record(NULL::public.financial_income_versions,to_jsonb(base) || jsonb_build_object('amount_in_cents',COALESCE(applied.amount_in_cents,base.amount_in_cents)+${delta('base.commitment_id')},'split_input',${correctedInput('COALESCE(applied.distribution,base.split_input)', 'base.commitment_id', 'financial_income_shares')},'expected_recipient_member_id',CASE WHEN applied.id IS NULL THEN base.expected_recipient_member_id ELSE applied.expected_member_id END)) adjusted
-        WHERE NOT EXISTS (SELECT 1 FROM financial_commitment_cancellations cancelled WHERE cancelled.space_id=base.space_id AND cancelled.commitment_id=base.commitment_id)
+        WHERE ${preserveCancelledHistory ? 'true' : 'NOT EXISTS (SELECT 1 FROM financial_commitment_cancellations cancelled WHERE cancelled.space_id=base.space_id AND cancelled.commitment_id=base.commitment_id)'}
     ), financial_installments AS (
         SELECT adjusted.*,COALESCE(applied.version,1) AS economic_base_version FROM public.financial_installments base
         ${selected('base.id', 'FACT.occurrence_id=base.id')}
@@ -118,8 +119,12 @@ export function withNonRecurringReadModels(
     sql: string,
     referenceDate?: string,
     todayReference?: string,
+    netFulfillments = true,
 ) {
-    const ctes = nonRecurringReadModels(referenceDate, todayReference);
+    const ctes = [
+        ...(netFulfillments ? [financialFulfillmentReadModels()] : []),
+        nonRecurringReadModels(referenceDate, todayReference, !netFulfillments),
+    ].join(', ');
     return /^\s*WITH\s/i.test(sql)
         ? sql.replace(/^\s*WITH\s/i, `WITH ${ctes}, `)
         : `WITH ${ctes} ${sql}`;
@@ -130,6 +135,7 @@ export function nonRecurringReadQuery<T = unknown>(
     sql: string,
     parameters?: unknown[],
     referenceDate?: string,
+    netFulfillments = true,
 ): Promise<T> {
     if (
         referenceDate !== undefined &&
@@ -141,7 +147,31 @@ export function nonRecurringReadQuery<T = unknown>(
             sql,
             'TARGET_DATE',
             referenceDate ? `'${referenceDate}'::date` : undefined,
+            netFulfillments,
         ),
         parameters,
     ) as Promise<T>;
+}
+
+export function financialFulfillmentReadModels() {
+    const sources = [
+        ['financial_disbursements', 'DISBURSEMENT'],
+        ['financial_receipts', 'RECEIPT'],
+        ['financial_external_liabilities', 'EXTERNAL_LIABILITY'],
+        ['financial_external_liability_settlements', 'EXTERNAL_SETTLEMENT'],
+    ];
+    return sources
+        .map(
+            ([table, kind]) => `${table} AS (
+        SELECT adjusted.* FROM public.${table} original
+        CROSS JOIN LATERAL (SELECT original.amount_in_cents-COALESCE((SELECT SUM(r.amount_in_cents) FROM financial_fulfillment_reversals r WHERE r.space_id=original.space_id AND r.original_kind='${kind}' AND r.original_id=original.id),0) AS amount) valid
+        CROSS JOIN LATERAL jsonb_populate_record(NULL::public.${table},to_jsonb(original)||jsonb_build_object('amount_in_cents',valid.amount)) adjusted
+        WHERE valid.amount>0
+    )`,
+        )
+        .concat([
+            'financial_installment_payoffs AS (SELECT original.* FROM public.financial_installment_payoffs original WHERE NOT original.compensated)',
+            'financial_installment_resolutions AS (SELECT original.* FROM public.financial_installment_resolutions original WHERE NOT original.compensated)',
+        ])
+        .join(', ');
 }

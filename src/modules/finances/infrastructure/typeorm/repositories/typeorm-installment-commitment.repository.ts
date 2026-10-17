@@ -43,6 +43,7 @@ import {
     FinancialInstallmentShareOrmEntity,
 } from '../entities/installment.orm-entity.js';
 import { recordFinancialCommandAudit } from './record-financial-command-audit.js';
+import { financialFulfillmentReversals } from '../queries/financial-fulfillment-reversal-projection.js';
 import {
     applyFinancialAdjustments,
     financialCorrections,
@@ -182,8 +183,8 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
         const fulfilled: { installment_id: string; amount: string }[] =
             await m.query(
                 `SELECT installment_id,SUM(amount_in_cents)::text AS amount FROM (
-                SELECT d.occurrence_id AS installment_id,d.amount_in_cents FROM financial_disbursements d WHERE d.space_id=$1 AND d.commitment_id=$2
-                UNION ALL SELECT l.occurrence_id,l.amount_in_cents FROM financial_external_liabilities l WHERE l.space_id=$1 AND l.commitment_id=$2
+                SELECT d.occurrence_id AS installment_id,d.amount_in_cents-COALESCE((SELECT SUM(r.amount_in_cents) FROM financial_fulfillment_reversals r WHERE r.space_id=d.space_id AND r.original_id=d.id AND r.original_kind='DISBURSEMENT'),0) AS amount_in_cents FROM financial_disbursements d WHERE d.space_id=$1 AND d.commitment_id=$2
+                UNION ALL SELECT l.occurrence_id,l.amount_in_cents-COALESCE((SELECT SUM(r.amount_in_cents) FROM financial_fulfillment_reversals r WHERE r.space_id=l.space_id AND r.original_id=l.id AND r.original_kind='EXTERNAL_LIABILITY'),0) FROM financial_external_liabilities l WHERE l.space_id=$1 AND l.commitment_id=$2
             ) facts WHERE installment_id IS NOT NULL GROUP BY installment_id`,
                 [spaceId, commitmentId],
             );
@@ -217,6 +218,12 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
             economicVersions
                 .filter((version) => version.effectiveFrom <= today)
                 .at(-1)?.description ?? c.description;
+        const reversals = await financialFulfillmentReversals(
+            m,
+            spaceId,
+            commitmentId,
+        );
+        const activePayoff = payoffs.find((payoff) => !payoff.compensated);
         const installments = rows.map((row) => {
             const state = states.find((item) => item.installmentId === row.id);
             if (!state) throw new Error('Installment state missing');
@@ -251,11 +258,16 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
                 row.position,
                 row.dueDate,
                 corrected.amountInCents,
-                (resolutions.find((item) => item.installmentId === row.id)
-                    ?.type === 'PAYOFF'
+                (resolutions.find(
+                    (item) =>
+                        item.installmentId === row.id && !item.compensated,
+                )?.type === 'PAYOFF'
                     ? 'PAID_OFF'
-                    : resolutions.find((item) => item.installmentId === row.id)
-                            ?.type === 'CANCELLED'
+                    : resolutions.find(
+                            (item) =>
+                                item.installmentId === row.id &&
+                                !item.compensated,
+                        )?.type === 'CANCELLED'
                       ? 'CANCELLED'
                       : state.status) as Installment['status'],
                 Number(
@@ -285,7 +297,8 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
                 })(),
                 (() => {
                     const resolution = resolutions.find(
-                        (item) => item.installmentId === row.id,
+                        (item) =>
+                            item.installmentId === row.id && !item.compensated,
                     );
                     return resolution
                         ? {
@@ -307,6 +320,21 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
                 applicable?.version ?? 1,
                 applicable ? applicable.expectedMemberId : undefined,
                 adjustments,
+                reversals.filter((reversal) => reversal.targetId === row.id),
+                resolutions
+                    .filter((resolution) => resolution.installmentId === row.id)
+                    .map((resolution) => ({
+                        id: resolution.id,
+                        type: resolution.type,
+                        payoffId: resolution.payoffId,
+                        expectedRemainingAmountInCents:
+                            resolution.expectedRemainingAmountInCents,
+                        factDate: resolution.factDate,
+                        actorId: resolution.actorId,
+                        registeredAt: resolution.registeredAt.toISOString(),
+                        reason: resolution.reason,
+                        compensated: resolution.compensated,
+                    })),
             );
         });
         return new InstallmentCommitment(
@@ -321,22 +349,61 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
                 c.id,
                 c.spaceId,
                 installments,
-                payoffs[0]
+                activePayoff
                     ? {
-                          id: payoffs[0].id,
-                          factId: payoffs[0].factId,
-                          factDate: payoffs[0].factDate,
-                          actorId: payoffs[0].actorId,
-                          registeredAt: payoffs[0].registeredAt.toISOString(),
+                          id: activePayoff.id,
+                          factId: activePayoff.factId,
+                          factDate: activePayoff.factDate,
+                          actorId: activePayoff.actorId,
+                          registeredAt: activePayoff.registeredAt.toISOString(),
                           expectedRemainingAmountInCents:
-                              payoffs[0].expectedRemainingAmountInCents,
-                          paidAmountInCents: payoffs[0].paidAmountInCents,
-                          adjustmentInCents: payoffs[0].adjustmentInCents,
-                          economicShares: payoffs[0].economicShares,
+                              activePayoff.expectedRemainingAmountInCents,
+                          paidAmountInCents: activePayoff.paidAmountInCents,
+                          adjustmentInCents: activePayoff.adjustmentInCents,
+                          economicShares: activePayoff.economicShares,
                           recognizedRemainingShares:
-                              payoffs[0].recognizedRemainingShares,
+                              activePayoff.recognizedRemainingShares,
+                          recognizedManualAdjustments:
+                              activePayoff.recognizedManualAdjustments,
                       }
                     : null,
+                payoffs.map((payoff) => ({
+                    id: payoff.id,
+                    factId: payoff.factId,
+                    factDate: payoff.factDate,
+                    actorId: payoff.actorId,
+                    registeredAt: payoff.registeredAt.toISOString(),
+                    expectedRemainingAmountInCents:
+                        payoff.expectedRemainingAmountInCents,
+                    paidAmountInCents: payoff.paidAmountInCents,
+                    adjustmentInCents: payoff.adjustmentInCents,
+                    economicShares: payoff.economicShares,
+                    recognizedRemainingShares: payoff.recognizedRemainingShares,
+                    compensated: payoff.compensated,
+                    expectedEconomicShares:
+                        payoff.expectedEconomicShares ??
+                        payoff.economicShares?.map((share) => ({
+                            memberId: share.memberId,
+                            amountInCents: resolutions
+                                .filter(
+                                    (resolution) =>
+                                        resolution.payoffId === payoff.id,
+                                )
+                                .reduce(
+                                    (sum, resolution) =>
+                                        sum +
+                                        (resolution.economicShares?.find(
+                                            (item) =>
+                                                item.memberId ===
+                                                share.memberId,
+                                        )?.amountInCents ?? 0),
+                                    0,
+                                ),
+                        })) ??
+                        null,
+                    recognizedManualAdjustments:
+                        payoff.recognizedManualAdjustments,
+                })),
             ),
             c.personalOwnerPersonId
                 ? { type: 'PERSONAL', ownerPersonId: c.personalOwnerPersonId }
@@ -502,6 +569,12 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
                 root.plan.installments.find((item) => item.id === row.id)!
                     .position,
             ),
+            await financialFulfillmentReversals(
+                m,
+                root.spaceId,
+                root.id,
+                row.id,
+            ),
         );
     }
 
@@ -556,6 +629,10 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
         anticipation?: InstallmentAnticipation,
     ): Promise<void> {
         const m = this.manager();
+        root.assertGlobalFulfillment(
+            fact.amountInCents,
+            anticipation?.adjustmentInCents ?? 0,
+        );
         await this.bump(
             root,
             occurrence,
@@ -678,6 +755,8 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
             paidAmountInCents: impact.paidAmountInCents,
             adjustmentInCents: impact.adjustmentInCents,
             economicShares: impact.effectiveEconomicShares,
+            expectedEconomicShares: impact.expectedRemainingShares,
+            recognizedManualAdjustments: impact.recognizedManualAdjustments,
             recognizedRemainingShares: impact.recognizedRemainingShares,
             factDate: fact.factDate,
             actorId: fact.recordedByPersonId,

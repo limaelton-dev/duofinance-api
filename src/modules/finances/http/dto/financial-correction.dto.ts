@@ -26,6 +26,7 @@ const settlement = z.discriminatedUnion('mode', [
         })
         .strict(),
 ]);
+export const financialCorrectionSettlementSchema = settlement;
 export const adjustmentSchema = z
     .object({
         ...common,

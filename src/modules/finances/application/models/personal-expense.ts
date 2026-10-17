@@ -34,6 +34,9 @@ export interface PersonalExpenseView {
     };
     disbursement: PersonalDisbursement | null;
     disbursements: readonly PersonalDisbursement[];
+    reversals?: FinancialCommitment<PersonalCommitmentVersion>['reversals'];
+    validDisbursements?: FinancialCommitment<PersonalCommitmentVersion>['validDisbursements'];
+    validExternalLiabilities?: FinancialCommitment<PersonalCommitmentVersion>['validExternalLiabilities'];
     externalLiabilities?: FinancialCommitment<PersonalCommitmentVersion>['externalLiabilities'];
     assumedAmountInCents?: number;
     externalOutstandingAmountInCents?: number;
@@ -75,6 +78,13 @@ export function personalExpenseView(
 ): PersonalExpenseView {
     return {
         spaceId: c.spaceId,
+        ...(c.reversals.length
+            ? {
+                  reversals: c.reversals,
+                  validDisbursements: c.validDisbursements,
+                  validExternalLiabilities: c.validExternalLiabilities,
+              }
+            : {}),
         ...(c.adjustments.length || c.cancellation
             ? {
                   adjustments: c.adjustments,

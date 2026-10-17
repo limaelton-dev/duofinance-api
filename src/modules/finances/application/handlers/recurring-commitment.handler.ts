@@ -16,6 +16,7 @@ import {
 import type { PersonId } from '../../../spaces/domain/person/person-id.js';
 import type { SpaceId } from '../../../spaces/domain/space/space-id.js';
 import { FinancesError } from '../../domain/errors/finances.error.js';
+import { validFinancialAmount } from '../../domain/reversals/financial-fulfillment-reversal.js';
 import { IncomeCommitment } from '../../domain/income/income-commitment.js';
 import {
     FinancialOccurrence,
@@ -137,6 +138,13 @@ function view(
         materializedAt: occurrence?.materializedAt ?? null,
         facts: occurrence?.facts ?? [],
         externalSettlements: occurrence?.externalSettlements ?? [],
+        ...(occurrence?.reversals.length
+            ? {
+                  reversals: occurrence.reversals,
+                  validFacts: occurrence.validFacts,
+                  validExternalSettlements: occurrence.validExternalSettlements,
+              }
+            : {}),
         cancellation: occurrence?.cancellation ?? null,
     };
 }
@@ -1813,6 +1821,9 @@ export class RecurringCommitmentHandler {
                     recipientPersonId: null,
                 })),
                 occurrence.stateVersion,
+                occurrence.adjustments,
+                null,
+                occurrence.reversals,
             );
         }
         const disbursements = occurrence.facts
@@ -1844,7 +1855,12 @@ export class RecurringCommitmentHandler {
                 sequence: occurrence.facts.indexOf(f) + 1,
                 holderMemberId: f.holderMemberId!,
                 amountInCents: f.amountInCents,
-                remainingAmountInCents: f.amountInCents,
+                remainingAmountInCents: validFinancialAmount(
+                    f.amountInCents,
+                    occurrence.reversals,
+                    'EXTERNAL_LIABILITY',
+                    f.id,
+                ),
                 factDate: f.factDate,
                 registeredAt: f.registeredAt,
                 recordedByPersonId: f.recordedByPersonId,
@@ -1874,6 +1890,11 @@ export class RecurringCommitmentHandler {
             today,
             occurrence.stateVersion,
             liabilities,
+            occurrence.adjustments,
+            null,
+            occurrence.reversals.filter(
+                (reversal) => reversal.originalKind !== 'EXTERNAL_SETTLEMENT',
+            ),
         );
     }
 }

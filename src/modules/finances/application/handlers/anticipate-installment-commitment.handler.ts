@@ -395,6 +395,11 @@ export class AnticipateInstallmentCommitmentHandler {
                         occurrence.materializedAt,
                         'FULFILLED',
                         occurrence.externalSettlements,
+                        occurrence.valueHistory,
+                        occurrence.cancellation,
+                        occurrence.adjustments,
+                        selected.effectiveEconomicShares,
+                        occurrence.reversals,
                     );
                     const anticipation: InstallmentAnticipation = {
                         id: randomUUID(),

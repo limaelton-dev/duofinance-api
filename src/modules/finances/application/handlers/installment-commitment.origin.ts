@@ -6,6 +6,7 @@ import {
 } from '../../domain/recurrence/financial-occurrence.js';
 import { FinancialCommitment } from '../../domain/shared-expense/financial-commitment.js';
 import { ResponsibilitySplit } from '../../domain/shared-expense/responsibility-split.js';
+import { validFinancialAmount } from '../../domain/reversals/financial-fulfillment-reversal.js';
 
 export function synthetic(
     root: InstallmentCommitment,
@@ -52,7 +53,12 @@ export function synthetic(
             sequence: occurrence.facts.indexOf(fact) + 1,
             holderMemberId: fact.holderMemberId!,
             amountInCents: fact.amountInCents,
-            remainingAmountInCents: fact.amountInCents,
+            remainingAmountInCents: validFinancialAmount(
+                fact.amountInCents,
+                occurrence.reversals,
+                'EXTERNAL_LIABILITY',
+                fact.id,
+            ),
             factDate: fact.factDate,
             registeredAt: fact.registeredAt,
             recordedByPersonId: fact.recordedByPersonId,
@@ -80,6 +86,11 @@ export function synthetic(
         today,
         occurrence.stateVersion,
         liabilities,
+        occurrence.adjustments,
+        null,
+        occurrence.reversals.filter(
+            (reversal) => reversal.originalKind !== 'EXTERNAL_SETTLEMENT',
+        ),
     );
 }
 

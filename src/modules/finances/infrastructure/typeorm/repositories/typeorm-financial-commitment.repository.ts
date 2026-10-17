@@ -1,4 +1,5 @@
 import { FinancialExternalLiabilitySettlementOrmEntity } from '../entities/external-liability-settlement.orm-entity.js';
+import { financialFulfillmentReversals } from '../queries/financial-fulfillment-reversal-projection.js';
 import {
     financialCorrections,
     applyFinancialAdjustments,
@@ -263,6 +264,7 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
             })),
             corrections.adjustments,
             corrections.cancellation,
+            await financialFulfillmentReversals(m, spaceId, commitmentId, c.id),
         );
     }
     async saveDisbursement(

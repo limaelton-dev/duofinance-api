@@ -42,6 +42,10 @@ const itemProperties = {
             'RECEIPT',
             'EXTERNAL_LIABILITY',
             'EXTERNAL_SETTLEMENT',
+            'DISBURSEMENT_REVERSAL',
+            'RECEIPT_REVERSAL',
+            'EXTERNAL_LIABILITY_REVERSAL',
+            'EXTERNAL_SETTLEMENT_REVERSAL',
             'INTERNAL_TRANSFER',
             'INTERNAL_OFFSET',
             'INTERNAL_WAIVER',
@@ -64,6 +68,16 @@ const itemProperties = {
     recipientMemberId: nullable(uuid),
     memberIds: { type: 'array', items: uuid } as SchemaObject,
     reason: nullable(text),
+    originalKind: nullable({
+        type: 'string',
+        enum: [
+            'DISBURSEMENT',
+            'RECEIPT',
+            'EXTERNAL_LIABILITY',
+            'EXTERNAL_SETTLEMENT',
+        ],
+    }),
+    originalId: nullable(uuid),
 };
 const metricProperties = Object.fromEntries(
     [
@@ -81,14 +95,17 @@ const metricProperties = Object.fromEntries(
         'internalTransfersReceivedReversedAmountInCents',
         'internalTransfersSentEffectiveAmountInCents',
         'internalTransfersReceivedEffectiveAmountInCents',
-    ].map((name) => [name, total]),
+    ].map((name) => [
+        name,
+        {
+            type: 'string',
+            pattern: '^-?(0|[1-9][0-9]*)$',
+            description:
+                'Saldo de eventos do período, incluindo compensações na data da reversão.',
+        } as SchemaObject,
+    ]),
 );
 metricProperties.economicResultInCents = {
-    type: 'string',
-    pattern: '^-?(0|[1-9][0-9]*)$',
-};
-metricProperties.expenseAmountInCents = metricProperties.economicResultInCents;
-metricProperties.expenseAmountInCents = {
     type: 'string',
     pattern: '^-?(0|[1-9][0-9]*)$',
 };
@@ -117,6 +134,19 @@ const schemas = {
     }),
     FinancialForecastResponse: object({
         ...common,
+        globalCorrections: {
+            type: 'array',
+            description:
+                'Correções globais de planos presentes no conjunto completo da consulta, uma vez por plano e antes da paginação. Os saldos abrangem todas as parcelas do plano. Estes valores não são rateados nem abatidos dos itens ou totais mensais; o detalhe do plano é a referência do saldo global.',
+            items: object({
+                commitmentId: uuid,
+                globalAdjustmentInCents: {
+                    type: 'string',
+                    pattern: '^-?(0|[1-9][0-9]*)$',
+                },
+                globalRemainingAmountInCents: total,
+            }),
+        },
         items: {
             type: 'array',
             maxItems: 20,

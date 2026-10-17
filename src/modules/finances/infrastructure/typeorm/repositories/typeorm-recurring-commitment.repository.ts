@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { financialFulfillmentReversals } from '../queries/financial-fulfillment-reversal-projection.js';
 import { financialCorrections } from '../queries/financial-correction-projection.js';
 import { randomUUID } from 'node:crypto';
 import { In } from 'typeorm';
@@ -594,6 +595,12 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
                 : null,
             corrections.adjustments,
             corrections.adjustments.at(-1)?.economicShares ?? null,
+            await financialFulfillmentReversals(
+                m,
+                root.spaceId,
+                root.id,
+                row.id,
+            ),
         );
     }
 

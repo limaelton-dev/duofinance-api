@@ -16,9 +16,8 @@ import {
     type FinancialCorrectionState,
 } from '../../domain/corrections/financial-correction.js';
 import { FinancesError } from '../../domain/errors/finances.error.js';
-import { FinancialCommitment } from '../../domain/shared-expense/financial-commitment.js';
-import { IncomeCommitment } from '../../domain/income/income-commitment.js';
-import { ResponsibilitySplit } from '../../domain/shared-expense/responsibility-split.js';
+
+import { financialCorrectionOrigin } from './financial-correction-origin.js';
 import type { AdjustmentDto } from '../../http/dto/financial-correction.dto.js';
 import {
     FINANCIAL_CORRECTION_REPOSITORY,
@@ -112,6 +111,7 @@ export class FinancialCommitmentAdjustments {
                     id: adjustment.id,
                     factDate: adjustment.factDate,
                     kind: 'ADJUSTMENT',
+                    preserveSettlementEffects: state.reversals.length > 0,
                 },
             );
         }
@@ -237,78 +237,15 @@ export class FinancialCommitmentAdjustments {
         state: FinancialCorrectionState,
         adjustment: FinancialAdjustment,
     ) {
-        const split = ResponsibilitySplit.fromEffectiveShares(
-            adjustment.resultingAmountInCents,
-            adjustment.economicShares!,
-        );
-        if (state.kind === 'INCOME')
-            return new IncomeCommitment(
-                state.id,
-                state.spaceId,
-                state.description,
-                adjustment.resultingAmountInCents,
-                state.referenceDate ?? adjustment.factDate,
-                state.createdByPersonId,
-                state.registeredAt,
-                {
-                    type: 'SHARED',
-                    split,
-                    expectedRecipientMemberId: state.expectedMemberId,
-                    settlementRuleSnapshot: state.settlementRuleSnapshot,
-                    settlementRuleSourceVersion:
-                        state.settlementRuleSourceVersion,
-                },
-                state.facts.filter((fact) => fact.kind === 'RECEIPT'),
-                Math.max(state.version + 1, state.facts.length + 1),
-                state.adjustments.concat(adjustment),
-            );
-        const facts = state.facts.map((fact, index) => ({
-            ...fact,
-            sequence: index + 1,
-        }));
-        return new FinancialCommitment(
-            state.id,
-            state.spaceId,
-            state.description,
-            state.createdByPersonId,
-            state.registeredAt,
+        return financialCorrectionOrigin(
             {
-                version: state.economicVersion,
-                split,
-                expectedPayerMemberId: state.expectedMemberId,
-                factDate: null,
-                expectedPaymentDate: state.referenceDate ?? adjustment.factDate,
-                settlementRuleSnapshot: state.settlementRuleSnapshot,
-                settlementRuleSourceVersion: state.settlementRuleSourceVersion,
-                suggestedTargetDate: null,
+                ...state,
+                version: state.version + 1,
+                amountInCents: adjustment.resultingAmountInCents,
+                shares: adjustment.economicShares,
+                adjustments: state.adjustments.concat(adjustment),
             },
-            facts
-                .filter((fact) => fact.kind === 'DISBURSEMENT')
-                .map((fact) => ({
-                    id: fact.id,
-                    sequence: fact.sequence,
-                    payerMemberId: fact.payerMemberId!,
-                    method: fact.method,
-                    amountInCents: fact.amountInCents,
-                    factDate: fact.factDate,
-                    registeredAt: fact.registeredAt,
-                    recordedByPersonId: fact.recordedByPersonId,
-                })),
             this.clock.today(),
-            Math.max(state.version + 1, state.facts.length + 1),
-            facts
-                .filter((fact) => fact.kind === 'EXTERNAL_LIABILITY')
-                .map((fact) => ({
-                    id: fact.id,
-                    sequence: fact.sequence,
-                    holderMemberId: fact.holderMemberId!,
-                    amountInCents: fact.amountInCents,
-                    remainingAmountInCents: fact.amountInCents,
-                    factDate: fact.factDate,
-                    registeredAt: fact.registeredAt,
-                    recordedByPersonId: fact.recordedByPersonId,
-                })),
-            state.adjustments.concat(adjustment),
         );
     }
 }

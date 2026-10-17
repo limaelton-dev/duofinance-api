@@ -53,6 +53,9 @@ export interface SharedCashExpenseView {
     };
     disbursement: FinancialCommitment['disbursement'];
     disbursements: FinancialCommitment['disbursements'];
+    reversals?: FinancialCommitment['reversals'];
+    validDisbursements?: FinancialCommitment['validDisbursements'];
+    validExternalLiabilities?: FinancialCommitment['validExternalLiabilities'];
     externalLiabilities?: FinancialCommitment['externalLiabilities'];
     assumedAmountInCents?: number;
     externalOutstandingAmountInCents?: number;
@@ -107,6 +110,13 @@ export function expenseView(
     const version = commitment.initialVersion;
     return {
         spaceId: commitment.spaceId,
+        ...(commitment.reversals.length
+            ? {
+                  reversals: commitment.reversals,
+                  validDisbursements: commitment.validDisbursements,
+                  validExternalLiabilities: commitment.validExternalLiabilities,
+              }
+            : {}),
         ...(commitment.adjustments.length || commitment.cancellation
             ? {
                   adjustments: commitment.adjustments,

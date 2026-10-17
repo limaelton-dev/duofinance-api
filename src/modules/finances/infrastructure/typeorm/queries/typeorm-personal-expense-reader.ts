@@ -79,7 +79,7 @@ export class TypeOrmPersonalExpenseReader implements PersonalExpenseReader {
                 WHERE space_id=p.space_id AND commitment_id=p.id
             ) d ON true
             LEFT JOIN LATERAL (
-                SELECT SUM((x."externalLiability"->>'amountInCents')::bigint) AS assumed,
+                SELECT SUM(COALESCE(x."externalLiability"->>'validAmountInCents',x."externalLiability"->>'amountInCents')::bigint) AS assumed,
                     SUM((x."externalLiability"->>'remainingAmountInCents')::bigint) AS outstanding,
                     jsonb_agg(x."externalLiability" ORDER BY (x."externalLiability"->>'sequence')::int) AS liabilities
                 FROM (${externalLiabilityProjection} WHERE c.space_id=p.space_id AND c.id=p.id) x

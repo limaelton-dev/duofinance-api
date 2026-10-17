@@ -449,6 +449,7 @@ describe('CARD-001 — PostgreSQL e HTTP', () => {
             'InstallmentResolutions1792165600000',
             'CommitmentChanges1792250149185',
             'FinancialCorrections1792251398684',
+            'FinancialFulfillmentReversals1792252537110',
         ]);
         expect(await counts()).toEqual([0, 0, 0, 0]);
 
@@ -833,7 +834,7 @@ describe('CARD-001 — PostgreSQL e HTTP', () => {
             .expect(200);
 
         expect(response.body.openapi).toBe('3.1.0');
-        expect(Object.keys(response.body.paths)).toHaveLength(97);
+        expect(Object.keys(response.body.paths)).toHaveLength(99);
 
         const paths = response.body.paths as Record<
             string,
@@ -858,7 +859,22 @@ describe('CARD-001 — PostgreSQL e HTTP', () => {
             0,
         );
 
-        expect(operations).toBe(109);
+        expect(operations).toBe(112);
+        expect(
+            paths[
+                '/v2/spaces/{spaceId}/financial-commitments/{commitmentId}/reversal-preview'
+            ],
+        ).toHaveProperty('post');
+        expect(
+            paths[
+                '/v2/spaces/{spaceId}/financial-commitments/{commitmentId}/reversals'
+            ],
+        ).toHaveProperty('post');
+        expect(
+            paths[
+                '/v2/spaces/{spaceId}/financial-commitments/{commitmentId}/reversals'
+            ],
+        ).toHaveProperty('get');
         for (const route of [
             '/v2/spaces/{spaceId}/installment-commitments/preview',
             '/v2/spaces/{spaceId}/installment-commitments/{id}/installments/{installmentId}/disbursements',

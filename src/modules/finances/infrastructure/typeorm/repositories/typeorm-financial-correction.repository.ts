@@ -29,6 +29,7 @@ import type {
 import type { OccurrenceFact } from '../../../domain/recurrence/financial-occurrence.js';
 import { FinancesError } from '../../../domain/errors/finances.error.js';
 import { FinancialCommitmentOrmEntity } from '../entities/shared-expense.orm-entity.js';
+import { financialFulfillmentReversals } from '../queries/financial-fulfillment-reversal-projection.js';
 import { FinancialOccurrenceOrmEntity } from '../entities/recurrence.orm-entity.js';
 import {
     FinancialCommitmentAdjustmentOrmEntity,
@@ -78,7 +79,7 @@ export class TypeOrmFinancialCorrectionRepository implements FinancialCorrection
         };
         let state: Omit<
             FinancialCorrectionState,
-            'adjustments' | 'cancellation'
+            'adjustments' | 'cancellation' | 'reversals'
         >;
         if (meta.modality === 'ONE_TIME') {
             if (
@@ -118,7 +119,7 @@ export class TypeOrmFinancialCorrectionRepository implements FinancialCorrection
                         p.type === 'SHARED' ? p.settlementRuleSnapshot : null,
                     settlementRuleSourceVersion:
                         p.type === 'SHARED' ? p.settlementRuleSourceVersion : 0,
-                    facts: root.receipts.map((fact) => ({
+                    facts: root.validReceipts.map((fact) => ({
                         ...fact,
                         kind: 'RECEIPT',
                     })),
@@ -126,35 +127,36 @@ export class TypeOrmFinancialCorrectionRepository implements FinancialCorrection
             } else {
                 const root = (await this.expenses.find(spaceId, id, lock))!;
                 const p = root.initialVersion;
-                const facts: OccurrenceFact[] = root.fulfillments.map((fact) =>
-                    'method' in fact
-                        ? {
-                              ...fact,
-                              kind: 'DISBURSEMENT',
-                              payerMemberId:
-                                  'payerMemberId' in fact
-                                      ? fact.payerMemberId
-                                      : null,
-                              payerPersonId:
-                                  'payerPersonId' in fact
-                                      ? fact.payerPersonId
-                                      : null,
-                              recordedByPersonId:
-                                  fact.recordedByPersonId ??
-                                  root.createdByPersonId,
-                          }
-                        : {
-                              ...fact,
-                              kind: 'EXTERNAL_LIABILITY',
-                              holderMemberId:
-                                  'holderMemberId' in fact
-                                      ? fact.holderMemberId
-                                      : null,
-                              holderPersonId:
-                                  'holderPersonId' in fact
-                                      ? fact.holderPersonId
-                                      : null,
-                          },
+                const facts: OccurrenceFact[] = root.validFulfillments.map(
+                    (fact) =>
+                        'method' in fact
+                            ? {
+                                  ...fact,
+                                  kind: 'DISBURSEMENT',
+                                  payerMemberId:
+                                      'payerMemberId' in fact
+                                          ? fact.payerMemberId
+                                          : null,
+                                  payerPersonId:
+                                      'payerPersonId' in fact
+                                          ? fact.payerPersonId
+                                          : null,
+                                  recordedByPersonId:
+                                      fact.recordedByPersonId ??
+                                      root.createdByPersonId,
+                              }
+                            : {
+                                  ...fact,
+                                  kind: 'EXTERNAL_LIABILITY',
+                                  holderMemberId:
+                                      'holderMemberId' in fact
+                                          ? fact.holderMemberId
+                                          : null,
+                                  holderPersonId:
+                                      'holderPersonId' in fact
+                                          ? fact.holderPersonId
+                                          : null,
+                              },
                 );
                 const amount =
                     'split' in p
@@ -255,7 +257,7 @@ export class TypeOrmFinancialCorrectionRepository implements FinancialCorrection
                     p.type === 'SHARED' ? p.settlementRuleSnapshot : null,
                 settlementRuleSourceVersion:
                     p.type === 'SHARED' ? p.settlementRuleSourceVersion : 0,
-                facts: occurrence?.facts ?? [],
+                facts: occurrence?.validFacts ?? [],
             };
             if (state.projected) state.occurrenceId = state.targetId;
         } else {
@@ -303,7 +305,7 @@ export class TypeOrmFinancialCorrectionRepository implements FinancialCorrection
                     p.type === 'SHARED' ? p.settlementRuleSnapshot : null,
                 settlementRuleSourceVersion:
                     p.type === 'SHARED' ? p.settlementRuleSourceVersion : 0,
-                facts: occurrence.facts,
+                facts: occurrence.validFacts,
             };
         }
         const corrections = await financialCorrections(
@@ -316,7 +318,12 @@ export class TypeOrmFinancialCorrectionRepository implements FinancialCorrection
             const today = new Date(now).toLocaleDateString('en-CA', {
                 timeZone: 'America/Sao_Paulo',
             });
-            const date = state.facts.map((fact) => fact.factDate).sort()[0];
+            const [firstFact]: { fact_date: string | null }[] =
+                await manager.query(
+                    `SELECT MIN(fact_date)::text AS fact_date FROM (SELECT fact_date FROM financial_disbursements WHERE space_id=$1 AND commitment_id=$2 AND occurrence_id IS NOT DISTINCT FROM $3::uuid UNION ALL SELECT fact_date FROM financial_external_liabilities WHERE space_id=$1 AND commitment_id=$2 AND occurrence_id IS NOT DISTINCT FROM $3::uuid UNION ALL SELECT fact_date FROM financial_receipts WHERE space_id=$1 AND commitment_id=$2 AND occurrence_id IS NOT DISTINCT FROM $3::uuid) facts`,
+                    [spaceId, id, state.occurrenceId],
+                );
+            const date = firstFact.fact_date;
             const cutoff = date && date < today ? date : today;
             const [row]: {
                 distribution: FinancialCorrectionState['distribution'];
@@ -332,6 +339,12 @@ export class TypeOrmFinancialCorrectionRepository implements FinancialCorrection
                 corrections.adjustments[0]?.previousAmountInCents ??
                 state.originalAmountInCents,
             ...corrections,
+            reversals: await financialFulfillmentReversals(
+                manager,
+                spaceId,
+                id,
+                state.targetId,
+            ),
             cancelled: state.cancelled || corrections.cancellation !== null,
         };
     }
