@@ -38,7 +38,8 @@ export interface SharedCashExpenseView {
         modality: 'ONE_TIME';
         description: string;
         amountInCents: number;
-        factDate: string;
+        factDate: string | null;
+        expectedPaymentDate?: string | null;
         registeredAt: string;
         createdByPersonId: string;
         expectedPayerMemberId: string | null;
@@ -57,10 +58,11 @@ export interface SharedCashExpenseView {
     externalOutstandingAmountInCents?: number;
     externalSettledAmountInCents?: number;
     supportedAmountInCents?: number;
-    fulfillmentStatus?: 'PARTIALLY_FULFILLED' | 'FULFILLED';
+    fulfillmentStatus?: 'PENDING' | 'PARTIALLY_FULFILLED' | 'FULFILLED';
     paidAmountInCents: number;
     remainingAmountInCents: number;
     status: FinancialCommitment['status'];
+    overdue?: boolean;
     obligation: FulfillmentObligationView | null;
     obligations: FulfillmentObligationView[];
     settlementCycle: null | {
@@ -113,6 +115,9 @@ export function expenseView(
             description: commitment.description,
             amountInCents: version.split.total.amountInCents,
             factDate: version.factDate,
+            ...(version.expectedPaymentDate
+                ? { expectedPaymentDate: version.expectedPaymentDate }
+                : {}),
             registeredAt: commitment.registeredAt,
             createdByPersonId: commitment.createdByPersonId,
             expectedPayerMemberId: version.expectedPayerMemberId,
@@ -138,6 +143,7 @@ export function expenseView(
         paidAmountInCents: commitment.paidAmountInCents,
         remainingAmountInCents: commitment.remainingAmountInCents,
         status: commitment.status,
+        ...(version.expectedPaymentDate ? { overdue: commitment.overdue } : {}),
         obligations: [],
         obligation: obligation
             ? {

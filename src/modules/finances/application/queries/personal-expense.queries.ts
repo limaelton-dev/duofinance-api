@@ -59,7 +59,11 @@ export class ListPersonalExpensesQuery {
             items,
             nextCursor:
                 rows.length > 20 && last
-                    ? encodeExpenseCursor(space.value, last.factDate, last.id)
+                    ? encodeExpenseCursor(
+                          space.value,
+                          last.relevantDate ?? last.factDate!,
+                          last.id,
+                      )
                     : null,
         };
     }

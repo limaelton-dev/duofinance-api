@@ -26,7 +26,8 @@ export interface PersonalExpenseView {
         modality: 'ONE_TIME';
         description: string;
         amountInCents: number;
-        factDate: string;
+        factDate: string | null;
+        expectedPaymentDate?: string | null;
         registeredAt: string;
         createdByPersonId: string;
         ownerPersonId: string;
@@ -38,10 +39,11 @@ export interface PersonalExpenseView {
     externalOutstandingAmountInCents?: number;
     externalSettledAmountInCents?: number;
     supportedAmountInCents?: number;
-    fulfillmentStatus?: 'PARTIALLY_FULFILLED' | 'FULFILLED';
+    fulfillmentStatus?: 'PENDING' | 'PARTIALLY_FULFILLED' | 'FULFILLED';
     paidAmountInCents: number;
     remainingAmountInCents: number;
     status: FinancialCommitment['status'];
+    overdue?: boolean;
 }
 export interface PersonalExpenseResult extends PersonalExpenseView {
     replayed: boolean;
@@ -50,7 +52,10 @@ export interface PersonalExpenseSummary {
     id: string;
     description: string;
     amountInCents: number;
-    factDate: string;
+    factDate: string | null;
+    expectedPaymentDate?: string | null;
+    relevantDate?: string;
+    overdue?: boolean;
     disbursement: {
         amountInCents: number;
         method: 'PIX' | 'DEBIT' | 'CASH';
@@ -60,7 +65,7 @@ export interface PersonalExpenseSummary {
     externalOutstandingAmountInCents?: number;
     externalSettledAmountInCents?: number;
     supportedAmountInCents?: number;
-    fulfillmentStatus?: 'PARTIALLY_FULFILLED' | 'FULFILLED';
+    fulfillmentStatus?: 'PENDING' | 'PARTIALLY_FULFILLED' | 'FULFILLED';
     paidAmountInCents: number;
     remainingAmountInCents: number;
     status: FinancialCommitment['status'];
@@ -79,6 +84,9 @@ export function personalExpenseView(
             description: c.description,
             amountInCents: c.initialVersion.amount.amountInCents,
             factDate: c.initialVersion.factDate,
+            ...(c.initialVersion.expectedPaymentDate
+                ? { expectedPaymentDate: c.initialVersion.expectedPaymentDate }
+                : {}),
             registeredAt: c.registeredAt,
             createdByPersonId: c.createdByPersonId,
             ownerPersonId: c.initialVersion.ownerPersonId,
@@ -94,5 +102,6 @@ export function personalExpenseView(
         paidAmountInCents: c.paidAmountInCents,
         remainingAmountInCents: c.remainingAmountInCents,
         status: c.status,
+        ...(c.initialVersion.expectedPaymentDate ? { overdue: c.overdue } : {}),
     };
 }

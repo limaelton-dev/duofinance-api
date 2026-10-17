@@ -1,0 +1,745 @@
+import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { In } from 'typeorm';
+import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
+import type { InstallmentCommitmentRepository } from '../../../application/ports/private/installment-commitment.repository.js';
+import { FinancesError } from '../../../domain/errors/finances.error.js';
+import {
+    InstallmentCommitment,
+    type InstallmentPayoffImpact,
+    type InstallmentResolutionItem,
+} from '../../../domain/installment/installment-commitment.js';
+import {
+    Installment,
+    InstallmentPlan,
+    type InstallmentAnticipation,
+} from '../../../domain/installment/installment-plan.js';
+import {
+    FinancialOccurrence,
+    type OccurrenceFact,
+} from '../../../domain/recurrence/financial-occurrence.js';
+import {
+    FinancialCommitmentOrmEntity,
+    FinancialDisbursementOrmEntity,
+    FinancialExternalLiabilityOrmEntity,
+} from '../entities/shared-expense.orm-entity.js';
+import { FinancialOccurrenceOrmEntity } from '../entities/recurrence.orm-entity.js';
+import {
+    FinancialInstallmentAnticipationOrmEntity,
+    FinancialInstallmentPayoffOrmEntity,
+    FinancialInstallmentResolutionOrmEntity,
+    FinancialInstallmentCommandReceiptOrmEntity,
+    FinancialInstallmentOrmEntity,
+    FinancialInstallmentPlanOrmEntity,
+    FinancialInstallmentShareOrmEntity,
+} from '../entities/installment.orm-entity.js';
+import { recordFinancialCommandAudit } from './record-financial-command-audit.js';
+
+@Injectable()
+export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommitmentRepository {
+    constructor(private readonly provider: EntityManagerProvider) {}
+
+    private manager() {
+        return this.provider.get();
+    }
+
+    async save(root: InstallmentCommitment): Promise<void> {
+        const m = this.manager();
+        const p = root.participation;
+        await m.insert(FinancialCommitmentOrmEntity, {
+            id: root.id,
+            spaceId: root.spaceId,
+            kind: 'EXPENSE',
+            modality: 'INSTALLMENT',
+            description: root.description,
+            createdBy: root.createdByPersonId,
+            personalOwnerPersonId:
+                p.type === 'PERSONAL' ? p.ownerPersonId : null,
+            version: root.version,
+            registeredAt: new Date(root.registeredAt),
+        });
+        await m.insert(FinancialInstallmentPlanOrmEntity, {
+            id: root.plan.id,
+            spaceId: root.spaceId,
+            commitmentId: root.id,
+            installmentCount: root.plan.count,
+            totalAmountInCents: root.plan.totalAmountInCents,
+            cadence: root.cadence,
+            plannedPaymentMethod: root.plannedPaymentMethod,
+            splitInput: p.type === 'SHARED' ? p.distribution : null,
+            expectedMemberId: p.type === 'SHARED' ? p.expectedMemberId : null,
+            ruleSnapshot: p.type === 'SHARED' ? p.settlementRuleSnapshot : null,
+            ruleSourceVersion:
+                p.type === 'SHARED' ? p.settlementRuleSourceVersion : 0,
+            registeredAt: new Date(root.registeredAt),
+        });
+        for (const installment of root.plan.installments) {
+            await m.insert(FinancialInstallmentOrmEntity, {
+                id: installment.id,
+                spaceId: root.spaceId,
+                commitmentId: root.id,
+                planId: root.plan.id,
+                position: installment.position,
+                dueDate: installment.dueDate,
+                amountInCents: installment.amountInCents,
+            });
+            await m.insert(FinancialOccurrenceOrmEntity, {
+                id: installment.id,
+                spaceId: root.spaceId,
+                commitmentId: root.id,
+                referenceDate: installment.dueDate,
+                economicVersion: null,
+                installmentId: installment.id,
+                stateVersion: 1,
+                amountInCents: installment.amountInCents,
+                status: 'PENDING',
+                materializedAt: new Date(root.registeredAt),
+            });
+            for (const share of root.sharesFor(installment.position) ?? [])
+                await m.insert(FinancialInstallmentShareOrmEntity, {
+                    installmentId: installment.id,
+                    memberId: share.memberId,
+                    spaceId: root.spaceId,
+                    commitmentId: root.id,
+                    amountInCents: share.amountInCents,
+                });
+        }
+    }
+
+    async find(
+        spaceId: string,
+        commitmentId: string,
+        lock = false,
+    ): Promise<InstallmentCommitment | null> {
+        return lock
+            ? this.findInSnapshot(spaceId, commitmentId, true)
+            : this.provider.readSnapshot(() =>
+                  this.findInSnapshot(spaceId, commitmentId, false),
+              );
+    }
+
+    private async findInSnapshot(
+        spaceId: string,
+        commitmentId: string,
+        lock: boolean,
+    ): Promise<InstallmentCommitment | null> {
+        const m = this.manager();
+        const q = m
+            .createQueryBuilder(FinancialCommitmentOrmEntity, 'c')
+            .where(
+                'c.space_id=:spaceId AND c.id=:commitmentId AND c.modality=:modality',
+                { spaceId, commitmentId, modality: 'INSTALLMENT' },
+            );
+        if (lock) q.setLock('pessimistic_write');
+        const c = await q.getOne();
+        if (!c) return null;
+        const plan = await m.findOneBy(FinancialInstallmentPlanOrmEntity, {
+            spaceId,
+            commitmentId,
+        });
+        if (!plan) throw new Error('Installment plan missing');
+        const rows = await m.find(FinancialInstallmentOrmEntity, {
+            where: { spaceId, commitmentId },
+            order: { position: 'ASC' },
+        });
+        const states = await m.find(FinancialOccurrenceOrmEntity, {
+            where: {
+                spaceId,
+                commitmentId,
+                installmentId: In(rows.map((row) => row.id)),
+            },
+        });
+        const anticipations = await m.find(
+            FinancialInstallmentAnticipationOrmEntity,
+            { where: { spaceId, commitmentId } },
+        );
+        const payoffs = await m.find(FinancialInstallmentPayoffOrmEntity, {
+            where: { spaceId, commitmentId },
+        });
+        const resolutions = await m.find(
+            FinancialInstallmentResolutionOrmEntity,
+            { where: { spaceId, commitmentId } },
+        );
+        const fulfilled: { installment_id: string; amount: string }[] =
+            await m.query(
+                `SELECT installment_id,SUM(amount_in_cents)::text AS amount FROM (
+                SELECT d.occurrence_id AS installment_id,d.amount_in_cents FROM financial_disbursements d WHERE d.space_id=$1 AND d.commitment_id=$2
+                UNION ALL SELECT l.occurrence_id,l.amount_in_cents FROM financial_external_liabilities l WHERE l.space_id=$1 AND l.commitment_id=$2
+            ) facts WHERE installment_id IS NOT NULL GROUP BY installment_id`,
+                [spaceId, commitmentId],
+            );
+        const installments = rows.map((row) => {
+            const state = states.find((item) => item.installmentId === row.id);
+            if (!state) throw new Error('Installment state missing');
+            return new Installment(
+                row.id,
+                row.position,
+                row.dueDate,
+                row.amountInCents,
+                (resolutions.find((item) => item.installmentId === row.id)
+                    ?.type === 'PAYOFF'
+                    ? 'PAID_OFF'
+                    : resolutions.find((item) => item.installmentId === row.id)
+                            ?.type === 'CANCELLED'
+                      ? 'CANCELLED'
+                      : state.status) as Installment['status'],
+                Number(
+                    fulfilled.find((item) => item.installment_id === row.id)
+                        ?.amount ?? '0',
+                ),
+                state.stateVersion,
+                (() => {
+                    const anticipation = anticipations.find(
+                        (item) => item.installmentId === row.id,
+                    );
+                    return anticipation
+                        ? {
+                              id: anticipation.id,
+                              factId: anticipation.factId,
+                              factDate: anticipation.factDate,
+                              registeredAt:
+                                  anticipation.registeredAt.toISOString(),
+                              actorId: anticipation.actorId,
+                              expectedRemainingAmountInCents:
+                                  anticipation.expectedRemainingAmountInCents,
+                              paidAmountInCents: anticipation.paidAmountInCents,
+                              adjustmentInCents: anticipation.adjustmentInCents,
+                              economicShares: anticipation.economicShares,
+                          }
+                        : null;
+                })(),
+                (() => {
+                    const resolution = resolutions.find(
+                        (item) => item.installmentId === row.id,
+                    );
+                    return resolution
+                        ? {
+                              id: resolution.id,
+                              type: resolution.type,
+                              payoffId: resolution.payoffId,
+                              expectedRemainingAmountInCents:
+                                  resolution.expectedRemainingAmountInCents,
+                              factDate: resolution.factDate,
+                              actorId: resolution.actorId,
+                              registeredAt:
+                                  resolution.registeredAt.toISOString(),
+                              reason: resolution.reason,
+                          }
+                        : null;
+                })(),
+            );
+        });
+        return new InstallmentCommitment(
+            c.id,
+            c.spaceId,
+            c.description,
+            c.createdBy,
+            c.registeredAt.toISOString(),
+            c.version,
+            new InstallmentPlan(
+                plan.id,
+                c.id,
+                c.spaceId,
+                installments,
+                payoffs[0]
+                    ? {
+                          id: payoffs[0].id,
+                          factId: payoffs[0].factId,
+                          factDate: payoffs[0].factDate,
+                          actorId: payoffs[0].actorId,
+                          registeredAt: payoffs[0].registeredAt.toISOString(),
+                          expectedRemainingAmountInCents:
+                              payoffs[0].expectedRemainingAmountInCents,
+                          paidAmountInCents: payoffs[0].paidAmountInCents,
+                          adjustmentInCents: payoffs[0].adjustmentInCents,
+                          economicShares: payoffs[0].economicShares,
+                          recognizedRemainingShares:
+                              payoffs[0].recognizedRemainingShares,
+                      }
+                    : null,
+            ),
+            c.personalOwnerPersonId
+                ? { type: 'PERSONAL', ownerPersonId: c.personalOwnerPersonId }
+                : {
+                      type: 'SHARED',
+                      distribution: plan.splitInput!,
+                      expectedMemberId: plan.expectedMemberId,
+                      settlementRuleSnapshot: plan.ruleSnapshot,
+                      settlementRuleSourceVersion: plan.ruleSourceVersion,
+                  },
+            plan.cadence,
+            plan.plannedPaymentMethod,
+        );
+    }
+
+    async list(spaceId: string, after: string | null) {
+        return this.provider.readSnapshot(async () => {
+            const m = this.manager();
+            const [counts]: { total_count: string; amount: string }[] =
+                await m.query(
+                    `SELECT COUNT(*)::text AS total_count,COALESCE(SUM(p.total_amount_in_cents),0)::text AS amount FROM financial_installment_plans p WHERE p.space_id=$1`,
+                    [spaceId],
+                );
+            const rows: { commitment_id: string }[] = await m.query(
+                `SELECT commitment_id FROM financial_installment_plans WHERE space_id=$1 AND ($2::uuid IS NULL OR commitment_id>$2::uuid) ORDER BY commitment_id LIMIT 21`,
+                [spaceId, after],
+            );
+            const items: InstallmentCommitment[] = [];
+            for (const row of rows)
+                items.push(
+                    (await this.findInSnapshot(
+                        spaceId,
+                        row.commitment_id,
+                        false,
+                    ))!,
+                );
+            return {
+                items,
+                totalCount: Number(counts.total_count),
+                totalAmountInCents: counts.amount,
+            };
+        });
+    }
+
+    async occurrence(
+        root: InstallmentCommitment,
+        installmentId: string,
+    ): Promise<FinancialOccurrence | null> {
+        return this.provider.readSnapshot(() =>
+            this.occurrenceInSnapshot(root, installmentId),
+        );
+    }
+
+    private async occurrenceInSnapshot(
+        root: InstallmentCommitment,
+        installmentId: string,
+    ): Promise<FinancialOccurrence | null> {
+        const m = this.manager();
+        const row = await m.findOneBy(FinancialOccurrenceOrmEntity, {
+            id: installmentId,
+            spaceId: root.spaceId,
+            commitmentId: root.id,
+            installmentId,
+        });
+        if (!row) return null;
+        const [disbursements, liabilities, settlements] = await Promise.all([
+            m.find(FinancialDisbursementOrmEntity, {
+                where: {
+                    spaceId: root.spaceId,
+                    commitmentId: root.id,
+                    occurrenceId: row.id,
+                },
+                order: { sequence: 'ASC' },
+            }),
+            m.find(FinancialExternalLiabilityOrmEntity, {
+                where: {
+                    spaceId: root.spaceId,
+                    commitmentId: root.id,
+                    occurrenceId: row.id,
+                },
+                order: { sequence: 'ASC' },
+            }),
+            m.query(
+                `SELECT s.*,s.fact_date::text AS fact_date FROM financial_external_liability_settlements s JOIN financial_external_liabilities l ON l.space_id=s.space_id AND l.commitment_id=s.commitment_id AND l.id=s.external_liability_id WHERE l.space_id=$1 AND l.occurrence_id=$2 ORDER BY s.sequence`,
+                [root.spaceId, row.id],
+            ) as Promise<
+                {
+                    id: string;
+                    external_liability_id: string;
+                    amount_in_cents: string;
+                    fact_date: string;
+                    registered_at: Date;
+                    recorded_by_person_id: string;
+                }[]
+            >,
+        ]);
+        const facts: OccurrenceFact[] = [
+            ...disbursements.map((f) => ({
+                sequence: f.sequence,
+                fact: {
+                    kind: 'DISBURSEMENT' as const,
+                    id: f.id,
+                    amountInCents: f.amountInCents,
+                    factDate: f.factDate,
+                    registeredAt: f.registeredAt.toISOString(),
+                    recordedByPersonId: f.recordedByPersonId,
+                    payerMemberId: f.payerMemberId,
+                    payerPersonId: f.payerPersonId,
+                    method: f.method as 'PIX' | 'DEBIT' | 'CASH',
+                },
+            })),
+            ...liabilities.map((f) => ({
+                sequence: f.sequence,
+                fact: {
+                    kind: 'EXTERNAL_LIABILITY' as const,
+                    id: f.id,
+                    amountInCents: f.amountInCents,
+                    factDate: f.factDate,
+                    registeredAt: f.registeredAt.toISOString(),
+                    recordedByPersonId: f.recordedByPersonId,
+                    holderMemberId: f.holderMemberId,
+                    holderPersonId: f.holderPersonId,
+                    remainingAmountInCents: f.remainingAmountInCents,
+                },
+            })),
+        ]
+            .sort((a, b) => a.sequence - b.sequence)
+            .map((item) => item.fact);
+        return new FinancialOccurrence(
+            row.id,
+            row.commitmentId,
+            row.spaceId,
+            row.referenceDate,
+            1,
+            row.stateVersion,
+            row.amountInCents,
+            facts,
+            row.materializedAt.toISOString(),
+            row.status,
+            settlements.map((s) => ({
+                id: s.id,
+                externalLiabilityId: s.external_liability_id,
+                amountInCents: Number(s.amount_in_cents),
+                factDate: s.fact_date,
+                registeredAt: s.registered_at.toISOString(),
+                recordedByPersonId: s.recorded_by_person_id,
+            })),
+        );
+    }
+
+    private async nextSequence(root: InstallmentCommitment): Promise<number> {
+        const [row]: { n: number }[] = await this.manager().query(
+            `SELECT (SELECT COUNT(*) FROM financial_disbursements WHERE space_id=$1 AND commitment_id=$2)+(SELECT COUNT(*) FROM financial_external_liabilities WHERE space_id=$1 AND commitment_id=$2)+(SELECT COUNT(*) FROM financial_external_liability_settlements WHERE space_id=$1 AND commitment_id=$2)+1 AS n`,
+            [root.spaceId, root.id],
+        );
+        return Number(row.n);
+    }
+
+    private async bump(
+        root: InstallmentCommitment,
+        occurrence: FinancialOccurrence,
+        status: FinancialOccurrence['status'],
+        settling = false,
+        amountInCents?: number,
+    ) {
+        const m = this.manager();
+        const changed = await m.update(
+            FinancialCommitmentOrmEntity,
+            { id: root.id, spaceId: root.spaceId, version: root.version },
+            { version: root.version + 1 },
+        );
+        if (changed.affected !== 1)
+            throw new FinancesError('CONCURRENT_MODIFICATION');
+        const state = await m.update(
+            FinancialOccurrenceOrmEntity,
+            {
+                id: occurrence.id,
+                spaceId: root.spaceId,
+                stateVersion: settling
+                    ? occurrence.stateVersion
+                    : occurrence.stateVersion - 1,
+            },
+            {
+                stateVersion: settling
+                    ? occurrence.stateVersion + 1
+                    : occurrence.stateVersion,
+                status,
+                ...(amountInCents === undefined ? {} : { amountInCents }),
+            },
+        );
+        if (state.affected !== 1)
+            throw new FinancesError('CONCURRENT_MODIFICATION');
+    }
+
+    async record(
+        root: InstallmentCommitment,
+        occurrence: FinancialOccurrence,
+        fact: OccurrenceFact,
+        anticipation?: InstallmentAnticipation,
+    ): Promise<void> {
+        const m = this.manager();
+        await this.bump(
+            root,
+            occurrence,
+            occurrence.status,
+            false,
+            anticipation ? occurrence.amountInCents! : undefined,
+        );
+        const sequence = await this.nextSequence(root);
+        if (fact.kind === 'DISBURSEMENT')
+            await m.insert(FinancialDisbursementOrmEntity, {
+                id: fact.id,
+                spaceId: root.spaceId,
+                commitmentId: root.id,
+                occurrenceId: occurrence.id,
+                sequence,
+                version: 1,
+                recordedByPersonId: fact.recordedByPersonId,
+                payerMemberId: fact.payerMemberId,
+                payerPersonId: fact.payerPersonId,
+                amountInCents: fact.amountInCents,
+                method: fact.method,
+                factDate: fact.factDate,
+                registeredAt: new Date(fact.registeredAt),
+            });
+        if (fact.kind === 'EXTERNAL_LIABILITY')
+            await m.insert(FinancialExternalLiabilityOrmEntity, {
+                id: fact.id,
+                spaceId: root.spaceId,
+                commitmentId: root.id,
+                occurrenceId: occurrence.id,
+                sequence,
+                version: 1,
+                recordedByPersonId: fact.recordedByPersonId,
+                holderMemberId: fact.holderMemberId,
+                holderPersonId: fact.holderPersonId,
+                amountInCents: fact.amountInCents,
+                remainingAmountInCents: fact.remainingAmountInCents,
+                factDate: fact.factDate,
+                registeredAt: new Date(fact.registeredAt),
+            });
+        if (anticipation)
+            await m.insert(FinancialInstallmentAnticipationOrmEntity, {
+                id: anticipation.id,
+                spaceId: root.spaceId,
+                commitmentId: root.id,
+                installmentId: occurrence.id,
+                factId: anticipation.factId,
+                dueDate: occurrence.referenceDate,
+                expectedRemainingAmountInCents:
+                    anticipation.expectedRemainingAmountInCents,
+                paidAmountInCents: anticipation.paidAmountInCents,
+                effectiveAmountInCents: occurrence.amountInCents!,
+                adjustmentInCents: anticipation.adjustmentInCents,
+                economicShares: anticipation.economicShares,
+                factDate: anticipation.factDate,
+                registeredAt: new Date(anticipation.registeredAt),
+                actorId: anticipation.actorId,
+            });
+    }
+
+    private async resolveState(
+        root: InstallmentCommitment,
+        items: readonly InstallmentResolutionItem[],
+    ) {
+        const m = this.manager();
+        const changed = await m.update(
+            FinancialCommitmentOrmEntity,
+            { id: root.id, spaceId: root.spaceId, version: root.version },
+            { version: root.version + 1 },
+        );
+        if (changed.affected !== 1)
+            throw new FinancesError('CONCURRENT_MODIFICATION');
+        for (const item of items) {
+            const state = await m.update(
+                FinancialOccurrenceOrmEntity,
+                {
+                    id: item.installmentId,
+                    spaceId: root.spaceId,
+                    commitmentId: root.id,
+                    stateVersion: item.expectedInstallmentVersion,
+                },
+                { stateVersion: item.expectedInstallmentVersion + 1 },
+            );
+            if (state.affected !== 1)
+                throw new FinancesError('CONCURRENT_MODIFICATION');
+        }
+    }
+
+    async payoff(
+        root: InstallmentCommitment,
+        impact: InstallmentPayoffImpact,
+        fact: Extract<OccurrenceFact, { kind: 'DISBURSEMENT' }>,
+        payoffId: string,
+    ) {
+        const m = this.manager();
+        await this.resolveState(root, impact.items);
+        const sequence = await this.nextSequence(root);
+        await m.insert(FinancialDisbursementOrmEntity, {
+            id: fact.id,
+            spaceId: root.spaceId,
+            commitmentId: root.id,
+            occurrenceId: null,
+            sequence,
+            version: 1,
+            recordedByPersonId: fact.recordedByPersonId,
+            payerMemberId: fact.payerMemberId,
+            payerPersonId: fact.payerPersonId,
+            amountInCents: fact.amountInCents,
+            method: fact.method,
+            factDate: fact.factDate,
+            registeredAt: new Date(fact.registeredAt),
+        });
+        await m.insert(FinancialInstallmentPayoffOrmEntity, {
+            id: payoffId,
+            spaceId: root.spaceId,
+            commitmentId: root.id,
+            factId: fact.id,
+            expectedRemainingAmountInCents:
+                impact.expectedRemainingAmountInCents,
+            paidAmountInCents: impact.paidAmountInCents,
+            adjustmentInCents: impact.adjustmentInCents,
+            economicShares: impact.effectiveEconomicShares,
+            recognizedRemainingShares: impact.recognizedRemainingShares,
+            factDate: fact.factDate,
+            actorId: fact.recordedByPersonId,
+            registeredAt: new Date(fact.registeredAt),
+        });
+        for (const item of impact.items)
+            await m.insert(FinancialInstallmentResolutionOrmEntity, {
+                id: randomUUID(),
+                spaceId: root.spaceId,
+                commitmentId: root.id,
+                installmentId: item.installmentId,
+                type: 'PAYOFF',
+                payoffId,
+                expectedRemainingAmountInCents:
+                    item.expectedRemainingAmountInCents,
+                factDate: fact.factDate,
+                actorId: fact.recordedByPersonId,
+                registeredAt: new Date(fact.registeredAt),
+                reason: null,
+                economicShares: item.remainingEconomicShares,
+            });
+    }
+
+    async cancelFuture(
+        root: InstallmentCommitment,
+        items: readonly InstallmentResolutionItem[],
+        reason: string,
+        actorId: string,
+        factDate: string,
+        now: string,
+    ) {
+        const m = this.manager();
+        await this.resolveState(root, items);
+        for (const item of items)
+            await m.insert(FinancialInstallmentResolutionOrmEntity, {
+                id: randomUUID(),
+                spaceId: root.spaceId,
+                commitmentId: root.id,
+                installmentId: item.installmentId,
+                type: 'CANCELLED',
+                payoffId: null,
+                expectedRemainingAmountInCents:
+                    item.expectedRemainingAmountInCents,
+                factDate,
+                actorId,
+                registeredAt: new Date(now),
+                reason,
+                economicShares: item.remainingEconomicShares,
+            });
+    }
+
+    async settleExternal(
+        root: InstallmentCommitment,
+        occurrence: FinancialOccurrence,
+        liabilityId: string,
+        amountInCents: number,
+        factDate: string,
+        actorId: string,
+        now: string,
+    ) {
+        const m = this.manager();
+        const liability = await m.findOneBy(
+            FinancialExternalLiabilityOrmEntity,
+            {
+                id: liabilityId,
+                spaceId: root.spaceId,
+                commitmentId: root.id,
+                occurrenceId: occurrence.id,
+            },
+        );
+        if (!liability) throw new FinancesError('EXTERNAL_LIABILITY_NOT_FOUND');
+        if (amountInCents > liability.remainingAmountInCents)
+            throw new FinancesError('CONCURRENT_MODIFICATION');
+        await this.bump(root, occurrence, occurrence.status, true);
+        const remaining = liability.remainingAmountInCents - amountInCents;
+        const changed = await m.update(
+            FinancialExternalLiabilityOrmEntity,
+            {
+                id: liability.id,
+                remainingAmountInCents: liability.remainingAmountInCents,
+            },
+            { remainingAmountInCents: remaining },
+        );
+        if (changed.affected !== 1)
+            throw new FinancesError('CONCURRENT_MODIFICATION');
+        const id = randomUUID();
+        const sequence = await this.nextSequence(root);
+        await m.query(
+            `INSERT INTO financial_external_liability_settlements
+            (id,space_id,commitment_id,external_liability_id,sequence,holder_member_id,holder_person_id,recorded_by_person_id,receipt_operation,idempotency_key,amount_in_cents,fact_date,registered_at)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULL,NULL,$9,$10,$11)`,
+            [
+                id,
+                root.spaceId,
+                root.id,
+                liability.id,
+                sequence,
+                liability.holderMemberId,
+                liability.holderPersonId,
+                actorId,
+                amountInCents,
+                factDate,
+                now,
+            ],
+        );
+        return { id, remainingAmountInCents: remaining };
+    }
+
+    async findReceipt(
+        actorId: string,
+        operation: string,
+        key: string,
+        hash: Buffer,
+    ): Promise<unknown | null> {
+        const row = await this.manager().findOneBy(
+            FinancialInstallmentCommandReceiptOrmEntity,
+            { actorId, operation, idempotencyKey: key },
+        );
+        if (!row) return null;
+        if (!row.requestHash.equals(hash))
+            throw new FinancesError('IDEMPOTENCY_KEY_REUSED');
+        return row.result;
+    }
+
+    async saveReceipt(
+        actorId: string,
+        spaceId: string,
+        commitmentId: string,
+        installmentId: string | null,
+        operation: string,
+        key: string,
+        hash: Buffer,
+        result: unknown,
+        now: string,
+    ): Promise<void> {
+        await this.manager().insert(
+            FinancialInstallmentCommandReceiptOrmEntity,
+            {
+                actorId,
+                operation,
+                idempotencyKey: key,
+                requestHash: hash,
+                status: 'COMPLETED',
+                spaceId,
+                commitmentId,
+                installmentId,
+                result: result as Record<string, unknown>,
+                createdAt: new Date(now),
+            },
+        );
+        await recordFinancialCommandAudit(
+            this.manager(),
+            {
+                actorId: { value: actorId },
+                spaceId: { value: spaceId },
+                idempotencyKey: key,
+            },
+            operation,
+            commitmentId,
+            now,
+        );
+    }
+}

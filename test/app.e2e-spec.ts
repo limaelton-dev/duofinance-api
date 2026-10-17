@@ -440,6 +440,13 @@ describe('CARD-001 — PostgreSQL e HTTP', () => {
             'FinalizeSettlementCycle1792162609967',
             'WaiveInterMemberObligation1792163371690',
             'ReverseSettlementResolution1792164211588',
+            'PlannedExpenses1792165000000',
+            'FixedRecurringCommitments1792165100000',
+            'VariableRecurringOccurrences1792165200000',
+            'RecurringMaintenance1792165300000',
+            'FiniteInstallmentCommitments1792165400000',
+            'InstallmentAnticipations1792165500000',
+            'InstallmentResolutions1792165600000',
         ]);
         expect(await counts()).toEqual([0, 0, 0, 0]);
 
@@ -824,7 +831,7 @@ describe('CARD-001 — PostgreSQL e HTTP', () => {
             .expect(200);
 
         expect(response.body.openapi).toBe('3.1.0');
-        expect(Object.keys(response.body.paths)).toHaveLength(56);
+        expect(Object.keys(response.body.paths)).toHaveLength(86);
 
         const paths = response.body.paths as Record<
             string,
@@ -849,7 +856,46 @@ describe('CARD-001 — PostgreSQL e HTTP', () => {
             0,
         );
 
-        expect(operations).toBe(63);
+        expect(operations).toBe(96);
+        for (const route of [
+            '/v2/spaces/{spaceId}/installment-commitments/preview',
+            '/v2/spaces/{spaceId}/installment-commitments/{id}/installments/{installmentId}/disbursements',
+            '/v2/spaces/{spaceId}/installment-commitments/{id}/installments/{installmentId}/external-liabilities',
+            '/v2/spaces/{spaceId}/installment-commitments/{id}/installments/{installmentId}/external-liabilities/{liabilityId}/settlements',
+        ])
+            expect(paths[route]).toHaveProperty('post');
+        expect(
+            paths['/v2/spaces/{spaceId}/installment-commitments'],
+        ).toHaveProperty('get');
+        expect(
+            paths['/v2/spaces/{spaceId}/installment-commitments'],
+        ).toHaveProperty('post');
+        expect(
+            paths['/v2/spaces/{spaceId}/installment-commitments/{id}'],
+        ).toHaveProperty('get');
+        expect(
+            paths[
+                '/v2/spaces/{spaceId}/installment-commitments/{id}/installments'
+            ],
+        ).toHaveProperty('get');
+        expect(
+            paths[
+                '/v2/spaces/{spaceId}/installment-commitments/{id}/installments/{installmentId}/options'
+            ],
+        ).toHaveProperty('get');
+        for (const route of [
+            '/v2/spaces/{spaceId}/recurring-commitments/{id}/change-preview',
+            '/v2/spaces/{spaceId}/recurring-commitments/{id}/versions',
+            '/v2/spaces/{spaceId}/recurring-commitments/{id}/termination-preview',
+            '/v2/spaces/{spaceId}/recurring-commitments/{id}/termination',
+            '/v2/spaces/{spaceId}/recurring-commitments/{id}/occurrences/{referenceDate}/cancellation',
+        ])
+            expect(paths[route]).toHaveProperty('post');
+        expect(
+            paths[
+                '/v2/spaces/{spaceId}/recurring-commitments/{id}/occurrences/{referenceDate}/value'
+            ],
+        ).toHaveProperty('put');
         expect(paths['/v2/spaces']).toHaveProperty('get');
         expect(paths['/v2/spaces']).toHaveProperty('post');
 

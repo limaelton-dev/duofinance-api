@@ -1,4 +1,5 @@
 export type FinancesErrorCode =
+    | 'INSTALLMENT_SELECTION_CHANGED'
     | 'SETTLEMENT_RESOLUTION_ALREADY_REVERSED'
     | 'REVERSAL_CORRECTION_CYCLE_REQUIRED'
     | 'OBLIGATION_WAIVER_NOT_FOUND'
@@ -21,8 +22,14 @@ export type FinancesErrorCode =
     | 'SETTLEMENT_TRANSFER_NOT_FOUND'
     | 'INCOME_ALREADY_RECEIVED'
     | 'EXPENSE_ALREADY_PAID'
-    | 'INCOME_OPTIONS_CHANGED';
+    | 'OCCURRENCE_ALREADY_RESOLVED'
+    | 'OCCURRENCE_VALUE_REQUIRED'
+    | 'INCOME_OPTIONS_CHANGED'
+    | 'RECURRENCE_ACCEPTANCE_REQUIRED'
+    | 'RECURRENCE_ALREADY_TERMINATED';
 const messages: Record<FinancesErrorCode, string> = {
+    INSTALLMENT_SELECTION_CHANGED:
+        'A seleção ou o estado das parcelas mudou. Atualize a prévia e confirme novamente.',
     SETTLEMENT_RESOLUTION_ALREADY_REVERSED:
         'Este acerto já foi integralmente revertido.',
     REVERSAL_CORRECTION_CYCLE_REQUIRED:
@@ -54,7 +61,14 @@ const messages: Record<FinancesErrorCode, string> = {
     SETTLEMENT_TRANSFER_NOT_FOUND: 'Transferência não encontrada.',
     INCOME_ALREADY_RECEIVED: 'Esta receita já foi recebida.',
     EXPENSE_ALREADY_PAID: 'Esta despesa já foi integralmente realizada.',
+    OCCURRENCE_ALREADY_RESOLVED:
+        'Esta ocorrência já foi realizada ou cancelada. Atualize e confirme novamente.',
+    OCCURRENCE_VALUE_REQUIRED:
+        'Informe o valor efetivo desta ocorrência antes de registrar a realização.',
     INCOME_OPTIONS_CHANGED: 'As opções mudaram. Atualize e confirme novamente.',
+    RECURRENCE_ACCEPTANCE_REQUIRED:
+        'Esta alteração exige aceite dos demais membros e ainda não pode ser aplicada.',
+    RECURRENCE_ALREADY_TERMINATED: 'Esta recorrência já foi encerrada.',
 };
 export class FinancesError extends Error {
     constructor(

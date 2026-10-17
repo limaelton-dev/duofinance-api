@@ -1,0 +1,1009 @@
+import type {
+    OpenAPIObject,
+    ReferenceObject,
+    ResponseObject,
+    SchemaObject,
+} from '@nestjs/swagger';
+
+const ref = (name: string): ReferenceObject => ({
+    $ref: `#/components/schemas/${name}`,
+});
+const object = (
+    properties: Record<string, SchemaObject | ReferenceObject>,
+): SchemaObject => ({
+    type: 'object',
+    additionalProperties: false,
+    required: Object.keys(properties),
+    properties,
+});
+const uuid: SchemaObject = { type: 'string', format: 'uuid' };
+const date: SchemaObject = { type: 'string', format: 'date' };
+const cents: SchemaObject = {
+    type: 'integer',
+    minimum: 1,
+    maximum: Number.MAX_SAFE_INTEGER,
+};
+const version: SchemaObject = { type: 'integer', minimum: 1 };
+const nullable = (schema: SchemaObject | ReferenceObject): SchemaObject => ({
+    oneOf: [schema, { type: 'null' }],
+});
+const response = (
+    schema: SchemaObject | ReferenceObject,
+    description: string,
+): ResponseObject => ({
+    description,
+    headers: {
+        'Cache-Control': { schema: { type: 'string', enum: ['no-store'] } },
+    },
+    content: { 'application/json': { schema } },
+});
+const error = (...codes: string[]) =>
+    response(
+        {
+            allOf: [
+                ref('ErrorResponse'),
+                {
+                    type: 'object',
+                    properties: { code: { type: 'string', enum: codes } },
+                },
+            ],
+        },
+        codes.join(', '),
+    );
+const path = (name: string) => ({
+    name,
+    in: 'path' as const,
+    required: true,
+    schema: uuid,
+});
+const csrf = {
+    name: 'X-CSRF-Token',
+    in: 'header' as const,
+    required: true,
+    schema: { type: 'string' },
+};
+const idempotency = {
+    name: 'Idempotency-Key',
+    in: 'header' as const,
+    required: true,
+    schema: uuid,
+};
+const read = [path('spaceId')];
+const write = [path('spaceId'), csrf, idempotency];
+const common = {
+    description: {
+        type: 'string',
+        minLength: 1,
+        maxLength: 160,
+    } as SchemaObject,
+    count: { type: 'integer', minimum: 1, maximum: 1200 } as SchemaObject,
+    firstDueDate: date,
+    cadence: { type: 'string', enum: ['MONTHLY', 'ANNUAL'] } as SchemaObject,
+    explicitDueDates: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 1200,
+        items: date,
+    } as SchemaObject,
+    totalAmountInCents: cents,
+    baseAmountInCents: cents,
+    amountsInCents: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 1200,
+        items: cents,
+    } as SchemaObject,
+    plannedPaymentMethod: nullable({
+        type: 'string',
+        enum: ['CARD', 'PIX', 'DEBIT', 'CASH'],
+    }),
+};
+const personal = object({
+    scope: { type: 'string', enum: ['PERSONAL'] },
+    ...common,
+});
+personal.required = ['scope', 'description', 'count'];
+const shared = object({
+    scope: { type: 'string', enum: ['SHARED'] },
+    ...common,
+    distribution: ref('ResponsibilitySplit'),
+    expectedMemberId: nullable(uuid),
+    expectedSpaceVersion: version,
+    expectedRuleVersion: { type: 'integer', minimum: 0 },
+});
+shared.required = ['scope', 'description', 'count', 'distribution'];
+const installment = object({
+    id: uuid,
+    position: version,
+    dueDate: date,
+    amountInCents: cents,
+    economicShares: nullable({
+        type: 'array',
+        items: object({
+            memberId: uuid,
+            amountInCents: { type: 'integer', minimum: 0 },
+        }),
+    }),
+    effectiveAmountInCents: cents,
+    effectiveEconomicShares: nullable({
+        type: 'array',
+        items: object({
+            memberId: uuid,
+            amountInCents: { type: 'integer', minimum: 0 },
+        }),
+    }),
+    anticipation: nullable({
+        type: 'object',
+        additionalProperties: true,
+    }),
+    resolution: nullable({ type: 'object', additionalProperties: true }),
+    stateVersion: nullable(version),
+    status: {
+        type: 'string',
+        enum: [
+            'PENDING',
+            'PARTIALLY_FULFILLED',
+            'FULFILLED',
+            'PAID_OFF',
+            'CANCELLED',
+        ],
+    },
+    fulfilledAmountInCents: { type: 'integer', minimum: 0 },
+    remainingAmountInCents: { type: 'integer', minimum: 0 },
+    facts: {
+        type: 'array',
+        items: { type: 'object', additionalProperties: true },
+    },
+    externalSettlements: {
+        type: 'array',
+        items: { type: 'object', additionalProperties: true },
+    },
+});
+const plan = object({
+    id: uuid,
+    count: version,
+    cadence: { type: 'string', enum: ['MONTHLY', 'ANNUAL', 'EXPLICIT'] },
+    status: { type: 'string', enum: ['OPEN', 'COMPLETED'] },
+    plannedPaymentMethod: nullable({
+        type: 'string',
+        enum: ['CARD', 'PIX', 'DEBIT', 'CASH'],
+    }),
+    totalAmountInCents: cents,
+    fulfilledAmountInCents: { type: 'integer', minimum: 0 },
+    remainingAmountInCents: { type: 'integer', minimum: 0 },
+    installments: { type: 'array', items: ref('Installment') },
+    payoff: nullable({ type: 'object', additionalProperties: true }),
+});
+const commitment = object({
+    id: uuid,
+    spaceId: uuid,
+    kind: { type: 'string', enum: ['EXPENSE'] },
+    modality: { type: 'string', enum: ['INSTALLMENT'] },
+    description: { type: 'string' },
+    createdByPersonId: uuid,
+    registeredAt: { type: 'string', format: 'date-time' },
+    version,
+    scope: { type: 'string', enum: ['PERSONAL', 'SHARED'] },
+    plan: ref('InstallmentPlan'),
+    ownerPersonId: uuid,
+    distribution: ref('ResponsibilitySplit'),
+    expectedMemberId: nullable(uuid),
+    settlementRuleSnapshot: nullable({
+        type: 'object',
+        additionalProperties: true,
+    }),
+    settlementRuleSourceVersion: { type: 'integer', minimum: 0 },
+});
+commitment.required = [
+    'id',
+    'spaceId',
+    'kind',
+    'modality',
+    'description',
+    'createdByPersonId',
+    'registeredAt',
+    'version',
+    'scope',
+    'plan',
+];
+const settlement: SchemaObject = {
+    oneOf: [
+        object({ mode: { type: 'string', enum: ['NONE'] } }),
+        object({ mode: { type: 'string', enum: ['DATE'] }, targetDate: date }),
+        object({ mode: { type: 'string', enum: ['CYCLE'] }, cycleId: uuid }),
+        object({
+            mode: { type: 'string', enum: ['SUGGESTED'] },
+            referenceDate: date,
+            expectedRuleVersion: version,
+        }),
+    ],
+};
+const fulfillment = {
+    expectedCommitmentVersion: version,
+    expectedInstallmentVersion: version,
+    amountInCents: cents,
+    factDate: date,
+};
+const disbursement = object({
+    ...fulfillment,
+    method: { type: 'string', enum: ['PIX', 'DEBIT', 'CASH'] },
+    payerMemberId: uuid,
+    expectedSpaceVersion: version,
+    settlement,
+});
+disbursement.required = Object.keys(fulfillment).concat('method');
+const liability = object({
+    ...fulfillment,
+    holderMemberId: uuid,
+    expectedSpaceVersion: version,
+    settlement,
+});
+liability.required = Object.keys(fulfillment);
+const externalSettlement = object({
+    ...fulfillment,
+    expectedSpaceVersion: version,
+});
+externalSettlement.required = Object.keys(fulfillment);
+const anticipationSelection: SchemaObject = {
+    oneOf: [
+        object({
+            mode: { type: 'string', enum: ['IDS'] },
+            installmentIds: {
+                type: 'array',
+                minItems: 1,
+                maxItems: 1200,
+                uniqueItems: true,
+                items: uuid,
+            },
+        }),
+        object({
+            mode: { type: 'string', enum: ['FROM_END'] },
+            quantity: { type: 'integer', minimum: 1, maximum: 1200 },
+        }),
+    ],
+};
+const anticipationValue = object({
+    installmentId: uuid,
+    expectedInstallmentVersion: version,
+    paidAmountInCents: cents,
+});
+const anticipationCommon = {
+    selection: anticipationSelection,
+    factDate: date,
+    values: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 1200,
+        items: anticipationValue,
+    } as SchemaObject,
+    method: { type: 'string', enum: ['PIX', 'DEBIT', 'CASH'] } as SchemaObject,
+    expectedCommitmentVersion: version,
+};
+const anticipationPersonal = object(anticipationCommon);
+const anticipationShared = object({
+    ...anticipationCommon,
+    payerMemberId: uuid,
+    expectedSpaceVersion: version,
+    settlement,
+});
+const anticipationPreview = object({
+    ...anticipationCommon,
+    payerMemberId: uuid,
+    expectedSpaceVersion: version,
+    settlement,
+});
+anticipationPreview.required = ['selection', 'factDate'];
+const resolutionVersions: SchemaObject = {
+    type: 'array',
+    minItems: 1,
+    maxItems: 1200,
+    uniqueItems: true,
+    items: object({ installmentId: uuid, expectedInstallmentVersion: version }),
+};
+const payoffCommon = {
+    paidAmountInCents: cents,
+    factDate: date,
+    installments: resolutionVersions,
+    method: { type: 'string', enum: ['PIX', 'DEBIT', 'CASH'] } as SchemaObject,
+    expectedCommitmentVersion: version,
+};
+const payoffPreviewRequest = object({
+    ...payoffCommon,
+    payerMemberId: uuid,
+    expectedSpaceVersion: version,
+    settlement,
+});
+payoffPreviewRequest.required = ['paidAmountInCents', 'factDate'];
+const cancellationRequest = object({
+    installments: resolutionVersions,
+    reason: { type: 'string', minLength: 1, maxLength: 500 },
+    factDate: date,
+    expectedCommitmentVersion: version,
+    expectedSpaceVersion: version,
+});
+cancellationRequest.required = [
+    'installments',
+    'reason',
+    'factDate',
+    'expectedCommitmentVersion',
+];
+const command = (
+    operationId: string,
+    request: string,
+    pathParameters: ReturnType<typeof path>[],
+) => ({
+    operationId,
+    tags: ['Finances'],
+    security: [{ sessionCookie: [] }],
+    parameters: [...write, ...pathParameters],
+    requestBody: {
+        required: true,
+        content: { 'application/json': { schema: ref(request) } },
+    },
+    responses: {
+        201: response(ref('InstallmentCommandResponse'), 'Parcela atualizada.'),
+        200: response(ref('InstallmentCommandResponse'), 'Replay autorizado.'),
+        400: error('VALIDATION_ERROR'),
+        401: error('UNAUTHENTICATED'),
+        404: error('FINANCIAL_COMMITMENT_NOT_FOUND'),
+        409: error(
+            'CONCURRENT_MODIFICATION',
+            'IDEMPOTENCY_KEY_REUSED',
+            'OCCURRENCE_ALREADY_RESOLVED',
+            'EXPENSE_OPTIONS_CHANGED',
+        ),
+    },
+});
+
+export const installmentCommitmentOpenApi: Pick<
+    OpenAPIObject,
+    'paths' | 'components'
+> = {
+    paths: {
+        '/v2/spaces/{spaceId}/installment-commitments/preview': {
+            post: {
+                operationId: 'previewInstallmentCommitment',
+                tags: ['Finances'],
+                security: [{ sessionCookie: [] }],
+                parameters: [...read, csrf],
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: ref('InstallmentCommitmentRequest'),
+                        },
+                    },
+                },
+                responses: {
+                    200: response(
+                        ref('InstallmentPreview'),
+                        'Cronograma completo, sem escrita.',
+                    ),
+                    400: error('VALIDATION_ERROR'),
+                    404: error('SPACE_NOT_FOUND'),
+                },
+            },
+        },
+        '/v2/spaces/{spaceId}/installment-commitments': {
+            post: {
+                operationId: 'createInstallmentCommitment',
+                tags: ['Finances'],
+                security: [{ sessionCookie: [] }],
+                parameters: write,
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: ref('InstallmentCommitmentRequest'),
+                        },
+                    },
+                },
+                responses: {
+                    201: response(
+                        ref('CreateInstallmentCommitmentResponse'),
+                        'Plano confirmado.',
+                    ),
+                    200: response(
+                        ref('CreateInstallmentCommitmentResponse'),
+                        'Replay autorizado.',
+                    ),
+                    400: error('VALIDATION_ERROR'),
+                    404: error('SPACE_NOT_FOUND'),
+                    409: error(
+                        'EXPENSE_OPTIONS_CHANGED',
+                        'IDEMPOTENCY_KEY_REUSED',
+                    ),
+                },
+            },
+            get: {
+                operationId: 'listInstallmentCommitments',
+                tags: ['Finances'],
+                security: [{ sessionCookie: [] }],
+                parameters: [
+                    ...read,
+                    {
+                        name: 'cursor',
+                        in: 'query',
+                        required: false,
+                        schema: { type: 'string' },
+                    },
+                ],
+                responses: {
+                    200: response(
+                        ref('InstallmentCommitmentList'),
+                        'Planos parcelados.',
+                    ),
+                    400: error('VALIDATION_ERROR'),
+                    404: error('SPACE_NOT_FOUND'),
+                },
+            },
+        },
+        '/v2/spaces/{spaceId}/installment-commitments/{id}': {
+            get: {
+                operationId: 'getInstallmentCommitment',
+                tags: ['Finances'],
+                security: [{ sessionCookie: [] }],
+                parameters: [...read, path('id')],
+                responses: {
+                    200: response(
+                        object({ commitment: ref('InstallmentCommitment') }),
+                        'Plano e cronograma.',
+                    ),
+                    404: error('FINANCIAL_COMMITMENT_NOT_FOUND'),
+                },
+            },
+        },
+        '/v2/spaces/{spaceId}/installment-commitments/{id}/installments': {
+            get: {
+                operationId: 'listInstallments',
+                tags: ['Finances'],
+                security: [{ sessionCookie: [] }],
+                parameters: [...read, path('id')],
+                responses: {
+                    200: response(
+                        ref('InstallmentList'),
+                        'Todas as parcelas e fatos, sem truncamento.',
+                    ),
+                    404: error('FINANCIAL_COMMITMENT_NOT_FOUND'),
+                },
+            },
+        },
+        '/v2/spaces/{spaceId}/installment-commitments/{id}/anticipation-options':
+            {
+                get: {
+                    operationId: 'getInstallmentAnticipationOptions',
+                    tags: ['Finances'],
+                    security: [{ sessionCookie: [] }],
+                    parameters: [
+                        ...read,
+                        path('id'),
+                        {
+                            name: 'cursor',
+                            in: 'query',
+                            required: false,
+                            schema: { type: 'string' },
+                        },
+                    ],
+                    responses: {
+                        200: response(
+                            ref('InstallmentAnticipationOptions'),
+                            'Parcelas futuras abertas, da mais distante para a mais próxima.',
+                        ),
+                        400: error('VALIDATION_ERROR'),
+                        404: error('FINANCIAL_COMMITMENT_NOT_FOUND'),
+                    },
+                },
+            },
+        '/v2/spaces/{spaceId}/installment-commitments/{id}/anticipation-preview':
+            {
+                post: {
+                    operationId: 'previewInstallmentAnticipation',
+                    tags: ['Finances'],
+                    security: [{ sessionCookie: [] }],
+                    parameters: [...read, path('id'), csrf],
+                    requestBody: {
+                        required: true,
+                        content: {
+                            'application/json': {
+                                schema: ref(
+                                    'InstallmentAnticipationPreviewRequest',
+                                ),
+                            },
+                        },
+                    },
+                    responses: {
+                        200: response(
+                            ref('InstallmentAnticipationPreview'),
+                            'Seleção e impacto por parcela, sem escrita.',
+                        ),
+                        400: error('VALIDATION_ERROR'),
+                        404: error('FINANCIAL_COMMITMENT_NOT_FOUND'),
+                        409: error('INSTALLMENT_SELECTION_CHANGED'),
+                    },
+                },
+            },
+        '/v2/spaces/{spaceId}/installment-commitments/{id}/anticipations': {
+            post: {
+                operationId: 'anticipateInstallments',
+                tags: ['Finances'],
+                security: [{ sessionCookie: [] }],
+                parameters: [...write, path('id')],
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: ref('InstallmentAnticipationRequest'),
+                        },
+                    },
+                },
+                responses: {
+                    201: response(
+                        ref('InstallmentAnticipationResponse'),
+                        'Antecipação atômica registrada.',
+                    ),
+                    200: response(
+                        ref('InstallmentAnticipationResponse'),
+                        'Replay autorizado.',
+                    ),
+                    400: error('VALIDATION_ERROR'),
+                    404: error('FINANCIAL_COMMITMENT_NOT_FOUND'),
+                    409: error(
+                        'INSTALLMENT_SELECTION_CHANGED',
+                        'OCCURRENCE_ALREADY_RESOLVED',
+                        'CONCURRENT_MODIFICATION',
+                        'IDEMPOTENCY_KEY_REUSED',
+                        'EXPENSE_OPTIONS_CHANGED',
+                        'SETTLEMENT_CYCLE_FINALIZED',
+                    ),
+                },
+            },
+        },
+        '/v2/spaces/{spaceId}/installment-commitments/{id}/resolution-options':
+            {
+                get: {
+                    operationId: 'getInstallmentResolutionOptions',
+                    tags: ['Finances'],
+                    security: [{ sessionCookie: [] }],
+                    parameters: [
+                        ...read,
+                        path('id'),
+                        {
+                            name: 'cursor',
+                            in: 'query',
+                            required: false,
+                            schema: { type: 'string' },
+                        },
+                    ],
+                    responses: {
+                        200: response(
+                            ref('InstallmentResolutionOptions'),
+                            'Restantes abertos e elegibilidade para cancelamento.',
+                        ),
+                        400: error('VALIDATION_ERROR'),
+                        404: error('FINANCIAL_COMMITMENT_NOT_FOUND'),
+                    },
+                },
+            },
+        '/v2/spaces/{spaceId}/installment-commitments/{id}/payoff-preview': {
+            post: {
+                operationId: 'previewInstallmentPayoff',
+                tags: ['Finances'],
+                security: [{ sessionCookie: [] }],
+                parameters: [...read, path('id'), csrf],
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: ref('InstallmentPayoffPreviewRequest'),
+                        },
+                    },
+                },
+                responses: {
+                    200: response(
+                        ref('InstallmentPayoffPreview'),
+                        'Impacto global e por membro, sem escrita nem rateio por parcela.',
+                    ),
+                    400: error('VALIDATION_ERROR'),
+                    404: error('FINANCIAL_COMMITMENT_NOT_FOUND'),
+                    409: error(
+                        'CONCURRENT_MODIFICATION',
+                        'OCCURRENCE_ALREADY_RESOLVED',
+                        'EXPENSE_OPTIONS_CHANGED',
+                    ),
+                },
+            },
+        },
+        '/v2/spaces/{spaceId}/installment-commitments/{id}/payoffs': {
+            post: {
+                operationId: 'payoffInstallments',
+                tags: ['Finances'],
+                security: [{ sessionCookie: [] }],
+                parameters: [...write, path('id')],
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: ref('InstallmentPayoffRequest'),
+                        },
+                    },
+                },
+                responses: {
+                    201: response(
+                        ref('InstallmentPayoffResponse'),
+                        'Fato único de quitação global registrado.',
+                    ),
+                    200: response(
+                        ref('InstallmentPayoffResponse'),
+                        'Replay autorizado.',
+                    ),
+                    400: error('VALIDATION_ERROR'),
+                    404: error('FINANCIAL_COMMITMENT_NOT_FOUND'),
+                    409: error(
+                        'INSTALLMENT_SELECTION_CHANGED',
+                        'CONCURRENT_MODIFICATION',
+                        'IDEMPOTENCY_KEY_REUSED',
+                        'EXPENSE_OPTIONS_CHANGED',
+                        'SETTLEMENT_CYCLE_FINALIZED',
+                    ),
+                },
+            },
+        },
+        '/v2/spaces/{spaceId}/installment-commitments/{id}/future-installment-cancellations':
+            {
+                post: {
+                    operationId: 'cancelFutureInstallments',
+                    tags: ['Finances'],
+                    security: [{ sessionCookie: [] }],
+                    parameters: [...write, path('id')],
+                    requestBody: {
+                        required: true,
+                        content: {
+                            'application/json': {
+                                schema: ref(
+                                    'InstallmentFutureCancellationRequest',
+                                ),
+                            },
+                        },
+                    },
+                    responses: {
+                        201: response(
+                            ref('InstallmentFutureCancellationResponse'),
+                            'Restantes futuros extintos com motivo e fatos anteriores preservados.',
+                        ),
+                        200: response(
+                            ref('InstallmentFutureCancellationResponse'),
+                            'Replay autorizado.',
+                        ),
+                        400: error('VALIDATION_ERROR'),
+                        404: error('FINANCIAL_COMMITMENT_NOT_FOUND'),
+                        409: error(
+                            'INSTALLMENT_SELECTION_CHANGED',
+                            'OCCURRENCE_ALREADY_RESOLVED',
+                            'CONCURRENT_MODIFICATION',
+                            'IDEMPOTENCY_KEY_REUSED',
+                        ),
+                    },
+                },
+            },
+        '/v2/spaces/{spaceId}/installment-commitments/{id}/installments/{installmentId}/options':
+            {
+                get: {
+                    operationId: 'getInstallmentOptions',
+                    tags: ['Finances'],
+                    security: [{ sessionCookie: [] }],
+                    parameters: [
+                        ...read,
+                        path('id'),
+                        path('installmentId'),
+                        {
+                            name: 'cursor',
+                            in: 'query',
+                            required: false,
+                            schema: { type: 'string' },
+                        },
+                    ],
+                    responses: {
+                        200: response(
+                            { type: 'object', additionalProperties: true },
+                            'Parcela, versões e opções de acerto.',
+                        ),
+                        404: error('FINANCIAL_COMMITMENT_NOT_FOUND'),
+                    },
+                },
+            },
+        '/v2/spaces/{spaceId}/installment-commitments/{id}/installments/{installmentId}/disbursements':
+            {
+                post: command(
+                    'recordInstallmentDisbursement',
+                    'InstallmentDisbursementRequest',
+                    [path('id'), path('installmentId')],
+                ),
+            },
+        '/v2/spaces/{spaceId}/installment-commitments/{id}/installments/{installmentId}/external-liabilities':
+            {
+                post: command(
+                    'recordInstallmentExternalLiability',
+                    'InstallmentExternalLiabilityRequest',
+                    [path('id'), path('installmentId')],
+                ),
+            },
+        '/v2/spaces/{spaceId}/installment-commitments/{id}/installments/{installmentId}/external-liabilities/{liabilityId}/settlements':
+            {
+                post: command(
+                    'settleInstallmentExternalLiability',
+                    'InstallmentExternalSettlementRequest',
+                    [path('id'), path('installmentId'), path('liabilityId')],
+                ),
+            },
+    },
+    components: {
+        schemas: {
+            InstallmentCommitmentRequest: {
+                oneOf: [personal, shared],
+                description:
+                    'Informe exatamente um modo de datas e um modo de valores. O resíduo de um total fixo fica somente na última parcela. A versão do espaço e a versão da regra são obrigatórias na confirmação compartilhada.',
+            },
+            InstallmentPreview: {
+                ...object({
+                    scope: { type: 'string' },
+                    description: { type: 'string' },
+                    count: version,
+                    cadence: { type: 'string' },
+                    plannedPaymentMethod: nullable({ type: 'string' }),
+                    totalAmountInCents: cents,
+                    installments: {
+                        type: 'array',
+                        items: object({
+                            position: version,
+                            dueDate: date,
+                            amountInCents: cents,
+                            economicShares: nullable({
+                                type: 'array',
+                                items: object({
+                                    memberId: uuid,
+                                    amountInCents: {
+                                        type: 'integer',
+                                        minimum: 0,
+                                    },
+                                }),
+                            }),
+                        }),
+                    },
+                    ownerPersonId: uuid,
+                    distribution: ref('ResponsibilitySplit'),
+                    expectedMemberId: nullable(uuid),
+                    settlementRuleSnapshot: nullable({
+                        type: 'object',
+                        additionalProperties: true,
+                    }),
+                    settlementRuleSourceVersion: {
+                        type: 'integer',
+                        minimum: 0,
+                    },
+                    expectedSpaceVersion: version,
+                    expectedRuleVersion: { type: 'integer', minimum: 0 },
+                }),
+                required: [
+                    'scope',
+                    'description',
+                    'count',
+                    'cadence',
+                    'plannedPaymentMethod',
+                    'totalAmountInCents',
+                    'installments',
+                ],
+            },
+            Installment: installment,
+            InstallmentPlan: plan,
+            InstallmentCommitment: commitment,
+            CreateInstallmentCommitmentResponse: object({
+                commitment: ref('InstallmentCommitment'),
+                replayed: { type: 'boolean' },
+            }),
+            InstallmentCommandResponse: {
+                ...object({
+                    commitment: ref('InstallmentCommitment'),
+                    installment: ref('Installment'),
+                    settlement: object({
+                        id: uuid,
+                        remainingAmountInCents: { type: 'integer', minimum: 0 },
+                    }),
+                    replayed: { type: 'boolean' },
+                }),
+                required: ['commitment', 'installment', 'replayed'],
+            },
+            InstallmentCommitmentList: object({
+                spaceId: uuid,
+                items: { type: 'array', items: ref('InstallmentCommitment') },
+                totalCount: { type: 'integer', minimum: 0 },
+                totalAmountInCents: { type: 'string', pattern: '^\\d+$' },
+                nextCursor: nullable({ type: 'string' }),
+            }),
+            InstallmentList: object({
+                commitmentId: uuid,
+                planId: uuid,
+                totalCount: { type: 'integer', minimum: 0 },
+                items: { type: 'array', items: ref('Installment') },
+            }),
+            InstallmentDisbursementRequest: disbursement,
+            InstallmentExternalLiabilityRequest: liability,
+            InstallmentExternalSettlementRequest: externalSettlement,
+            InstallmentAnticipationPreviewRequest: anticipationPreview,
+            InstallmentAnticipationRequest: {
+                oneOf: [anticipationPersonal, anticipationShared],
+                description:
+                    'Valores reais são individuais por parcela; seleção do final deve repetir exatamente os IDs e versões resolvidos na prévia. Desconto reduz a divisão da parcela proporcionalmente; acréscimo é assumido pelo ator, sem aumentar a cota do outro membro.',
+            },
+            InstallmentAnticipationOptions: {
+                ...object({
+                    commitmentId: uuid,
+                    expectedCommitmentVersion: version,
+                    expectedSpaceVersion: version,
+                    actorMemberId: uuid,
+                    totalEligibleCount: { type: 'integer', minimum: 0 },
+                    totalFutureCount: { type: 'integer', minimum: 0 },
+                    items: {
+                        type: 'array',
+                        maxItems: 20,
+                        items: ref('Installment'),
+                    },
+                    nextCursor: nullable({ type: 'string' }),
+                }),
+                required: [
+                    'commitmentId',
+                    'expectedCommitmentVersion',
+                    'totalEligibleCount',
+                    'totalFutureCount',
+                    'items',
+                    'nextCursor',
+                ],
+            },
+            InstallmentAnticipationPreview: {
+                ...object({
+                    commitmentId: uuid,
+                    selection: anticipationSelection,
+                    factDate: date,
+                    expectedCommitmentVersion: version,
+                    expectedSpaceVersion: version,
+                    actorMemberId: uuid,
+                    payerMemberId: nullable(uuid),
+                    method: nullable({ type: 'string' }),
+                    settlement: nullable(settlement),
+                    settlementTargetDate: nullable(date),
+                    adjustmentPolicy: {
+                        type: 'string',
+                        enum: [
+                            'PERSONAL',
+                            'DISCOUNT_PROPORTIONAL_SURCHARGE_ACTOR',
+                        ],
+                    },
+                    items: {
+                        type: 'array',
+                        items: { type: 'object', additionalProperties: true },
+                    },
+                    totalExpectedRemainingAmountInCents: {
+                        type: 'string',
+                        pattern: '^\\d+$',
+                    },
+                    totalPaidAmountInCents: {
+                        type: 'string',
+                        pattern: '^\\d+$',
+                    },
+                    totalAdjustmentInCents: {
+                        type: 'string',
+                        pattern: '^-?(0|[1-9][0-9]*)$',
+                    },
+                }),
+                required: [
+                    'commitmentId',
+                    'selection',
+                    'factDate',
+                    'expectedCommitmentVersion',
+                    'payerMemberId',
+                    'method',
+                    'settlement',
+                    'settlementTargetDate',
+                    'adjustmentPolicy',
+                    'items',
+                    'totalExpectedRemainingAmountInCents',
+                    'totalPaidAmountInCents',
+                    'totalAdjustmentInCents',
+                ],
+            },
+            InstallmentAnticipationResponse: object({
+                commitment: ref('InstallmentCommitment'),
+                items: {
+                    type: 'array',
+                    items: { type: 'object', additionalProperties: true },
+                },
+                replayed: { type: 'boolean' },
+            }),
+            InstallmentResolutionOptions: object({
+                commitmentId: uuid,
+                expectedCommitmentVersion: version,
+                expectedSpaceVersion: nullable(version),
+                actorMemberId: nullable(uuid),
+                totalOpenCount: { type: 'integer', minimum: 0 },
+                totalExpectedRemainingAmountInCents: {
+                    type: 'string',
+                    pattern: '^\\d+$',
+                },
+                items: {
+                    type: 'array',
+                    maxItems: 20,
+                    items: { type: 'object', additionalProperties: true },
+                },
+                nextCursor: nullable({ type: 'string' }),
+            }),
+            InstallmentPayoffPreviewRequest: payoffPreviewRequest,
+            InstallmentPayoffRequest: {
+                oneOf: [
+                    object(payoffCommon),
+                    object({
+                        ...payoffCommon,
+                        payerMemberId: uuid,
+                        expectedSpaceVersion: version,
+                        settlement,
+                    }),
+                ],
+                description:
+                    'Valor e ajuste pertencem somente ao fato global; a lista deve repetir todas as parcelas abertas e versões da prévia.',
+            },
+            InstallmentFutureCancellationRequest: cancellationRequest,
+            InstallmentPayoffPreview: object({
+                commitmentId: uuid,
+                expectedCommitmentVersion: version,
+                expectedSpaceVersion: nullable(version),
+                actorMemberId: nullable(uuid),
+                payerMemberId: nullable(uuid),
+                method: nullable({ type: 'string' }),
+                settlement: nullable(settlement),
+                factDate: date,
+                items: {
+                    type: 'array',
+                    items: { type: 'object', additionalProperties: true },
+                },
+                expectedRemainingAmountInCents: cents,
+                paidAmountInCents: cents,
+                adjustmentInCents: { type: 'integer' },
+                expectedRemainingShares: nullable({
+                    type: 'array',
+                    items: { type: 'object', additionalProperties: true },
+                }),
+                effectiveEconomicShares: nullable({
+                    type: 'array',
+                    items: { type: 'object', additionalProperties: true },
+                }),
+                recognizedRemainingShares: nullable({
+                    type: 'array',
+                    items: { type: 'object', additionalProperties: true },
+                }),
+                adjustmentPolicy: {
+                    type: 'string',
+                    enum: ['PERSONAL', 'DISCOUNT_PROPORTIONAL_SURCHARGE_ACTOR'],
+                },
+            }),
+            InstallmentPayoffResponse: object({
+                commitment: ref('InstallmentCommitment'),
+                payoffId: uuid,
+                fact: { type: 'object', additionalProperties: true },
+                items: {
+                    type: 'array',
+                    items: { type: 'object', additionalProperties: true },
+                },
+                replayed: { type: 'boolean' },
+            }),
+            InstallmentFutureCancellationResponse: object({
+                commitment: ref('InstallmentCommitment'),
+                cancelled: {
+                    type: 'array',
+                    items: { type: 'object', additionalProperties: true },
+                },
+                reason: { type: 'string' },
+                factDate: date,
+                actorId: uuid,
+                replayed: { type: 'boolean' },
+            }),
+        },
+    },
+};

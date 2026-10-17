@@ -1226,7 +1226,7 @@ describe('CARD-014 credit card purchase HTTP/PostgreSQL', () => {
             );
         const before = await legacy();
         const constraints = await db.query(
-            "SELECT conname,pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE connamespace='public'::regnamespace AND conname NOT IN ('CHK_obligations_origin_xor','CHK_expense_receipt','CHK_obligation_changes_type','CHK_obligations_state') ORDER BY conname",
+            "SELECT conname,pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE connamespace='public'::regnamespace AND conname NOT IN ('CHK_obligations_origin_xor','CHK_expense_receipt','CHK_obligation_changes_type','CHK_obligations_state','CHK_financial_commitments_scope','CHK_financial_versions_values','CHK_external_settlement_values','FK_financial_disbursements_version','FK_external_liabilities_version','FK_financial_receipts_income','financial_commitment_versions_fact_date_not_null') ORDER BY conname",
         );
         await migrationSource.runMigrations();
         expect(await legacy()).toEqual(before);

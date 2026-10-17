@@ -82,6 +82,7 @@ export function decodeReviewCursor(
             ![
                 'EXPENSE',
                 'EXPECTED_INCOME',
+                'EXPECTED_EXPENSE',
                 'DISBURSEMENT',
                 'RECEIPT',
                 'EXTERNAL_LIABILITY',

@@ -110,8 +110,13 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
         const query = m
             .createQueryBuilder(FinancialCommitmentOrmEntity, 'c')
             .where(
-                'c.space_id=:spaceId AND c.id=:commitmentId AND c.kind=:kind',
-                { spaceId, commitmentId, kind: 'EXPENSE' },
+                'c.space_id=:spaceId AND c.id=:commitmentId AND c.kind=:kind AND c.modality=:modality',
+                {
+                    spaceId,
+                    commitmentId,
+                    kind: 'EXPENSE',
+                    modality: 'ONE_TIME',
+                },
             );
         if (lock) query.setLock('pessimistic_write');
         const c = await query.getOne();
@@ -142,6 +147,7 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
                   ownerPersonId: c.personalOwnerPersonId,
                   amount: Money.from(v.amountInCents),
                   factDate: v.factDate,
+                  expectedPaymentDate: v.expectedPaymentDate,
               }
             : {
                   version: 1 as const,
@@ -152,6 +158,7 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
                   ),
                   expectedPayerMemberId: v.expectedPayerMemberId,
                   factDate: v.factDate,
+                  expectedPaymentDate: v.expectedPaymentDate,
                   settlementRuleSnapshot: v.ruleSnapshot,
                   settlementRuleSourceVersion: v.ruleSourceVersion,
                   suggestedTargetDate: v.suggestedTargetDate,

@@ -28,6 +28,7 @@ interface ObligationRow {
     id: string;
     space_id: string;
     commitment_id: string;
+    occurrence_id: string | null;
     disbursement_id: string | null;
     external_liability_id: string | null;
     receipt_id: string | null;
@@ -56,6 +57,7 @@ interface OptionRow {
     fact_date: string;
     registered_at: string;
     commitment_id: string;
+    occurrence_id: string | null;
     disbursement_id: string | null;
     external_liability_id: string | null;
     receipt_id: string | null;
@@ -141,6 +143,7 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
                     null,
                     o.external_liability_id,
                     o.status === 'WAIVED',
+                    o.occurrence_id,
                 ),
             );
         }
@@ -256,7 +259,7 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
                 p.original_amount_in_cents::text,p.recognized_amount_in_cents::text,p.remaining_amount_in_cents::text,
                 to_char(p.fact_date,'YYYY-MM-DD') AS fact_date,
                 to_char(p.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS registered_at,
-                p.commitment_id,p.disbursement_id,p.external_liability_id,p.receipt_id,c.description,p.cycle_id,
+                p.commitment_id,p.occurrence_id,p.disbursement_id,p.external_liability_id,p.receipt_id,c.description,p.cycle_id,
                 to_char(s.target_date,'YYYY-MM-DD') AS target_date,s.status AS cycle_status
             FROM totals t LEFT JOIN page p ON true
             LEFT JOIN financial_commitments c ON c.space_id=$1 AND c.id=p.commitment_id
@@ -288,11 +291,17 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
                     ? {
                           kind: 'INCOME',
                           commitmentId: r.commitment_id,
+                          ...(r.occurrence_id
+                              ? { occurrenceId: r.occurrence_id }
+                              : {}),
                           receiptId: r.receipt_id,
                           description: r.description,
                       }
                     : {
                           commitmentId: r.commitment_id,
+                          ...(r.occurrence_id
+                              ? { occurrenceId: r.occurrence_id }
+                              : {}),
                           ...(r.external_liability_id
                               ? {
                                     kind: 'EXPENSE' as const,
@@ -353,6 +362,7 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
             cycle_id: string | null;
             amount_in_cents: string;
             commitment_id: string;
+            occurrence_id: string | null;
             disbursement_id: string | null;
             external_liability_id: string | null;
             receipt_id: string | null;
@@ -361,7 +371,7 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
         }[] = await this.provider
             .get()
             .query(
-                `SELECT a.id,a.obligation_id,a.cycle_id,a.amount_in_cents::text,o.commitment_id,o.disbursement_id,o.external_liability_id,o.receipt_id,c.description,COALESCE(ra.amount_in_cents,0)::text AS reversed_amount_in_cents FROM settlement_allocations a JOIN inter_member_obligations o ON o.space_id=a.space_id AND o.id=a.obligation_id JOIN financial_commitments c ON c.space_id=o.space_id AND c.id=o.commitment_id LEFT JOIN settlement_reversal_applications ra ON ra.space_id=a.space_id AND ra.original_transfer_allocation_id=a.id WHERE a.space_id=$1 AND a.transfer_id=$2 ORDER BY a.id`,
+                `SELECT a.id,a.obligation_id,a.cycle_id,a.amount_in_cents::text,o.commitment_id,o.occurrence_id,o.disbursement_id,o.external_liability_id,o.receipt_id,c.description,COALESCE(ra.amount_in_cents,0)::text AS reversed_amount_in_cents FROM settlement_allocations a JOIN inter_member_obligations o ON o.space_id=a.space_id AND o.id=a.obligation_id JOIN financial_commitments c ON c.space_id=o.space_id AND c.id=o.commitment_id LEFT JOIN settlement_reversal_applications ra ON ra.space_id=a.space_id AND ra.original_transfer_allocation_id=a.id WHERE a.space_id=$1 AND a.transfer_id=$2 ORDER BY a.id`,
                 [spaceId, id],
             );
         return {
@@ -400,11 +410,17 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
                     ? {
                           kind: 'INCOME',
                           commitmentId: a.commitment_id,
+                          ...(a.occurrence_id
+                              ? { occurrenceId: a.occurrence_id }
+                              : {}),
                           receiptId: a.receipt_id,
                           description: a.description,
                       }
                     : {
                           commitmentId: a.commitment_id,
+                          ...(a.occurrence_id
+                              ? { occurrenceId: a.occurrence_id }
+                              : {}),
                           ...(a.external_liability_id
                               ? {
                                     kind: 'EXPENSE' as const,

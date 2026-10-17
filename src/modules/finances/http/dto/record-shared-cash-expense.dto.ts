@@ -5,23 +5,25 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 import { civilDate } from '../../domain/shared-expense/settlement-cycle.js';
-const uuid = z
+export const uuid = z
     .uuid({ error: 'Informe um identificador válido.' })
     .transform((value) => value.toLowerCase());
-const integer = z
+export const integer = z
     .number({ error: 'Informe um número inteiro.' })
     .int({ error: 'Informe um número inteiro seguro.' })
     .min(0)
     .max(Number.MAX_SAFE_INTEGER);
-const date = z.string({ error: 'Informe uma data válida.' }).refine((value) => {
-    try {
-        civilDate(value);
-        return true;
-    } catch {
-        return false;
-    }
-}, 'Informe uma data civil válida no formato YYYY-MM-DD.');
-const split = z.discriminatedUnion('mode', [
+export const date = z
+    .string({ error: 'Informe uma data válida.' })
+    .refine((value) => {
+        try {
+            civilDate(value);
+            return true;
+        } catch {
+            return false;
+        }
+    }, 'Informe uma data civil válida no formato YYYY-MM-DD.');
+export const split = z.discriminatedUnion('mode', [
     z
         .object({
             mode: z.literal('AMOUNTS'),

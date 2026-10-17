@@ -21,6 +21,8 @@ const object = (
                 'effectiveTransferredAmountInCents',
                 'reversedCompensatedAmountInCents',
                 'effectiveCompensatedAmountInCents',
+                'installmentId',
+                'installmentPosition',
             ].includes(name),
     ),
     properties,
@@ -134,6 +136,9 @@ export const interMemberPositionOpenApi: Pick<
                     object({
                         kind: { type: 'string', enum: ['EXPENSE'] },
                         commitmentId: uuid,
+                        occurrenceId: { oneOf: [uuid, { type: 'null' }] },
+                        installmentId: uuid,
+                        installmentPosition: { type: 'integer', minimum: 1 },
                         externalLiabilityId: uuid,
                         description: {
                             type: 'string',
@@ -143,6 +148,9 @@ export const interMemberPositionOpenApi: Pick<
                     }),
                     object({
                         commitmentId: uuid,
+                        occurrenceId: { oneOf: [uuid, { type: 'null' }] },
+                        installmentId: uuid,
+                        installmentPosition: { type: 'integer', minimum: 1 },
                         disbursementId: uuid,
                         description: {
                             type: 'string',
@@ -153,6 +161,7 @@ export const interMemberPositionOpenApi: Pick<
                     object({
                         kind: { type: 'string', enum: ['INCOME'] },
                         commitmentId: uuid,
+                        occurrenceId: { oneOf: [uuid, { type: 'null' }] },
                         receiptId: uuid,
                         description: {
                             type: 'string',

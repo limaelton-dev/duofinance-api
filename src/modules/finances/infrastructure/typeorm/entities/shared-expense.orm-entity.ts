@@ -28,7 +28,7 @@ const money = (column: string, positive = false) =>
 @Unique('UQ_financial_commitments_space_id', ['spaceId', 'id'])
 @Check(
     'CHK_financial_commitments_scope',
-    `kind IN ('EXPENSE','INCOME') AND modality = 'ONE_TIME' AND version > 0 AND length(description) BETWEEN 1 AND 160 AND description = btrim(description) AND (personal_owner_person_id IS NULL OR personal_owner_person_id = created_by)`,
+    `kind IN ('EXPENSE','INCOME') AND modality IN ('ONE_TIME','RECURRING','INSTALLMENT') AND version > 0 AND length(description) BETWEEN 1 AND 160 AND description = btrim(description) AND (personal_owner_person_id IS NULL OR personal_owner_person_id = created_by)`,
 )
 @Index('IDX_financial_commitments_space_registered', [
     'spaceId',
@@ -65,7 +65,7 @@ export class FinancialCommitmentOrmEntity {
 @Unique('UQ_financial_versions_space', ['spaceId', 'commitmentId', 'version'])
 @Check(
     'CHK_financial_versions_values',
-    `${money('amount_in_cents', true)} AND version = 1 AND ((split_mode IS NOT NULL AND split_mode IN ('AMOUNTS','PERCENTAGES') AND split_input IS NOT NULL) OR (split_mode IS NULL AND split_input IS NULL AND expected_payer_member_id IS NULL AND rule_snapshot IS NULL AND rule_source_version = 0 AND suggested_target_date IS NULL)) AND rule_source_version >= 0 AND (rule_snapshot IS NULL) = (rule_source_version = 0) AND (suggested_target_date IS NULL OR rule_snapshot IS NOT NULL)`,
+    `${money('amount_in_cents', true)} AND version = 1 AND (fact_date IS NOT NULL OR expected_payment_date IS NOT NULL) AND ((split_mode IS NOT NULL AND split_mode IN ('AMOUNTS','PERCENTAGES') AND split_input IS NOT NULL) OR (split_mode IS NULL AND split_input IS NULL AND expected_payer_member_id IS NULL AND rule_snapshot IS NULL AND rule_source_version = 0 AND suggested_target_date IS NULL)) AND rule_source_version >= 0 AND (rule_snapshot IS NULL) = (rule_source_version = 0) AND (suggested_target_date IS NULL OR rule_snapshot IS NOT NULL)`,
 )
 @ForeignKey(
     () => FinancialCommitmentOrmEntity,
@@ -92,7 +92,10 @@ export class FinancialCommitmentVersionOrmEntity {
     amountInCents!: number;
     @Column({ name: 'expected_payer_member_id', type: 'uuid', nullable: true })
     expectedPayerMemberId!: string | null;
-    @Column({ name: 'fact_date', type: 'date' }) factDate!: string;
+    @Column({ name: 'fact_date', type: 'date', nullable: true })
+    factDate!: string | null;
+    @Column({ name: 'expected_payment_date', type: 'date', nullable: true })
+    expectedPaymentDate!: string | null;
     @Column({ name: 'split_mode', type: 'varchar', length: 16, nullable: true })
     splitMode!: string | null;
     @Column({ name: 'split_input', type: 'jsonb', nullable: true })
@@ -144,6 +147,9 @@ export class FinancialCommitmentShareOrmEntity {
     basisPoints!: number | null;
 }
 @Entity('financial_disbursements')
+@Index('IDX_financial_disbursements_occurrence', ['spaceId', 'occurrenceId'], {
+    where: 'occurrence_id IS NOT NULL',
+})
 @Unique('UQ_disbursement_sequence', ['commitmentId', 'sequence'])
 @Check('CHK_disbursement_sequence', 'sequence > 0')
 @Unique('UQ_financial_disbursements_origin', ['spaceId', 'commitmentId', 'id'])
@@ -152,10 +158,22 @@ export class FinancialCommitmentShareOrmEntity {
     `${money('amount_in_cents', true)} AND method IN ('PIX','DEBIT','CASH') AND version = 1 AND fact_date <= (registered_at AT TIME ZONE 'America/Sao_Paulo')::date AND ((payer_member_id IS NOT NULL AND payer_person_id IS NULL) OR (payer_member_id IS NULL AND payer_person_id IS NOT NULL))`,
 )
 @ForeignKey(
-    () => FinancialCommitmentVersionOrmEntity,
-    ['spaceId', 'commitmentId', 'version'],
-    ['spaceId', 'commitmentId', 'version'],
-    { name: 'FK_financial_disbursements_version', onDelete: 'RESTRICT' },
+    () => FinancialCommitmentOrmEntity,
+    ['spaceId', 'commitmentId'],
+    ['spaceId', 'id'],
+    {
+        name: 'FK_financial_disbursements_commitment',
+        onDelete: 'RESTRICT',
+    },
+)
+@ForeignKey(
+    'financial_occurrences',
+    ['spaceId', 'commitmentId', 'occurrenceId'],
+    ['spaceId', 'commitmentId', 'id'],
+    {
+        name: 'FK_financial_disbursements_occurrence',
+        onDelete: 'RESTRICT',
+    },
 )
 @ForeignKey('space_members', ['spaceId', 'payerMemberId'], ['spaceId', 'id'], {
     name: 'FK_financial_disbursements_payer',
@@ -165,6 +183,8 @@ export class FinancialDisbursementOrmEntity {
     @PrimaryColumn('uuid') id!: string;
     @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
     @Column({ name: 'commitment_id', type: 'uuid' }) commitmentId!: string;
+    @Column({ name: 'occurrence_id', type: 'uuid', nullable: true })
+    occurrenceId!: string | null;
     @Column('integer') sequence!: number;
     @Column({ name: 'recorded_by_person_id', type: 'uuid' })
     @ForeignKey('persons', 'id', {
@@ -192,6 +212,13 @@ export class FinancialDisbursementOrmEntity {
     @Column({ name: 'registered_at', type: 'timestamptz' }) registeredAt!: Date;
 }
 @Entity('financial_external_liabilities')
+@Index(
+    'IDX_financial_external_liabilities_occurrence',
+    ['spaceId', 'occurrenceId'],
+    {
+        where: 'occurrence_id IS NOT NULL',
+    },
+)
 @Unique('UQ_external_liabilities_origin', ['spaceId', 'commitmentId', 'id'])
 @Unique('UQ_external_liabilities_sequence', ['commitmentId', 'sequence'])
 @Check(
@@ -199,10 +226,22 @@ export class FinancialDisbursementOrmEntity {
     `${money('amount_in_cents', true)} AND remaining_amount_in_cents BETWEEN 0 AND amount_in_cents AND sequence > 0 AND version = 1 AND fact_date <= (registered_at AT TIME ZONE 'America/Sao_Paulo')::date AND ((holder_member_id IS NOT NULL AND holder_person_id IS NULL) OR (holder_member_id IS NULL AND holder_person_id IS NOT NULL))`,
 )
 @ForeignKey(
-    () => FinancialCommitmentVersionOrmEntity,
-    ['spaceId', 'commitmentId', 'version'],
-    ['spaceId', 'commitmentId', 'version'],
-    { name: 'FK_external_liabilities_version', onDelete: 'RESTRICT' },
+    () => FinancialCommitmentOrmEntity,
+    ['spaceId', 'commitmentId'],
+    ['spaceId', 'id'],
+    {
+        name: 'FK_external_liabilities_commitment',
+        onDelete: 'RESTRICT',
+    },
+)
+@ForeignKey(
+    'financial_occurrences',
+    ['spaceId', 'commitmentId', 'occurrenceId'],
+    ['spaceId', 'commitmentId', 'id'],
+    {
+        name: 'FK_financial_external_liabilities_occurrence',
+        onDelete: 'RESTRICT',
+    },
 )
 @ForeignKey('space_members', ['spaceId', 'holderMemberId'], ['spaceId', 'id'], {
     name: 'FK_external_liabilities_holder',
@@ -212,6 +251,8 @@ export class FinancialExternalLiabilityOrmEntity {
     @PrimaryColumn('uuid') id!: string;
     @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
     @Column({ name: 'commitment_id', type: 'uuid' }) commitmentId!: string;
+    @Column({ name: 'occurrence_id', type: 'uuid', nullable: true })
+    occurrenceId!: string | null;
     @Column('integer') sequence!: number;
     @Column('integer') version!: number;
     @Column({ name: 'holder_member_id', type: 'uuid', nullable: true })
@@ -267,9 +308,13 @@ export class SettlementCycleOrmEntity {
 }
 @Entity('inter_member_obligations')
 @Unique('UQ_obligations_space_id', ['spaceId', 'id'])
-@Index('UQ_obligations_open_origin', ['spaceId', 'commitmentId'], {
+@Index('UQ_obligations_open_one_time', ['spaceId', 'commitmentId'], {
     unique: true,
-    where: 'remaining_amount_in_cents > 0',
+    where: 'remaining_amount_in_cents > 0 AND occurrence_id IS NULL',
+})
+@Index('UQ_obligations_open_occurrence', ['spaceId', 'occurrenceId'], {
+    unique: true,
+    where: 'remaining_amount_in_cents > 0 AND occurrence_id IS NOT NULL',
 })
 @Index('IDX_obligations_space_origin', ['spaceId', 'commitmentId'])
 @Index('IDX_obligations_space_cycle', ['spaceId', 'cycleId'])
@@ -286,6 +331,15 @@ export class SettlementCycleOrmEntity {
     ['spaceId', 'commitmentId', 'externalLiabilityId'],
     ['spaceId', 'commitmentId', 'id'],
     { name: 'FK_obligations_external_liability', onDelete: 'RESTRICT' },
+)
+@ForeignKey(
+    'financial_occurrences',
+    ['spaceId', 'commitmentId', 'occurrenceId'],
+    ['spaceId', 'commitmentId', 'id'],
+    {
+        name: 'FK_obligations_occurrence',
+        onDelete: 'RESTRICT',
+    },
 )
 @ForeignKey(
     'financial_receipts',
@@ -319,6 +373,8 @@ export class InterMemberObligationOrmEntity {
     @PrimaryColumn('uuid') id!: string;
     @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
     @Column({ name: 'commitment_id', type: 'uuid' }) commitmentId!: string;
+    @Column({ name: 'occurrence_id', type: 'uuid', nullable: true })
+    occurrenceId!: string | null;
     @Column({ name: 'disbursement_id', type: 'uuid', nullable: true })
     disbursementId!: string | null;
     @Column({ name: 'receipt_id', type: 'uuid', nullable: true })
@@ -384,7 +440,7 @@ export class InterMemberObligationChangeOrmEntity {
 @Entity('financial_expense_command_receipts')
 @Check(
     'CHK_expense_receipt',
-    `operation IN ('RECORD_SHARED_CASH_EXPENSE','RECORD_PERSONAL_EXPENSE','RECORD_EXPENSE_DISBURSEMENT','RECORD_CREDIT_CARD_PURCHASE','RECORD_EXTERNAL_LIABILITY','SETTLE_EXTERNAL_LIABILITY') AND status = 'COMPLETED' AND octet_length(request_hash) = 32`,
+    `operation IN ('RECORD_SHARED_CASH_EXPENSE','RECORD_PERSONAL_EXPENSE','RECORD_EXPENSE_DISBURSEMENT','RECORD_CREDIT_CARD_PURCHASE','RECORD_EXTERNAL_LIABILITY','SETTLE_EXTERNAL_LIABILITY','CREATE_PLANNED_EXPENSE') AND status = 'COMPLETED' AND octet_length(request_hash) = 32`,
 )
 export class FinancialExpenseCommandReceiptOrmEntity {
     @PrimaryColumn({ name: 'actor_id', type: 'uuid' })

@@ -303,6 +303,7 @@ describe('CARDS-016-017 financial review HTTP/PostgreSQL', () => {
             expectedAmountInCents: '100000',
             receivedAmountInCents: '40000',
             remainingAmountInCents: '60000',
+            unknownAmountCount: 0,
         });
         await receipt(f, original.commitment.id, 2, 60000, '2026-11-10');
         const november = await overview(f.b, f.space, '2026-11', f.mb);

@@ -124,7 +124,8 @@ const commitment = object({
     modality: mode('ONE_TIME'),
     description: { type: 'string', minLength: 1, maxLength: 160 },
     amountInCents: positive,
-    factDate: date,
+    factDate: nullable(date),
+    expectedPaymentDate: nullable(date),
     registeredAt: instant,
     createdByPersonId: uuid,
     expectedPayerMemberId: nullable(uuid),
@@ -139,6 +140,9 @@ const commitment = object({
     settlementRuleSourceVersion: money,
     suggestedTargetDate: nullable(date),
 });
+commitment.required = commitment.required!.filter(
+    (name) => name !== 'expectedPaymentDate',
+);
 commitment.properties!.settlementRule = ref('EffectiveSettlementRule');
 const legacyInitialProperties = {
     spaceId: uuid,
@@ -165,6 +169,7 @@ const initialProperties = {
     paidAmountInCents: money,
     remainingAmountInCents: money,
     status: expenseStatusSchema,
+    overdue: { type: 'boolean' },
     obligation: nullable(ref('FinancialFulfillmentObligation')),
     obligations: {
         type: 'array' as const,
@@ -179,7 +184,7 @@ const initialProperties = {
 };
 const result = object({ ...initialProperties, replayed: { type: 'boolean' } });
 result.required = result.required!.filter(
-    (name) => !(name in expenseSupportProperties),
+    (name) => !(name in expenseSupportProperties) && name !== 'overdue',
 );
 result.properties = {
     ...result.properties,
@@ -199,7 +204,7 @@ const detail = object({
     members: financialContextSchema.properties!.members,
 });
 detail.required = detail.required!.filter(
-    (name) => !(name in expenseSupportProperties),
+    (name) => !(name in expenseSupportProperties) && name !== 'overdue',
 );
 const input = object({
     expectedSpaceVersion: positive,

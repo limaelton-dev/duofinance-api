@@ -42,6 +42,7 @@ export interface InterMemberObligationRepository {
     lockOrigin(
         spaceId: string,
         commitmentId: string,
+        occurrenceId?: string | null,
     ): Promise<{
         obligations: InterMemberObligation[];
         settlements: OriginSettlement[];
@@ -49,6 +50,7 @@ export interface InterMemberObligationRepository {
     originState(
         spaceId: string,
         commitmentId: string,
+        occurrenceId?: string | null,
     ): Promise<{
         obligations: InterMemberObligation[];
         settlements: OriginSettlement[];

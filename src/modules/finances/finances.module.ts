@@ -61,6 +61,37 @@ import { CreditCardPurchaseQueries } from './application/queries/credit-card-pur
 import { CREDIT_CARD_RECEIPTS } from './application/ports/private/credit-card-receipts.js';
 import { TypeOrmCreditCardReceipts } from './infrastructure/typeorm/repositories/typeorm-credit-card-receipts.js';
 import { Module } from '@nestjs/common';
+import { RecurringCommitmentController } from './http/controllers/recurring-commitment.controller.js';
+import { PlannedTodayQuery } from './application/queries/planned-today.query.js';
+import { PLANNED_TODAY_QUERY_PORT } from './application/ports/public/planned-today-query.port.js';
+import { RecurringCommitmentHandler } from './application/handlers/recurring-commitment.handler.js';
+import {
+    CreateRecurringCommitmentPipe,
+    RecurringDisbursementPipe,
+    RecurringReceiptPipe,
+    RecurringExternalLiabilityPipe,
+    RecurringExternalSettlementPipe,
+} from './http/dto/recurring-commitment.dto.js';
+import { RECURRING_COMMITMENT_REPOSITORY } from './application/ports/private/recurring-commitment.repository.js';
+import { TypeOrmRecurringCommitmentRepository } from './infrastructure/typeorm/repositories/typeorm-recurring-commitment.repository.js';
+import { recurrenceEntities } from './infrastructure/typeorm/entities/recurrence.orm-entity.js';
+import { installmentEntities } from './infrastructure/typeorm/entities/installment.orm-entity.js';
+import { InstallmentCommitmentController } from './http/controllers/installment-commitment.controller.js';
+import { InstallmentCommitmentHandler } from './application/handlers/installment-commitment.handler.js';
+import {
+    InstallmentCommitmentPipe,
+    InstallmentDisbursementPipe,
+    InstallmentLiabilityPipe,
+    InstallmentSettlementPipe,
+} from './http/dto/installment-commitment.dto.js';
+import { INSTALLMENT_COMMITMENT_REPOSITORY } from './application/ports/private/installment-commitment.repository.js';
+import { TypeOrmInstallmentCommitmentRepository } from './infrastructure/typeorm/repositories/typeorm-installment-commitment.repository.js';
+import { PlannedExpenseController } from './http/controllers/planned-expense.controller.js';
+import { CreatePlannedExpenseHandler } from './application/handlers/create-planned-expense.handler.js';
+import { ListPlannedExpensesQuery } from './application/queries/planned-expense.queries.js';
+import { CreatePlannedExpensePipe } from './http/dto/create-planned-expense.dto.js';
+import { PLANNED_EXPENSE_RECEIPTS } from './application/ports/private/planned-expense.receipts.js';
+import { TypeOrmPlannedExpenseReceipts } from './infrastructure/typeorm/repositories/typeorm-planned-expense-receipts.js';
 import { ExpenseDisbursementController } from './http/controllers/expense-disbursement.controller.js';
 import { RecordExpenseDisbursementPipe } from './http/dto/record-expense-disbursement.dto.js';
 import { RecordExpenseDisbursementHandler } from './application/handlers/record-expense-disbursement.handler.js';
@@ -178,6 +209,8 @@ import {
             ...settlementReversalEntities,
             FinancialCommandAuditOrmEntity,
             ...sharedExpenseEntities,
+            ...recurrenceEntities,
+            ...installmentEntities,
             FinancialExternalLiabilitySettlementOrmEntity,
             ...incomeEntities,
             SettlementTransferOrmEntity,
@@ -190,6 +223,9 @@ import {
         ]),
     ],
     controllers: [
+        PlannedExpenseController,
+        RecurringCommitmentController,
+        InstallmentCommitmentController,
         SettlementReversalController,
         ObligationWaiverController,
         SettlementCycleFinalizationController,
@@ -208,6 +244,34 @@ import {
         SettlementTransferController,
     ],
     providers: [
+        CreatePlannedExpenseHandler,
+        RecurringCommitmentHandler,
+        InstallmentCommitmentHandler,
+        InstallmentCommitmentPipe,
+        InstallmentDisbursementPipe,
+        InstallmentLiabilityPipe,
+        InstallmentSettlementPipe,
+        {
+            provide: INSTALLMENT_COMMITMENT_REPOSITORY,
+            useClass: TypeOrmInstallmentCommitmentRepository,
+        },
+        PlannedTodayQuery,
+        { provide: PLANNED_TODAY_QUERY_PORT, useExisting: PlannedTodayQuery },
+        CreateRecurringCommitmentPipe,
+        RecurringDisbursementPipe,
+        RecurringReceiptPipe,
+        RecurringExternalLiabilityPipe,
+        RecurringExternalSettlementPipe,
+        {
+            provide: RECURRING_COMMITMENT_REPOSITORY,
+            useClass: TypeOrmRecurringCommitmentRepository,
+        },
+        ListPlannedExpensesQuery,
+        CreatePlannedExpensePipe,
+        {
+            provide: PLANNED_EXPENSE_RECEIPTS,
+            useClass: TypeOrmPlannedExpenseReceipts,
+        },
         ReverseSettlementHandler,
         SettlementReversalOptionsQuery,
         ReverseSettlementPipe,
@@ -377,6 +441,7 @@ import {
         SETTLEMENT_CYCLE_QUERY_PORT,
         FINANCE_TODAY_QUERY_PORT,
         INCOME_TODAY_QUERY_PORT,
+        PLANNED_TODAY_QUERY_PORT,
     ],
 })
 export class FinancesModule {}

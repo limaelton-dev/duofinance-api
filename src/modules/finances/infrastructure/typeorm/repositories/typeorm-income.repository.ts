@@ -102,8 +102,8 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
         const query = m
             .createQueryBuilder(FinancialCommitmentOrmEntity, 'c')
             .where(
-                'c.space_id=:spaceId AND c.id=:commitmentId AND c.kind=:kind',
-                { spaceId, commitmentId, kind: 'INCOME' },
+                'c.space_id=:spaceId AND c.id=:commitmentId AND c.kind=:kind AND c.modality=:modality',
+                { spaceId, commitmentId, kind: 'INCOME', modality: 'ONE_TIME' },
             );
         if (lock) query.setLock('pessimistic_write');
         const c = await query.getOne();

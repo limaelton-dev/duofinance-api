@@ -965,7 +965,12 @@ describe('CARD-003 — contrato HTTP com PostgreSQL', () => {
             .expect(200);
         const document = response.body;
         expect(document.info.version).toBe('0.5.0');
-        expect(Object.keys(document.paths)).toHaveLength(56);
+        expect(Object.keys(document.paths)).toHaveLength(86);
+        expect(
+            document.paths[
+                '/v2/spaces/{spaceId}/recurring-commitments/{id}/occurrences/{referenceDate}/value'
+            ].put.operationId,
+        ).toBe('setRecurringOccurrenceValue');
         for (const endpoint of endpoints) {
             const operation =
                 document.paths['/v2/invitations/' + endpoint].post;

@@ -3,6 +3,7 @@ import {
     Column,
     Entity,
     ForeignKey,
+    Index,
     PrimaryColumn,
     Unique,
 } from 'typeorm';
@@ -92,6 +93,9 @@ export class FinancialIncomeShareOrmEntity {
 }
 
 @Entity('financial_receipts')
+@Index('IDX_financial_receipts_occurrence', ['spaceId', 'occurrenceId'], {
+    where: 'occurrence_id IS NOT NULL',
+})
 @Unique('UQ_receipt_sequence', ['commitmentId', 'sequence'])
 @Check('CHK_receipt_sequence', 'sequence > 0')
 @Unique('UQ_financial_receipts_origin', ['spaceId', 'commitmentId', 'id'])
@@ -100,10 +104,22 @@ export class FinancialIncomeShareOrmEntity {
     `amount_in_cents > 0 AND amount_in_cents <= 9007199254740991 AND fact_date <= (registered_at AT TIME ZONE 'America/Sao_Paulo')::date AND ((recipient_person_id IS NOT NULL AND recipient_member_id IS NULL) OR (recipient_person_id IS NULL AND recipient_member_id IS NOT NULL))`,
 )
 @ForeignKey(
-    () => FinancialIncomeVersionOrmEntity,
+    () => FinancialCommitmentOrmEntity,
     ['spaceId', 'commitmentId'],
-    ['spaceId', 'commitmentId'],
-    { name: 'FK_financial_receipts_income', onDelete: 'RESTRICT' },
+    ['spaceId', 'id'],
+    {
+        name: 'FK_financial_receipts_commitment',
+        onDelete: 'RESTRICT',
+    },
+)
+@ForeignKey(
+    'financial_occurrences',
+    ['spaceId', 'commitmentId', 'occurrenceId'],
+    ['spaceId', 'commitmentId', 'id'],
+    {
+        name: 'FK_financial_receipts_occurrence',
+        onDelete: 'RESTRICT',
+    },
 )
 @ForeignKey(
     'space_members',
@@ -123,6 +139,8 @@ export class FinancialReceiptOrmEntity {
     @PrimaryColumn('uuid') id!: string;
     @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
     @Column({ name: 'commitment_id', type: 'uuid' }) commitmentId!: string;
+    @Column({ name: 'occurrence_id', type: 'uuid', nullable: true })
+    occurrenceId!: string | null;
     @Column('integer') sequence!: number;
     @Column({
         name: 'amount_in_cents',

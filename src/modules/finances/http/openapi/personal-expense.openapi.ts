@@ -41,7 +41,8 @@ const legacyView = object({
         modality: { type: 'string', enum: ['ONE_TIME'] },
         description,
         amountInCents: money,
-        factDate: date,
+        factDate: { oneOf: [date, { type: 'null' }] },
+        expectedPaymentDate: { oneOf: [date, { type: 'null' }] },
         registeredAt: instant,
         createdByPersonId: uuid,
         ownerPersonId: uuid,
@@ -55,6 +56,9 @@ const legacyView = object({
         registeredAt: instant,
     }),
 });
+(legacyView.properties!.commitment as SchemaObject).required = (
+    legacyView.properties!.commitment as SchemaObject
+).required!.filter((name) => name !== 'expectedPaymentDate');
 const payment = object({
     ...(legacyView.properties!.disbursement as SchemaObject).properties,
     sequence: money,
@@ -73,16 +77,20 @@ const view = object({
     paidAmountInCents: { ...money, minimum: 0 },
     remainingAmountInCents: { ...money, minimum: 0 },
     status: expenseStatusSchema,
+    overdue: { type: 'boolean' },
 });
+(view.properties!.commitment as SchemaObject).required = (
+    view.properties!.commitment as SchemaObject
+).required!.filter((name) => name !== 'expectedPaymentDate');
 view.required = view.required!.filter(
-    (name) => !(name in expenseSupportProperties),
+    (name) => !(name in expenseSupportProperties) && name !== 'overdue',
 );
 const result = object({
     ...view.properties,
     replayed: { type: 'boolean' },
 });
 result.required = result.required!.filter(
-    (name) => !(name in expenseSupportProperties),
+    (name) => !(name in expenseSupportProperties) && name !== 'overdue',
 );
 result.properties = {
     ...result.properties,
@@ -279,22 +287,40 @@ export const personalExpenseOpenApi: Pick<
                 items: {
                     type: 'array',
                     maxItems: 20,
-                    items: object({
-                        id: uuid,
-                        description,
-                        amountInCents: money,
-                        factDate: date,
-                        ...expenseSupportProperties,
-                        disbursement: {
-                            oneOf: [
-                                object({ amountInCents: money, method }),
-                                { type: 'null' },
-                            ],
-                        },
-                        paidAmountInCents: { ...money, minimum: 0 },
-                        remainingAmountInCents: { ...money, minimum: 0 },
-                        status: expenseStatusSchema,
-                    }),
+                    items: {
+                        ...object({
+                            id: uuid,
+                            description,
+                            amountInCents: money,
+                            factDate: { oneOf: [date, { type: 'null' }] },
+                            expectedPaymentDate: {
+                                oneOf: [date, { type: 'null' }],
+                            },
+                            relevantDate: date,
+                            ...expenseSupportProperties,
+                            disbursement: {
+                                oneOf: [
+                                    object({ amountInCents: money, method }),
+                                    { type: 'null' },
+                                ],
+                            },
+                            paidAmountInCents: { ...money, minimum: 0 },
+                            remainingAmountInCents: { ...money, minimum: 0 },
+                            status: expenseStatusSchema,
+                            overdue: { type: 'boolean' },
+                        }),
+                        required: [
+                            'id',
+                            'description',
+                            'amountInCents',
+                            'factDate',
+                            'relevantDate',
+                            'disbursement',
+                            'paidAmountInCents',
+                            'remainingAmountInCents',
+                            'status',
+                        ],
+                    },
                 },
                 nextCursor: { oneOf: [{ type: 'string' }, { type: 'null' }] },
             }),

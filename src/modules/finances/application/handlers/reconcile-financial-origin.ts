@@ -44,10 +44,12 @@ export class ReconcileFinancialOrigin {
         actorId: string,
         today: string,
         now: string,
+        occurrenceId: string | null = null,
     ) {
         const state = await this.obligations.originState(
             origin.spaceId,
             origin.id,
+            occurrenceId,
         );
         const income = origin instanceof IncomeCommitment;
         const difference = income
@@ -165,6 +167,7 @@ export class ReconcileFinancialOrigin {
         const locked = await this.obligations.lockOrigin(
             origin.spaceId,
             origin.id,
+            occurrenceId,
         );
         if (
             locked.obligations.length !== state.obligations.length ||
@@ -214,6 +217,8 @@ export class ReconcileFinancialOrigin {
                 undefined,
                 null,
                 !income && 'holderMemberId' in fact ? fact.id : null,
+                false,
+                occurrenceId,
             ),
         );
     }
