@@ -183,8 +183,18 @@ const proposal = object({
     recipientMemberId: uuid,
     actorId: uuid,
     effectiveFrom: date,
-    configuration: ref('FinancialCommitmentChangeRequest'),
-    impact: ref('FinancialCommitmentChangePreview'),
+    configuration: {
+        oneOf: [
+            ref('FinancialCommitmentChangeRequest'),
+            ref('FinancialCommitmentAdjustmentProposalConfiguration'),
+        ],
+    },
+    impact: {
+        oneOf: [
+            ref('FinancialCommitmentChangePreview'),
+            ref('FinancialCommitmentAdjustmentPreview'),
+        ],
+    },
     status,
     registeredAt: instant,
     decidedAt: nullable(instant),
@@ -513,6 +523,7 @@ export const financialChangeOpenApi: Pick<
             }),
             FinancialCommitmentChangeAcceptanceResponse: {
                 oneOf: [
+                    ref('FinancialCommitmentAdjustmentAcceptanceResponse'),
                     object({
                         ...recurringResponse.properties,
                         proposal: ref('FinancialCommitmentChangeProposal'),

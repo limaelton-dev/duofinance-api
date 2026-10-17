@@ -107,6 +107,15 @@ export function expenseView(
     const version = commitment.initialVersion;
     return {
         spaceId: commitment.spaceId,
+        ...(commitment.adjustments.length || commitment.cancellation
+            ? {
+                  adjustments: commitment.adjustments,
+                  cancellation: commitment.cancellation,
+                  originalAmountInCents:
+                      commitment.adjustments[0]?.previousAmountInCents ??
+                      version.split.total.amountInCents,
+              }
+            : {}),
         commitment: {
             id: commitment.id,
             version: commitment.version,

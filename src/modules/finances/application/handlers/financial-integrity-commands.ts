@@ -68,6 +68,7 @@ export class FinancialIntegrityCommands {
             context: SpaceFinancialContext | null,
             now: string,
         ) => Promise<T>,
+        mode: 'CHANGE' | 'CORRECTION' = 'CHANGE',
     ) {
         const key = {
             actorId: c.actorId.value,
@@ -96,7 +97,15 @@ export class FinancialIntegrityCommands {
                 if (prior) return { ...prior, replayed: true };
                 const context =
                     access.type === 'SHARED'
-                        ? await this.contexts.lockForWrite(c.actorId, c.spaceId)
+                        ? mode === 'CORRECTION'
+                            ? await this.contexts.lockForFulfillment(
+                                  c.actorId,
+                                  c.spaceId,
+                              )
+                            : await this.contexts.lockForWrite(
+                                  c.actorId,
+                                  c.spaceId,
+                              )
                         : null;
                 if (!context)
                     await this.access.assertCanWrite(c.actorId, c.spaceId);

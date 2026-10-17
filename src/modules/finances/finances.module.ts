@@ -1,4 +1,17 @@
 import { financialChangeEntities } from './infrastructure/typeorm/entities/financial-change.orm-entity.js';
+import {
+    FinancialCommitmentAdjustmentOrmEntity,
+    FinancialCommitmentCancellationOrmEntity,
+} from './infrastructure/typeorm/entities/financial-correction.orm-entity.js';
+import { FinancialCorrectionController } from './http/controllers/financial-correction.controller.js';
+import { FinancialCommitmentAdjustments } from './application/handlers/financial-commitment-adjustments.js';
+import { FinancialCommitmentCancellations } from './application/handlers/financial-commitment-cancellations.js';
+import {
+    AdjustmentPipe,
+    CancellationPipe,
+} from './http/dto/financial-correction.dto.js';
+import { FINANCIAL_CORRECTION_REPOSITORY } from './application/ports/private/financial-correction.repository.js';
+import { TypeOrmFinancialCorrectionRepository } from './infrastructure/typeorm/repositories/typeorm-financial-correction.repository.js';
 import { FinancialNonRecurringVersionOrmEntity } from './infrastructure/typeorm/entities/non-recurring-version.orm-entity.js';
 import { FinancialChangeController } from './http/controllers/financial-change.controller.js';
 import {
@@ -224,6 +237,8 @@ import {
         SpacesModule,
         TypeOrmModule.forFeature([
             ...financialChangeEntities,
+            FinancialCommitmentAdjustmentOrmEntity,
+            FinancialCommitmentCancellationOrmEntity,
             FinancialNonRecurringVersionOrmEntity,
             ...settlementAdjustmentEntities,
             ...settlementOffsetEntities,
@@ -247,6 +262,7 @@ import {
     ],
     controllers: [
         FinancialChangeController,
+        FinancialCorrectionController,
         PlannedExpenseController,
         RecurringCommitmentController,
         InstallmentCommitmentController,
@@ -269,6 +285,14 @@ import {
     ],
     providers: [
         FinancialCommitmentChangesHandler,
+        FinancialCommitmentAdjustments,
+        FinancialCommitmentCancellations,
+        AdjustmentPipe,
+        CancellationPipe,
+        {
+            provide: FINANCIAL_CORRECTION_REPOSITORY,
+            useClass: TypeOrmFinancialCorrectionRepository,
+        },
         FinancialIntegrityCommands,
         NonRecurringCommitmentChanges,
         FinancialChangePipe,

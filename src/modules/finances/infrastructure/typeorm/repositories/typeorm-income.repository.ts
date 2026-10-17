@@ -1,5 +1,9 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
+    financialCorrections,
+    applyFinancialAdjustments,
+} from '../queries/financial-correction-projection.js';
+import {
     applicableNonRecurringVersion,
     nonRecurringVersions,
     withNonRecurringReadModels,
@@ -146,11 +150,29 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
             v.splitInput = applicable.distribution;
             v.expectedRecipientMemberId = applicable.expectedMemberId;
         }
+        const corrections = await financialCorrections(
+            m,
+            spaceId,
+            commitmentId,
+            c.id,
+        );
+        const adjusted = applyFinancialAdjustments(
+            v.amountInCents,
+            v.ownerPersonId
+                ? null
+                : ResponsibilitySplit.create(
+                      v.amountInCents,
+                      v.splitInput!.shares.map((share) => share.memberId),
+                      v.splitInput!,
+                  ).shares,
+            corrections.adjustments,
+            applicable?.version ?? 1,
+        );
         return new IncomeCommitment(
             c.id,
             c.spaceId,
             c.description,
-            v.amountInCents,
+            adjusted.amountInCents,
             v.expectedReceiptDate,
             c.createdBy,
             c.registeredAt.toISOString(),
@@ -158,11 +180,16 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
                 ? { type: 'PERSONAL', ownerPersonId: v.ownerPersonId }
                 : {
                       type: 'SHARED',
-                      split: ResponsibilitySplit.create(
-                          v.amountInCents,
-                          v.splitInput!.shares.map((s) => s.memberId),
-                          v.splitInput!,
-                      ),
+                      split: corrections.adjustments.length
+                          ? ResponsibilitySplit.fromEffectiveShares(
+                                adjusted.amountInCents,
+                                adjusted.economicShares!,
+                            )
+                          : ResponsibilitySplit.create(
+                                v.amountInCents,
+                                v.splitInput!.shares.map((s) => s.memberId),
+                                v.splitInput!,
+                            ),
                       expectedRecipientMemberId: v.expectedRecipientMemberId,
                       settlementRuleSnapshot: v.ruleSnapshot,
                       settlementRuleSourceVersion: v.ruleSourceVersion,
@@ -177,6 +204,8 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
                 recipientMemberId: r.recipientMemberId,
             })),
             c.version,
+            corrections.adjustments,
+            corrections.cancellation,
         );
     }
     async saveReceipt(
@@ -286,6 +315,15 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
             receipt: income.receipt,
             receipts: income.receipts,
             status: income.status,
+            ...(income.adjustments.length || income.cancellation
+                ? {
+                      adjustments: income.adjustments,
+                      cancellation: income.cancellation,
+                      originalAmountInCents:
+                          income.adjustments[0]?.previousAmountInCents ??
+                          income.amountInCents,
+                  }
+                : {}),
             receivedAmountInCents: income.receivedAmountInCents,
             remainingAmountInCents: income.remainingAmountInCents,
             obligations,

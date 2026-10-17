@@ -12,6 +12,12 @@ export function installmentView(
         position: item.position,
         dueDate: item.dueDate,
         amountInCents: item.amountInCents,
+        ...(item.adjustments.length
+            ? {
+                  adjustments: item.adjustments,
+                  originalAmountInCents: item.originalAmountInCents,
+              }
+            : {}),
         ...(item.economicVersion > 1
             ? {
                   originalAmountInCents: item.originalAmountInCents,

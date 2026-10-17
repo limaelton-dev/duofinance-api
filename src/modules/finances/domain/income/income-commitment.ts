@@ -4,6 +4,10 @@ import { ResponsibilitySplit } from '../shared-expense/responsibility-split.js';
 import { civilDate } from '../shared-expense/settlement-cycle.js';
 import type { SettlementRuleSnapshot } from '../settlement-rule/settlement-rule.js';
 import type { OriginSettlement } from '../shared-expense/obligation-reconciler.js';
+import type {
+    FinancialAdjustment,
+    FinancialCancellation,
+} from '../corrections/financial-correction.js';
 
 export interface IncomeReceipt {
     id: string;
@@ -33,7 +37,8 @@ export class IncomeCommitment {
     readonly receipts: readonly IncomeReceipt[];
     readonly receivedAmountInCents: number;
     readonly remainingAmountInCents: number;
-    readonly status: 'PENDING' | 'PARTIALLY_RECEIVED' | 'RECEIVED';
+    readonly status:
+        'PENDING' | 'PARTIALLY_RECEIVED' | 'RECEIVED' | 'CANCELLED';
     readonly participation: IncomeParticipation;
 
     constructor(
@@ -48,6 +53,8 @@ export class IncomeCommitment {
         receipt: IncomeReceipt | readonly IncomeReceipt[] | null = null,
         version = (Array.isArray(receipt) ? receipt.length : receipt ? 1 : 0) +
             1,
+        readonly adjustments: readonly FinancialAdjustment[] = [],
+        readonly cancellation: FinancialCancellation | null = null,
     ) {
         const receipts: readonly IncomeReceipt[] = Array.isArray(receipt)
             ? receipt
@@ -63,7 +70,8 @@ export class IncomeCommitment {
             !description.trim() ||
             description !== description.trim() ||
             description.length > 160 ||
-            amountInCents < 1 ||
+            (amountInCents < 1 &&
+                !(amountInCents === 0 && adjustments.length > 0)) ||
             !Number.isFinite(Date.parse(registeredAt)) ||
             !Number.isSafeInteger(version) ||
             version < receipts.length + 1 ||
@@ -135,8 +143,11 @@ export class IncomeCommitment {
         this.receivedAmountInCents = Number(total);
         this.remainingAmountInCents =
             amountInCents - this.receivedAmountInCents;
-        this.status =
-            total === 0n
+        this.status = cancellation
+            ? 'CANCELLED'
+            : this.remainingAmountInCents === 0 && adjustments.length > 0
+              ? 'RECEIVED'
+              : total === 0n
                 ? 'PENDING'
                 : this.remainingAmountInCents === 0
                   ? 'RECEIVED'
@@ -149,6 +160,8 @@ export class IncomeCommitment {
         expectedVersion: number,
         today: string,
     ): IncomeCommitment {
+        if (this.cancellation)
+            throw new FinancesError('FINANCIAL_COMMITMENT_CANCELLED');
         if (this.remainingAmountInCents === 0)
             throw new FinancesError('INCOME_ALREADY_RECEIVED');
         if (expectedVersion !== this.version)
@@ -166,6 +179,8 @@ export class IncomeCommitment {
             this.participation,
             [...this.receipts, receipt],
             this.version + 1,
+            this.adjustments,
+            this.cancellation,
         );
     }
 }

@@ -111,7 +111,8 @@ function view(
         economicShares:
             occurrence?.amountInCents !== null &&
             occurrence?.amountInCents !== undefined
-                ? (root.effectiveSplit(occurrence.amountInCents)?.shares ??
+                ? (occurrence.economicShares ??
+                  root.effectiveSplit(occurrence.amountInCents)?.shares ??
                   null)
                 : root.valueMode === 'FIXED'
                   ? root.participation.type === 'SHARED'
@@ -119,6 +120,13 @@ function view(
                       : null
                   : null,
         valueHistory: occurrence?.valueHistory ?? [],
+        ...(occurrence?.adjustments.length
+            ? {
+                  adjustments: occurrence.adjustments,
+                  originalAmountInCents:
+                      occurrence.adjustments[0].previousAmountInCents,
+              }
+            : {}),
         status: occurrence?.status ?? 'PENDING',
         fulfilledAmountInCents: occurrence?.fulfilledAmountInCents ?? 0,
         remainingAmountInCents: occurrence
@@ -1785,7 +1793,12 @@ export class RecurringCommitmentHandler {
                 root.registeredAt,
                 {
                     type: 'SHARED',
-                    split: root.effectiveSplit(occurrence.amountInCents!)!,
+                    split: occurrence.economicShares
+                        ? ResponsibilitySplit.fromEffectiveShares(
+                              occurrence.amountInCents!,
+                              occurrence.economicShares,
+                          )
+                        : root.effectiveSplit(occurrence.amountInCents!)!,
                     expectedRecipientMemberId: p.expectedMemberId,
                     settlementRuleSnapshot: p.settlementRuleSnapshot,
                     settlementRuleSourceVersion: p.settlementRuleSourceVersion,
@@ -1844,7 +1857,12 @@ export class RecurringCommitmentHandler {
             root.registeredAt,
             {
                 version: 1,
-                split: root.effectiveSplit(occurrence.amountInCents!)!,
+                split: occurrence.economicShares
+                    ? ResponsibilitySplit.fromEffectiveShares(
+                          occurrence.amountInCents!,
+                          occurrence.economicShares,
+                      )
+                    : root.effectiveSplit(occurrence.amountInCents!)!,
                 expectedPayerMemberId: p.expectedMemberId,
                 factDate: null,
                 expectedPaymentDate: occurrence.referenceDate,

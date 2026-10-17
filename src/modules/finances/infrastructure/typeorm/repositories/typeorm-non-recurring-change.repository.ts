@@ -9,6 +9,11 @@ import type { EconomicShare } from '../../../domain/shared-expense/responsibilit
 import { FinancesError } from '../../../domain/errors/finances.error.js';
 import { FinancialCommitmentOrmEntity } from '../entities/shared-expense.orm-entity.js';
 import { FinancialNonRecurringVersionOrmEntity } from '../entities/non-recurring-version.orm-entity.js';
+import {
+    FinancialCommitmentAdjustmentOrmEntity,
+    FinancialCommitmentCancellationOrmEntity,
+} from '../entities/financial-correction.orm-entity.js';
+import { applyFinancialAdjustments } from '../queries/financial-correction-projection.js';
 
 @Injectable()
 export class TypeOrmNonRecurringChangeRepository implements NonRecurringChangeRepository {
@@ -80,6 +85,17 @@ export class TypeOrmNonRecurringChangeRepository implements NonRecurringChangeRe
         ) facts GROUP BY target_id`,
                 [spaceId, commitmentId],
             );
+        const correctionRows = await manager.find(
+            FinancialCommitmentAdjustmentOrmEntity,
+            {
+                where: { spaceId, commitmentId },
+                order: { commitmentVersion: 'ASC' },
+            },
+        );
+        const cancellation = await manager.findOneBy(
+            FinancialCommitmentCancellationOrmEntity,
+            { spaceId, commitmentId },
+        );
         return {
             id: root.id,
             spaceId,
@@ -103,18 +119,29 @@ export class TypeOrmNonRecurringChangeRepository implements NonRecurringChangeRe
                             version.effectiveFrom <= date,
                     )
                     .at(-1);
+                const adjustments = correctionRows
+                    .filter((correction) => correction.targetId === row.id)
+                    .map((correction) => ({
+                        ...correction,
+                        registeredAt: correction.registeredAt.toISOString(),
+                    }));
+                const corrected = applyFinancialAdjustments(
+                    selected?.amountInCents ?? Number(row.amount),
+                    selected?.economicShares ?? row.shares,
+                    adjustments,
+                    selected?.version ?? 1,
+                );
                 return {
                     id: row.id,
                     dueDate: row.due_date,
                     originalAmountInCents: Number(row.amount),
-                    amountInCents:
-                        selected?.amountInCents ?? Number(row.amount),
-                    economicShares: selected?.economicShares ?? row.shares,
+                    amountInCents: corrected.amountInCents,
+                    economicShares: corrected.economicShares,
                     originalEconomicShares: row.shares,
                     economicVersion: selected?.version ?? 1,
                     fulfilledAmountInCents: Number(row.fulfilled),
                     stateVersion: row.state_version,
-                    resolved: row.resolved,
+                    resolved: row.resolved || cancellation !== null,
                 };
             }),
             versions: history.map((version) => ({

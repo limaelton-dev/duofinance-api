@@ -1,5 +1,9 @@
 import { FinancialExternalLiabilitySettlementOrmEntity } from '../entities/external-liability-settlement.orm-entity.js';
 import {
+    financialCorrections,
+    applyFinancialAdjustments,
+} from '../queries/financial-correction-projection.js';
+import {
     applicableNonRecurringVersion,
     nonRecurringVersions,
 } from '../queries/non-recurring-version-selection.js';
@@ -165,21 +169,44 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
             v.expectedPayerMemberId = applicable.expectedMemberId;
             c.description = applicable.description;
         }
+        const corrections = await financialCorrections(
+            m,
+            spaceId,
+            commitmentId,
+            c.id,
+        );
+        const adjusted = applyFinancialAdjustments(
+            v.amountInCents,
+            c.personalOwnerPersonId
+                ? null
+                : ResponsibilitySplit.create(
+                      v.amountInCents,
+                      v.splitInput!.shares.map((share) => share.memberId),
+                      v.splitInput!,
+                  ).shares,
+            corrections.adjustments,
+            applicable?.version ?? 1,
+        );
         const p = c.personalOwnerPersonId
             ? {
                   version: applicable?.version ?? 1,
                   ownerPersonId: c.personalOwnerPersonId,
-                  amount: Money.from(v.amountInCents),
+                  amount: Money.from(adjusted.amountInCents),
                   factDate: v.factDate,
                   expectedPaymentDate: v.expectedPaymentDate,
               }
             : {
                   version: applicable?.version ?? 1,
-                  split: ResponsibilitySplit.create(
-                      v.amountInCents,
-                      v.splitInput!.shares.map((s) => s.memberId),
-                      v.splitInput!,
-                  ),
+                  split: corrections.adjustments.length
+                      ? ResponsibilitySplit.fromEffectiveShares(
+                            adjusted.amountInCents,
+                            adjusted.economicShares!,
+                        )
+                      : ResponsibilitySplit.create(
+                            v.amountInCents,
+                            v.splitInput!.shares.map((s) => s.memberId),
+                            v.splitInput!,
+                        ),
                   expectedPayerMemberId: v.expectedPayerMemberId,
                   factDate: v.factDate,
                   expectedPaymentDate: v.expectedPaymentDate,
@@ -234,6 +261,8 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
                 registeredAt: f.registeredAt.toISOString(),
                 recordedByPersonId: f.recordedByPersonId,
             })),
+            corrections.adjustments,
+            corrections.cancellation,
         );
     }
     async saveDisbursement(

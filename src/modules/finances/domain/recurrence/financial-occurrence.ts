@@ -1,6 +1,8 @@
 import { FinancesError } from '../errors/finances.error.js';
 import { Money } from '../shared-expense/money.js';
 import { civilDate } from '../shared-expense/settlement-cycle.js';
+import type { FinancialAdjustment } from '../corrections/financial-correction.js';
+import type { EconomicShare } from '../shared-expense/responsibility-split.js';
 
 export type OccurrenceFact =
     | {
@@ -82,6 +84,8 @@ export class FinancialOccurrence {
         settlements: readonly OccurrenceExternalSettlement[] = [],
         valueHistory: readonly OccurrenceValueChange[] = [],
         readonly cancellation: OccurrenceCancellation | null = null,
+        readonly adjustments: readonly FinancialAdjustment[] = [],
+        readonly economicShares: readonly EconomicShare[] | null = null,
     ) {
         if (amountInCents !== null) Money.from(amountInCents);
         civilDate(referenceDate);
@@ -89,7 +93,9 @@ export class FinancialOccurrence {
             !id ||
             !commitmentId ||
             !spaceId ||
-            (amountInCents !== null && amountInCents < 1) ||
+            (amountInCents !== null &&
+                amountInCents < 1 &&
+                !(amountInCents === 0 && adjustments.length > 0)) ||
             !Number.isInteger(economicVersion) ||
             economicVersion < 1 ||
             !Number.isInteger(stateVersion) ||
@@ -132,7 +138,18 @@ export class FinancialOccurrence {
                 previous = change.amountInCents;
             }
             if (
-                previous !== amountInCents ||
+                previous !==
+                    (amountInCents === null
+                        ? null
+                        : amountInCents -
+                          adjustments.reduce(
+                              (sum, adjustment) =>
+                                  sum +
+                                  (adjustment.direction === 'INCREASE'
+                                      ? adjustment.amountInCents
+                                      : -adjustment.amountInCents),
+                              0,
+                          )) ||
                 stateVersion < valueHistory.at(-1)!.version
             )
                 throw new FinancesError('VALIDATION_ERROR');
@@ -196,19 +213,23 @@ export class FinancialOccurrence {
         this.valuePending = amountInCents === null;
         this.status =
             status ??
-            (fulfilled === 0n
-                ? 'PENDING'
-                : this.remainingAmountInCents === 0
-                  ? 'FULFILLED'
-                  : 'PARTIALLY_FULFILLED');
+            (amountInCents === 0 && adjustments.length > 0
+                ? 'FULFILLED'
+                : fulfilled === 0n
+                  ? 'PENDING'
+                  : this.remainingAmountInCents === 0
+                    ? 'FULFILLED'
+                    : 'PARTIALLY_FULFILLED');
         if (
             this.status !== 'CANCELLED' &&
             this.status !==
-                (fulfilled === 0n
-                    ? 'PENDING'
-                    : this.remainingAmountInCents === 0
-                      ? 'FULFILLED'
-                      : 'PARTIALLY_FULFILLED')
+                (amountInCents === 0 && adjustments.length > 0
+                    ? 'FULFILLED'
+                    : fulfilled === 0n
+                      ? 'PENDING'
+                      : this.remainingAmountInCents === 0
+                        ? 'FULFILLED'
+                        : 'PARTIALLY_FULFILLED')
         )
             throw new FinancesError('VALIDATION_ERROR');
         if ((this.status === 'CANCELLED') !== (cancellation !== null))
@@ -241,6 +262,8 @@ export class FinancialOccurrence {
             this.externalSettlements,
             this.valueHistory,
             { actorId, registeredAt: now },
+            this.adjustments,
+            this.economicShares,
         );
     }
 
@@ -270,6 +293,9 @@ export class FinancialOccurrence {
             undefined,
             this.externalSettlements,
             this.valueHistory,
+            this.cancellation,
+            this.adjustments,
+            this.economicShares,
         );
     }
 
@@ -286,6 +312,7 @@ export class FinancialOccurrence {
             throw new FinancesError('CONCURRENT_MODIFICATION');
         if (
             this.status === 'CANCELLED' ||
+            this.adjustments.length > 0 ||
             this.facts.length ||
             this.externalSettlements.length
         )

@@ -81,6 +81,13 @@ export function decodeReviewCursor(
             ) ||
             ![
                 'EXPENSE',
+                'EXPENSE_DISCOUNT',
+                'EXPENSE_SURCHARGE',
+                'EXPENSE_PAYOFF',
+                'EXPENSE_CANCELLATION',
+                'INCOME_INCREASE',
+                'INCOME_DECREASE',
+                'INCOME_CANCELLATION',
                 'EXPECTED_INCOME',
                 'EXPECTED_EXPENSE',
                 'DISBURSEMENT',

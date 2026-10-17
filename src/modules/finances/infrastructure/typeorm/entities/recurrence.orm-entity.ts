@@ -126,7 +126,7 @@ export class FinancialRecurrenceShareOrmEntity {
 ])
 @Check(
     'CHK_financial_occurrences_state',
-    `((economic_version IS NOT NULL AND economic_version > 0 AND installment_id IS NULL) OR (economic_version IS NULL AND installment_id IS NOT NULL AND amount_in_cents IS NOT NULL)) AND state_version > 0 AND (amount_in_cents IS NULL OR amount_in_cents BETWEEN 1 AND 9007199254740991) AND (amount_in_cents IS NOT NULL OR status IN ('PENDING','CANCELLED')) AND status IN ('PENDING','PARTIALLY_FULFILLED','FULFILLED','CANCELLED')`,
+    `((economic_version IS NOT NULL AND economic_version > 0 AND installment_id IS NULL) OR (economic_version IS NULL AND installment_id IS NOT NULL AND amount_in_cents IS NOT NULL)) AND state_version > 0 AND (amount_in_cents IS NULL OR amount_in_cents BETWEEN 0 AND 9007199254740991) AND (amount_in_cents IS NOT NULL OR status IN ('PENDING','CANCELLED')) AND status IN ('PENDING','PARTIALLY_FULFILLED','FULFILLED','CANCELLED')`,
 )
 @ForeignKey(
     () => FinancialRecurrenceVersionOrmEntity,

@@ -1,4 +1,7 @@
 export type FinancesErrorCode =
+    | 'FINANCIAL_ADJUSTMENT_BELOW_FULFILLED'
+    | 'FINANCIAL_COMMITMENT_CANCELLED'
+    | 'FINANCIAL_CANCELLATION_NOT_ALLOWED'
     | 'FINANCIAL_CHANGE_PROPOSAL_NOT_FOUND'
     | 'FINANCIAL_CHANGE_RECIPIENT_REQUIRED'
     | 'FINANCIAL_CHANGE_PROPOSAL_RESOLVED'
@@ -32,6 +35,12 @@ export type FinancesErrorCode =
     | 'RECURRENCE_ACCEPTANCE_REQUIRED'
     | 'RECURRENCE_ALREADY_TERMINATED';
 const messages: Record<FinancesErrorCode, string> = {
+    FINANCIAL_ADJUSTMENT_BELOW_FULFILLED:
+        'O ajuste deixaria o valor abaixo do que já foi realizado. Corrija a realização antes de confirmar.',
+    FINANCIAL_COMMITMENT_CANCELLED:
+        'Este compromisso foi cancelado e não aceita novas realizações ou ajustes.',
+    FINANCIAL_CANCELLATION_NOT_ALLOWED:
+        'Este compromisso possui realização ou obrigação externa válida e não pode ser cancelado integralmente.',
     FINANCIAL_CHANGE_PROPOSAL_NOT_FOUND:
         'Proposta de alteração não encontrada.',
     FINANCIAL_CHANGE_RECIPIENT_REQUIRED:

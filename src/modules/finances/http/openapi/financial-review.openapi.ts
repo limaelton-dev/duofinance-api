@@ -33,6 +33,9 @@ const itemProperties = {
             'EXPENSE_SURCHARGE',
             'EXPENSE_PAYOFF',
             'EXPENSE_CANCELLATION',
+            'INCOME_INCREASE',
+            'INCOME_DECREASE',
+            'INCOME_CANCELLATION',
             'EXPECTED_INCOME',
             'EXPECTED_EXPENSE',
             'DISBURSEMENT',
@@ -60,6 +63,7 @@ const itemProperties = {
     participantPersonId: nullable(uuid),
     recipientMemberId: nullable(uuid),
     memberIds: { type: 'array', items: uuid } as SchemaObject,
+    reason: nullable(text),
 };
 const metricProperties = Object.fromEntries(
     [
@@ -83,6 +87,7 @@ metricProperties.economicResultInCents = {
     type: 'string',
     pattern: '^-?(0|[1-9][0-9]*)$',
 };
+metricProperties.expenseAmountInCents = metricProperties.economicResultInCents;
 metricProperties.expenseAmountInCents = {
     type: 'string',
     pattern: '^-?(0|[1-9][0-9]*)$',

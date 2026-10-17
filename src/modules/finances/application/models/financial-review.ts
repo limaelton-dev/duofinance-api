@@ -5,6 +5,9 @@ export type FinancialReviewItemType =
     | 'EXPENSE_SURCHARGE'
     | 'EXPENSE_PAYOFF'
     | 'EXPENSE_CANCELLATION'
+    | 'INCOME_INCREASE'
+    | 'INCOME_DECREASE'
+    | 'INCOME_CANCELLATION'
     | 'EXPECTED_INCOME'
     | 'EXPECTED_EXPENSE'
     | 'DISBURSEMENT'
@@ -30,6 +33,7 @@ export interface FinancialReviewItem {
     participantPersonId: string | null;
     recipientMemberId: string | null;
     memberIds: string[];
+    reason?: string | null;
 }
 export interface FinancialForecastItem extends FinancialReviewItem {
     type: 'EXPECTED_INCOME' | 'EXPECTED_EXPENSE';

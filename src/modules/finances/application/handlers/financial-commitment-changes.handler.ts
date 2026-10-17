@@ -21,6 +21,10 @@ import { nonRecurringChangeSchema } from '../../http/dto/non-recurring-change.dt
 import { changeRecurringCommitmentSchema } from '../../http/dto/recurring-commitment.dto.js';
 import { uuid } from '../../http/dto/record-shared-cash-expense.dto.js';
 import {
+    adjustmentSchema,
+    type AdjustmentDto,
+} from '../../http/dto/financial-correction.dto.js';
+import {
     FINANCIAL_CHANGE_REPOSITORY,
     type FinancialChangeRepository,
     type FinancialChangeOrigin,
@@ -35,6 +39,7 @@ import {
 } from './financial-integrity-commands.js';
 import { NonRecurringCommitmentChanges } from './non-recurring-commitment-changes.js';
 import { RecurringCommitmentHandler } from './recurring-commitment.handler.js';
+import { FinancialCommitmentAdjustments } from './financial-commitment-adjustments.js';
 
 type ChangeCommand = FinancialIntegrityCommand & FinancialChangeDto;
 type DecisionCommand = FinancialIntegrityCommand &
@@ -52,6 +57,7 @@ export class FinancialCommitmentChangesHandler {
         @Inject(FINANCES_CLOCK) private readonly clock: FinancesClock,
         private readonly recurring: RecurringCommitmentHandler,
         private readonly nonRecurring: NonRecurringCommitmentChanges,
+        private readonly adjustments: FinancialCommitmentAdjustments,
     ) {}
 
     private configuration(origin: FinancialChangeOrigin, input: unknown) {
@@ -187,6 +193,55 @@ export class FinancialCommitmentChangesHandler {
             },
         );
     }
+    adjust(c: FinancialIntegrityCommand, input: AdjustmentDto) {
+        return this.commands.execute(
+            'RECORD_FINANCIAL_ADJUSTMENT',
+            c,
+            input,
+            async (origin, context, now) => {
+                const impact = await this.adjustments.preview(
+                    c.actorId,
+                    c.spaceId,
+                    c.commitmentId,
+                    input,
+                );
+                if (!impact.requiresAcceptance)
+                    return this.adjustments.applyApproved(c, input);
+                if (!context) throw new FinancesError('SHARED_SPACE_REQUIRED');
+                const recipients = impact.impactByMember.filter(
+                    (member) => member.requiresAcceptance,
+                );
+                if (recipients.length !== 1)
+                    throw new FinancesError('VALIDATION_ERROR', [
+                        'distribution',
+                    ]);
+                const proposal = new CommitmentChangeProposal({
+                    id: randomUUID(),
+                    spaceId: c.spaceId.value,
+                    commitmentId: c.commitmentId,
+                    version: 1,
+                    baseVersion: origin.version,
+                    originFingerprint: origin.fingerprint,
+                    proposedByMemberId: context.actorMemberId,
+                    recipientMemberId: recipients[0].memberId,
+                    actorId: c.actorId.value,
+                    effectiveFrom: input.factDate,
+                    configuration: {
+                        changeType: 'ADJUSTMENT',
+                        adjustment: input,
+                    },
+                    impact,
+                    status: 'PROPOSED',
+                    registeredAt: now,
+                    decidedAt: null,
+                    decidedByPersonId: null,
+                });
+                await this.repository.insert(proposal);
+                return { proposal: proposal.state };
+            },
+            'CORRECTION',
+        );
+    }
     decide(c: DecisionCommand, accept: boolean) {
         return this.commands.execute(
             accept ? 'ACCEPT_COMMITMENT_CHANGE' : 'REJECT_COMMITMENT_CHANGE',
@@ -218,29 +273,47 @@ export class FinancialCommitmentChangesHandler {
                 );
                 let result: object = {};
                 if (accept) {
+                    const configuration = proposal.state.configuration;
+                    const isAdjustment =
+                        'changeType' in configuration &&
+                        configuration.changeType === 'ADJUSTMENT';
                     if (
                         proposal.state.baseVersion !== origin.version ||
                         proposal.state.originFingerprint !==
                             origin.fingerprint ||
-                        proposal.state.effectiveFrom <= this.clock.today()
+                        (!isAdjustment &&
+                            proposal.state.effectiveFrom <= this.clock.today())
                     )
                         throw new FinancesError(
                             'FINANCIAL_CHANGE_PROPOSAL_OBSOLETE',
                         );
-                    result = await this.apply(
-                        c,
-                        origin,
-                        proposal.state.configuration,
-                        {
-                            proposedByMemberId:
-                                proposal.state.proposedByMemberId,
-                            acceptedByMemberId: context.actorMemberId,
-                        },
-                    );
+                    const approval = {
+                        proposedByMemberId: proposal.state.proposedByMemberId,
+                        acceptedByMemberId: context.actorMemberId,
+                        proposalId: proposal.state.id,
+                    };
+                    result = isAdjustment
+                        ? await this.adjustments.applyApproved(
+                              c,
+                              parseZodInput(
+                                  adjustmentSchema,
+                                  'adjustment' in configuration
+                                      ? configuration.adjustment
+                                      : null,
+                              ),
+                              approval,
+                          )
+                        : await this.apply(
+                              c,
+                              origin,
+                              proposal.state.configuration,
+                              approval,
+                          );
                 }
                 await this.repository.update(decided, proposal.state.version);
                 return { ...result, proposal: decided.state };
             },
+            'CORRECTION',
         );
     }
     async detail(

@@ -45,6 +45,11 @@ export class ReconcileFinancialOrigin {
         today: string,
         now: string,
         occurrenceId: string | null = null,
+        cause?: {
+            id: string;
+            factDate: string;
+            kind: 'ADJUSTMENT' | 'REVERSAL';
+        },
     ) {
         const state = await this.obligations.originState(
             origin.spaceId,
@@ -73,7 +78,7 @@ export class ReconcileFinancialOrigin {
             : origin.fulfillments.at(-1)!;
         const latest = state.obligations.at(-1);
         const latestCycle =
-            latest?.status === 'SETTLED' && latest.cycleId
+            latest?.remainingAmountInCents === 0 && latest.cycleId
                 ? await this.adjustments?.cycle(origin.spaceId, latest.cycleId)
                 : null;
         if (
@@ -190,7 +195,7 @@ export class ReconcileFinancialOrigin {
                 before.reconcile(
                     change.remainingAmountInCents,
                     actorId,
-                    fact.id,
+                    cause?.id ?? fact.id,
                     now,
                 ),
             );
@@ -206,7 +211,7 @@ export class ReconcileFinancialOrigin {
                 difference.creditorMemberId,
                 difference.amountInCents,
                 cycleId,
-                fact.factDate,
+                cause?.factDate ?? fact.factDate,
                 now,
                 actorId,
                 undefined,
@@ -219,6 +224,7 @@ export class ReconcileFinancialOrigin {
                 !income && 'holderMemberId' in fact ? fact.id : null,
                 false,
                 occurrenceId,
+                cause?.id ?? null,
             ),
         );
     }

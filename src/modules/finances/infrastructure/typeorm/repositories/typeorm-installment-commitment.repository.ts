@@ -43,6 +43,11 @@ import {
     FinancialInstallmentShareOrmEntity,
 } from '../entities/installment.orm-entity.js';
 import { recordFinancialCommandAudit } from './record-financial-command-audit.js';
+import {
+    applyFinancialAdjustments,
+    financialCorrections,
+} from '../queries/financial-correction-projection.js';
+import { FinancialCommitmentAdjustmentOrmEntity } from '../entities/financial-correction.orm-entity.js';
 
 @Injectable()
 export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommitmentRepository {
@@ -187,6 +192,17 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
             spaceId,
             commitmentId,
         );
+        const correctionRows = await m.find(
+            FinancialCommitmentAdjustmentOrmEntity,
+            {
+                where: { spaceId, commitmentId },
+                order: { commitmentVersion: 'ASC' },
+            },
+        );
+        const originalShares = await m.find(
+            FinancialInstallmentShareOrmEntity,
+            { where: { spaceId, commitmentId } },
+        );
         const factDates: { target_id: string; fact_date: string }[] =
             await m.query(
                 `SELECT occurrence_id AS target_id,MIN(fact_date)::text AS fact_date FROM (SELECT occurrence_id,fact_date FROM financial_disbursements WHERE space_id=$1 AND commitment_id=$2 UNION ALL SELECT occurrence_id,fact_date FROM financial_external_liabilities WHERE space_id=$1 AND commitment_id=$2) dates WHERE occurrence_id IS NOT NULL GROUP BY occurrence_id`,
@@ -210,11 +226,31 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
                 today,
                 factDates.find((item) => item.target_id === row.id)?.fact_date,
             );
+            const adjustments = correctionRows
+                .filter((correction) => correction.targetId === row.id)
+                .map((correction) => ({
+                    ...correction,
+                    registeredAt: correction.registeredAt.toISOString(),
+                }));
+            const corrected = applyFinancialAdjustments(
+                applicable?.amountInCents ?? row.amountInCents,
+                applicable?.economicShares ??
+                    (c.personalOwnerPersonId
+                        ? null
+                        : originalShares
+                              .filter((share) => share.installmentId === row.id)
+                              .map((share) => ({
+                                  memberId: share.memberId,
+                                  amountInCents: share.amountInCents,
+                              }))),
+                adjustments,
+                applicable?.version ?? 1,
+            );
             return new Installment(
                 row.id,
                 row.position,
                 row.dueDate,
-                applicable?.amountInCents ?? row.amountInCents,
+                corrected.amountInCents,
                 (resolutions.find((item) => item.installmentId === row.id)
                     ?.type === 'PAYOFF'
                     ? 'PAID_OFF'
@@ -267,9 +303,10 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
                         : null;
                 })(),
                 row.amountInCents,
-                applicable?.economicShares ?? null,
+                corrected.economicShares,
                 applicable?.version ?? 1,
                 applicable ? applicable.expectedMemberId : undefined,
+                adjustments,
             );
         });
         return new InstallmentCommitment(
@@ -457,6 +494,14 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
                 registeredAt: s.registered_at.toISOString(),
                 recordedByPersonId: s.recorded_by_person_id,
             })),
+            [],
+            null,
+            (await financialCorrections(m, root.spaceId, root.id, row.id))
+                .adjustments,
+            root.effectiveSharesFor(
+                root.plan.installments.find((item) => item.id === row.id)!
+                    .position,
+            ),
         );
     }
 

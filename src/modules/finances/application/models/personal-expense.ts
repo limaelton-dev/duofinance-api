@@ -75,6 +75,15 @@ export function personalExpenseView(
 ): PersonalExpenseView {
     return {
         spaceId: c.spaceId,
+        ...(c.adjustments.length || c.cancellation
+            ? {
+                  adjustments: c.adjustments,
+                  cancellation: c.cancellation,
+                  originalAmountInCents:
+                      c.adjustments[0]?.previousAmountInCents ??
+                      c.initialVersion.amount.amountInCents,
+              }
+            : {}),
         spaceType: 'PERSONAL',
         commitment: {
             id: c.id,

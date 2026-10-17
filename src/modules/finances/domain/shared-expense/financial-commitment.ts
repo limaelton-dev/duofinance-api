@@ -5,6 +5,10 @@ import { ResponsibilitySplit } from './responsibility-split.js';
 import { Money } from './money.js';
 import { civilDate } from './settlement-cycle.js';
 import { invalidExpense } from './validation.js';
+import type {
+    FinancialAdjustment,
+    FinancialCancellation,
+} from '../corrections/financial-correction.js';
 export interface CommitmentVersion {
     readonly version: number;
     readonly split: ResponsibilitySplit;
@@ -94,8 +98,10 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
         | 'PENDING'
         | 'PARTIALLY_PAID'
         | 'PAID'
+        | 'CANCELLED'
         | 'PARTIALLY_FULFILLED'
         | 'FULFILLED';
+    readonly cancellation: FinancialCancellation | null;
     constructor(
         readonly id: string,
         readonly spaceId: string,
@@ -107,6 +113,8 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
         today: string,
         version?: number,
         liabilities: readonly ExpenseExternalLiability<V>[] = [],
+        readonly adjustments: readonly FinancialAdjustment[] = [],
+        cancellation: FinancialCancellation | null = null,
     ) {
         const facts: readonly ExpenseDisbursement<V>[] = Array.isArray(payments)
             ? payments
@@ -129,7 +137,7 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
             !createdByPersonId ||
             !Number.isSafeInteger(initialVersion.version) ||
             initialVersion.version < 1 ||
-            original < 1 ||
+            (original < 1 && !(original === 0 && adjustments.length > 0)) ||
             !description.trim() ||
             description !== description.trim() ||
             description.length > 160 ||
@@ -321,13 +329,19 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
             initialVersion.expectedPaymentDate < today &&
             this.remainingAmountInCents > 0;
         this.fulfillmentStatus =
-            events.length === 0
-                ? 'PENDING'
-                : this.remainingAmountInCents === 0
-                  ? 'FULFILLED'
-                  : 'PARTIALLY_FULFILLED';
-        this.status =
-            events.length === 0
+            this.remainingAmountInCents === 0 && adjustments.length > 0
+                ? 'FULFILLED'
+                : events.length === 0
+                  ? 'PENDING'
+                  : this.remainingAmountInCents === 0
+                    ? 'FULFILLED'
+                    : 'PARTIALLY_FULFILLED';
+        this.cancellation = cancellation;
+        this.status = cancellation
+            ? 'CANCELLED'
+            : this.remainingAmountInCents === 0 && adjustments.length > 0
+              ? 'FULFILLED'
+              : events.length === 0
                 ? 'PENDING'
                 : liabilities.length
                   ? this.fulfillmentStatus
@@ -384,6 +398,8 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
                       }
                     : f,
             ) as readonly ExpenseExternalLiability<V>[],
+            this.adjustments,
+            this.cancellation,
         );
     }
     recordExternalLiability(
@@ -391,6 +407,8 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
         expectedVersion: number,
         today: string,
     ): FinancialCommitment<V> {
+        if (this.cancellation)
+            throw new FinancesError('FINANCIAL_COMMITMENT_CANCELLED');
         if (expectedVersion !== this.version)
             throw new FinancesError('CONCURRENT_MODIFICATION');
         if (this.remainingAmountInCents === 0)
@@ -409,6 +427,8 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
                 ...this.externalLiabilities,
                 { ...liability, sequence: this.nextFactSequence },
             ],
+            this.adjustments,
+            this.cancellation,
         );
     }
     recordDisbursement(
@@ -416,6 +436,8 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
         expectedVersion: number,
         today: string,
     ): FinancialCommitment<V> {
+        if (this.cancellation)
+            throw new FinancesError('FINANCIAL_COMMITMENT_CANCELLED');
         if (expectedVersion !== this.version)
             throw new FinancesError('CONCURRENT_MODIFICATION');
         if (this.remainingAmountInCents === 0)
@@ -434,6 +456,8 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
             today,
             this.version + 1,
             this.externalLiabilities,
+            this.adjustments,
+            this.cancellation,
         );
     }
     private get nextFactSequence(): number {

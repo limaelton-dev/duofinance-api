@@ -1,6 +1,7 @@
 import { FinancesError } from '../errors/finances.error.js';
 import type { EconomicShare } from '../shared-expense/responsibility-split.js';
 import { civilDate } from '../shared-expense/settlement-cycle.js';
+import type { FinancialAdjustment } from '../corrections/financial-correction.js';
 
 export type InstallmentCadence = 'MONTHLY' | 'ANNUAL';
 export type InstallmentStatus =
@@ -189,11 +190,13 @@ export class Installment {
         readonly economicShares: readonly EconomicShare[] | null = null,
         readonly economicVersion = 1,
         readonly expectedMemberId: string | null | undefined = undefined,
+        readonly adjustments: readonly FinancialAdjustment[] = [],
     ) {
         if (!id || !Number.isSafeInteger(position) || position < 1)
             invalid('installments');
         validDate(dueDate, 'dueDate');
-        positiveCents(amountInCents, 'amountInCents');
+        if (amountInCents !== 0 || adjustments.length === 0)
+            positiveCents(amountInCents, 'amountInCents');
         positiveCents(originalAmountInCents, 'originalAmountInCents');
         if (
             economicShares &&
@@ -212,7 +215,10 @@ export class Installment {
             amountInCents + (anticipation?.adjustmentInCents ?? 0);
         if (
             !Number.isSafeInteger(this.effectiveAmountInCents) ||
-            this.effectiveAmountInCents < 1 ||
+            (this.effectiveAmountInCents < 1 &&
+                !(
+                    this.effectiveAmountInCents === 0 && adjustments.length > 0
+                )) ||
             !Number.isSafeInteger(fulfilledAmountInCents) ||
             fulfilledAmountInCents < 0 ||
             fulfilledAmountInCents > this.effectiveAmountInCents
@@ -260,11 +266,13 @@ export class Installment {
                 ? 'PAID_OFF'
                 : resolution?.type === 'CANCELLED'
                   ? 'CANCELLED'
-                  : fulfilledAmountInCents === 0
-                    ? 'PENDING'
-                    : fulfilledAmountInCents === this.effectiveAmountInCents
-                      ? 'FULFILLED'
-                      : 'PARTIALLY_FULFILLED';
+                  : this.effectiveAmountInCents === 0 && adjustments.length > 0
+                    ? 'FULFILLED'
+                    : fulfilledAmountInCents === 0
+                      ? 'PENDING'
+                      : fulfilledAmountInCents === this.effectiveAmountInCents
+                        ? 'FULFILLED'
+                        : 'PARTIALLY_FULFILLED';
         if (status !== actualStatus) invalid('status');
         this.remainingAmountInCents = resolution
             ? 0
