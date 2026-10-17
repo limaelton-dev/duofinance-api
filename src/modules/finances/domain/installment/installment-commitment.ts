@@ -102,7 +102,10 @@ export class InstallmentCommitment {
                 (share) => share.memberId,
             );
             ResponsibilitySplit.create(
-                plan.totalAmountInCents,
+                plan.installments.reduce(
+                    (sum, item) => sum + item.originalAmountInCents,
+                    0,
+                ),
                 members,
                 participation.distribution,
             );
@@ -123,18 +126,22 @@ export class InstallmentCommitment {
         const installment = this.plan.installments[position - 1];
         if (!installment || installment.position !== position)
             throw new FinancesError('FINANCIAL_COMMITMENT_NOT_FOUND');
+        if (installment.economicShares) return installment.economicShares;
         const members = this.participation.distribution.shares.map(
             (share) => share.memberId,
         );
         const split = ResponsibilitySplit.create(
-            this.plan.totalAmountInCents,
+            this.plan.installments.reduce(
+                (sum, item) => sum + item.originalAmountInCents,
+                0,
+            ),
             members,
             this.participation.distribution,
         );
         const before = this.plan.installments
             .slice(0, position - 1)
-            .reduce((sum, item) => sum + item.amountInCents, 0);
-        const after = before + installment.amountInCents;
+            .reduce((sum, item) => sum + item.originalAmountInCents, 0);
+        const after = before + installment.originalAmountInCents;
         const prior = new Map(
             split
                 .realizedShares(before)

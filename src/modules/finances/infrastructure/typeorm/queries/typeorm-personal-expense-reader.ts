@@ -1,3 +1,4 @@
+import { nonRecurringReadQuery } from './non-recurring-version-selection.js';
 import { externalLiabilityProjection } from '../repositories/typeorm-external-liability-settlement.repository.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
@@ -53,7 +54,8 @@ export class TypeOrmPersonalExpenseReader implements PersonalExpenseReader {
             externalLiabilities: NonNullable<
                 PersonalExpenseSummary['externalLiabilities']
             >;
-        }[] = await this.provider.get().query(
+        }[] = await nonRecurringReadQuery(
+            this.provider.get(),
             `WITH page AS MATERIALIZED (
                 SELECT c.id,c.space_id,c.description,v.amount_in_cents,v.fact_date,v.expected_payment_date,
                     COALESCE(v.expected_payment_date,v.fact_date) AS relevant_date

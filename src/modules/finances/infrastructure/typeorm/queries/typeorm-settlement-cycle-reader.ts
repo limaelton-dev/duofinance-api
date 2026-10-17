@@ -1,3 +1,4 @@
+import { nonRecurringReadQuery } from './non-recurring-version-selection.js';
 import { Injectable } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
 import { FinanceTodayUnavailableError } from '../../../application/ports/public/finance-today-query.port.js';
@@ -118,7 +119,8 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
     async today(spaceId: string, actorMemberId: string, referenceDate: string) {
         let rows: (CycleRow & { overdue_count: number })[];
         try {
-            rows = await this.managers.get().query(
+            rows = await nonRecurringReadQuery(
+                this.managers.get(),
                 `WITH overdue AS MATERIALIZED (
                     SELECT s.id,s.target_date FROM settlement_cycles s
                     WHERE s.space_id=$1 AND s.status='OPEN' AND s.target_date<$3::date
@@ -183,7 +185,8 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
         referenceDate: string,
         after: SettlementCycleKey | null,
     ): Promise<SettlementCycleRead[]> {
-        const rows: CycleRow[] = await this.managers.get().query(
+        const rows: CycleRow[] = await nonRecurringReadQuery(
+            this.managers.get(),
             `
             WITH page AS MATERIALIZED (
                 SELECT * FROM settlement_cycles WHERE space_id=$1 AND status=CASE WHEN $3='FINALIZED' THEN 'FINALIZED' ELSE 'OPEN' END
@@ -215,7 +218,8 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
         direction: PositionDirection,
         after: PositionKey | null,
     ) {
-        const rows: DetailRow[] = await this.managers.get().query(
+        const rows: DetailRow[] = await nonRecurringReadQuery(
+            this.managers.get(),
             `
             WITH selected_cycle AS MATERIALIZED (
                 SELECT * FROM settlement_cycles WHERE space_id=$1 AND id=$3
@@ -320,7 +324,8 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
         after: PositionKey | null,
     ) {
         return this.managers.readSnapshot(async () => {
-            const selected: CycleRow[] = await this.managers.get().query(
+            const selected: CycleRow[] = await nonRecurringReadQuery(
+                this.managers.get(),
                 `
                 WITH selected_cycles AS MATERIALIZED (SELECT * FROM settlement_cycles WHERE space_id=$1 AND id=ANY($3::uuid[]))
                 SELECT ${cycleColumns},${aggregate},${cycleReversals},
@@ -347,7 +352,8 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                 gross_receivable: string;
                 payable: string;
                 receivable: string;
-            }[] = await this.managers.get().query(
+            }[] = await nonRecurringReadQuery(
+                this.managers.get(),
                 `
                 WITH selected_obligations AS MATERIALIZED (SELECT * FROM inter_member_obligations WHERE space_id=$1 AND cycle_id=ANY($3::uuid[])),
                 selected_allocations AS MATERIALIZED (SELECT a.* FROM settlement_allocations a WHERE a.space_id=$1 AND a.cycle_id=ANY($3::uuid[])),
@@ -369,7 +375,8 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                 [spaceId, actorMemberId, cycleIds],
             );
             const rows: { item: SelectedSettlementObligation }[] =
-                await this.managers.get().query(
+                await nonRecurringReadQuery(
+                    this.managers.get(),
                     `
                 WITH page AS MATERIALIZED (
                     SELECT * FROM inter_member_obligations WHERE space_id=$1 AND cycle_id=ANY($3::uuid[])

@@ -1,4 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import {
+    FINANCES_CLOCK,
+    type FinancesClock,
+} from '../../../application/ports/private/shared-expense.repositories.js';
+import {
+    applicableNonRecurringVersion,
+    nonRecurringVersions,
+    withNonRecurringReadModels,
+} from '../queries/non-recurring-version-selection.js';
 import { randomUUID } from 'node:crypto';
 import { In } from 'typeorm';
 import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
@@ -37,7 +46,12 @@ import { recordFinancialCommandAudit } from './record-financial-command-audit.js
 
 @Injectable()
 export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommitmentRepository {
-    constructor(private readonly provider: EntityManagerProvider) {}
+    constructor(
+        private readonly provider: EntityManagerProvider,
+        @Optional()
+        @Inject(FINANCES_CLOCK)
+        private readonly clock?: FinancesClock,
+    ) {}
 
     private manager() {
         return this.provider.get();
@@ -168,14 +182,39 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
             ) facts WHERE installment_id IS NOT NULL GROUP BY installment_id`,
                 [spaceId, commitmentId],
             );
+        const economicVersions = await nonRecurringVersions(
+            m,
+            spaceId,
+            commitmentId,
+        );
+        const factDates: { target_id: string; fact_date: string }[] =
+            await m.query(
+                `SELECT occurrence_id AS target_id,MIN(fact_date)::text AS fact_date FROM (SELECT occurrence_id,fact_date FROM financial_disbursements WHERE space_id=$1 AND commitment_id=$2 UNION ALL SELECT occurrence_id,fact_date FROM financial_external_liabilities WHERE space_id=$1 AND commitment_id=$2) dates WHERE occurrence_id IS NOT NULL GROUP BY occurrence_id`,
+                [spaceId, commitmentId],
+            );
+        const today =
+            this.clock?.today() ??
+            new Date().toLocaleDateString('en-CA', {
+                timeZone: 'America/Sao_Paulo',
+            });
+        const currentDescription =
+            economicVersions
+                .filter((version) => version.effectiveFrom <= today)
+                .at(-1)?.description ?? c.description;
         const installments = rows.map((row) => {
             const state = states.find((item) => item.installmentId === row.id);
             if (!state) throw new Error('Installment state missing');
+            const applicable = applicableNonRecurringVersion(
+                economicVersions,
+                row.id,
+                today,
+                factDates.find((item) => item.target_id === row.id)?.fact_date,
+            );
             return new Installment(
                 row.id,
                 row.position,
                 row.dueDate,
-                row.amountInCents,
+                applicable?.amountInCents ?? row.amountInCents,
                 (resolutions.find((item) => item.installmentId === row.id)
                     ?.type === 'PAYOFF'
                     ? 'PAID_OFF'
@@ -227,12 +266,16 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
                           }
                         : null;
                 })(),
+                row.amountInCents,
+                applicable?.economicShares ?? null,
+                applicable?.version ?? 1,
+                applicable ? applicable.expectedMemberId : undefined,
             );
         });
         return new InstallmentCommitment(
             c.id,
             c.spaceId,
-            c.description,
+            currentDescription,
             c.createdBy,
             c.registeredAt.toISOString(),
             c.version,
@@ -277,8 +320,17 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
             const m = this.manager();
             const [counts]: { total_count: string; amount: string }[] =
                 await m.query(
-                    `SELECT COUNT(*)::text AS total_count,COALESCE(SUM(p.total_amount_in_cents),0)::text AS amount FROM financial_installment_plans p WHERE p.space_id=$1`,
-                    [spaceId],
+                    withNonRecurringReadModels(
+                        `SELECT COUNT(DISTINCT i.commitment_id)::text AS total_count,COALESCE(SUM(i.amount_in_cents),0)::text AS amount FROM financial_installments i WHERE i.space_id=$1`,
+                        '$2::date',
+                    ),
+                    [
+                        spaceId,
+                        this.clock?.today() ??
+                            new Date().toLocaleDateString('en-CA', {
+                                timeZone: 'America/Sao_Paulo',
+                            }),
+                    ],
                 );
             const rows: { commitment_id: string }[] = await m.query(
                 `SELECT commitment_id FROM financial_installment_plans WHERE space_id=$1 AND ($2::uuid IS NULL OR commitment_id>$2::uuid) ORDER BY commitment_id LIMIT 21`,
@@ -392,7 +444,8 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
             row.referenceDate,
             1,
             row.stateVersion,
-            row.amountInCents,
+            root.plan.installments.find((item) => item.id === row.id)!
+                .effectiveAmountInCents,
             facts,
             row.materializedAt.toISOString(),
             row.status,

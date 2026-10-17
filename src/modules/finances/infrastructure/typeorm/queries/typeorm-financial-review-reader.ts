@@ -1,3 +1,4 @@
+import { nonRecurringReadQuery } from './non-recurring-version-selection.js';
 import { Injectable } from '@nestjs/common';
 import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
 import type { FinancialReviewReader } from '../../../application/ports/private/financial-review-reader.js';
@@ -245,7 +246,8 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
         scope: FinancialReviewScope,
         after: FinancialReviewKey | null,
     ) {
-        const rows: ItemRow[] = await this.managers.get().query(
+        const rows: ItemRow[] = await nonRecurringReadQuery(
+            this.managers.get(),
             `${facts}
             SELECT ${projection} FROM selected WHERE ($5::date IS NULL OR (relevant_date,registered_at,type,id)<($5::date,$6::timestamptz,$7::text,$8::uuid))
             ORDER BY relevant_date DESC,registered_at DESC,type DESC,id DESC LIMIT 21`,
@@ -259,6 +261,7 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                 after?.type ?? null,
                 after?.id ?? null,
             ],
+            scope.referenceDate,
         );
         return rows.map(item);
     }
@@ -279,7 +282,8 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
             fulfilledExpense: string;
             remainingExpense: string;
             unknownCount: string;
-        }[] = await this.managers.get().query(
+        }[] = await nonRecurringReadQuery(
+            this.managers.get(),
             `${facts}, pending AS (
             SELECT s.*,CASE WHEN s.type='EXPECTED_INCOME'
                 THEN COALESCE((SELECT SUM(r.amount_in_cents) FROM financial_receipts r JOIN financial_commitments c ON c.space_id=r.space_id AND c.id=r.commitment_id WHERE r.space_id=$1 AND r.commitment_id=s.commitment_id AND (c.modality='ONE_TIME' OR r.occurrence_id=s.id)),0)
@@ -309,6 +313,7 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                 after?.relevantDate ?? null,
                 after?.id ?? null,
             ],
+            scope.referenceDate,
         );
         return {
             items: rows[0].items.map((row) => ({
@@ -364,7 +369,8 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
             income: IncomePeriodDelta[];
             open: { memberId: string | null; amount: string }[];
         };
-        const rows: Row[] = await this.managers.get().query(
+        const rows: Row[] = await nonRecurringReadQuery(
+            this.managers.get(),
             `WITH
             expenses AS (
                 SELECT v.space_id,v.commitment_id,v.version,v.amount_in_cents,c.personal_owner_person_id,'ONE_TIME'::text AS modality,NULL::uuid AS occurrence_id FROM financial_commitment_versions v
@@ -471,6 +477,7 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
             SELECT COALESCE((SELECT jsonb_agg(payload || jsonb_build_object('memberId',member_id)) FROM metrics),'[]'::jsonb) AS metrics,
                 COALESCE((SELECT jsonb_agg(i) FROM income i),'[]'::jsonb) AS income,COALESCE((SELECT jsonb_agg(o) FROM open o),'[]'::jsonb) AS open`,
             [scope.spaceId, scope.start, scope.end],
+            scope.referenceDate,
         );
         const row = rows[0];
         // SQL sums remain decimal strings; only bounded original amounts enter domain allocation.

@@ -1,6 +1,7 @@
 import { externalLiabilitySettlementOpenApi } from './external-liability-settlement.openapi.js';
 import { plannedExpenseOpenApi } from './planned-expense.openapi.js';
 import { recurringCommitmentOpenApi } from './recurring-commitment.openapi.js';
+import { financialChangeOpenApi } from './financial-change.openapi.js';
 import { installmentCommitmentOpenApi } from './installment-commitment.openapi.js';
 import { settlementAdjustmentOpenApi } from './settlement-adjustment.openapi.js';
 import { settlementOffsetOpenApi } from './settlement-offset.openapi.js';
@@ -98,6 +99,7 @@ export const financesOpenApi: Pick<
         ...personalExpenseOpenApi.paths,
         ...plannedExpenseOpenApi.paths,
         ...recurringCommitmentOpenApi.paths,
+        ...financialChangeOpenApi.paths,
         ...installmentCommitmentOpenApi.paths,
         ...sharedCashExpenseOpenApi.paths,
         ...interMemberPositionOpenApi.paths,
@@ -217,6 +219,7 @@ export const financesOpenApi: Pick<
             ...personalExpenseOpenApi.components?.schemas,
             ...plannedExpenseOpenApi.components?.schemas,
             ...recurringCommitmentOpenApi.components?.schemas,
+            ...financialChangeOpenApi.components?.schemas,
             ...installmentCommitmentOpenApi.components?.schemas,
             ...sharedCashExpenseOpenApi.components?.schemas,
             ...interMemberPositionOpenApi.components?.schemas,

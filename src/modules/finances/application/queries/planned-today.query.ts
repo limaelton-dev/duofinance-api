@@ -1,3 +1,4 @@
+import { nonRecurringReadQuery } from '../../infrastructure/typeorm/queries/non-recurring-version-selection.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
 import { EntityManagerProvider } from '../../../../shared/technical/database/typeorm/entity-manager.provider.js';
@@ -39,7 +40,8 @@ export class PlannedTodayQuery implements PlannedTodayQueryPort {
         let rows: Row[];
         try {
             rows = await this.managers.readSnapshot(() =>
-                this.managers.get().query(
+                nonRecurringReadQuery(
+                    this.managers.get(),
                     `WITH one_time AS (
                     SELECT c.id AS commitment_id,NULL::uuid AS occurrence_id,'EXPENSE'::text AS kind,c.description,
                         v.expected_payment_date AS expected_date,v.amount_in_cents,v.amount_in_cents AS expected_amount_in_cents,
@@ -114,6 +116,7 @@ export class PlannedTodayQuery implements PlannedTodayQueryPort {
                 ) ORDER BY expected_date,commitment_id) FROM page),'[]'::jsonb) AS items,
                 (SELECT COUNT(*)::text FROM selected) AS "totalCount"`,
                     [space.value, referenceDate],
+                    referenceDate,
                 ),
             );
         } catch (error) {

@@ -185,11 +185,29 @@ export class Installment {
         readonly stateVersion = 1,
         readonly anticipation: InstallmentAnticipation | null = null,
         readonly resolution: InstallmentResolution | null = null,
+        readonly originalAmountInCents: number = amountInCents,
+        readonly economicShares: readonly EconomicShare[] | null = null,
+        readonly economicVersion = 1,
+        readonly expectedMemberId: string | null | undefined = undefined,
     ) {
         if (!id || !Number.isSafeInteger(position) || position < 1)
             invalid('installments');
         validDate(dueDate, 'dueDate');
         positiveCents(amountInCents, 'amountInCents');
+        positiveCents(originalAmountInCents, 'originalAmountInCents');
+        if (
+            economicShares &&
+            (economicShares.some(
+                (share) =>
+                    !Number.isSafeInteger(share.amountInCents) ||
+                    share.amountInCents < 0,
+            ) ||
+                economicShares.reduce(
+                    (sum, share) => sum + BigInt(share.amountInCents),
+                    0n,
+                ) !== BigInt(amountInCents))
+        )
+            invalid('economicShares');
         this.effectiveAmountInCents =
             amountInCents + (anticipation?.adjustmentInCents ?? 0);
         if (

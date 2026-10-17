@@ -1,4 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import {
+    applicableNonRecurringVersion,
+    nonRecurringVersions,
+    withNonRecurringReadModels,
+} from '../queries/non-recurring-version-selection.js';
 import { FinancialCommitmentSettlementRuleOrmEntity } from '../entities/settlement-adjustment.orm-entity.js';
 import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
 import type { IncomeRepository } from '../../../application/ports/private/income.ports.js';
@@ -14,6 +19,8 @@ import { ResponsibilitySplit } from '../../../domain/shared-expense/responsibili
 import { FinancesError } from '../../../domain/errors/finances.error.js';
 import {
     INTER_MEMBER_OBLIGATION_REPOSITORY,
+    FINANCES_CLOCK,
+    type FinancesClock,
     type InterMemberObligationRepository,
 } from '../../../application/ports/private/shared-expense.repositories.js';
 import {
@@ -31,6 +38,9 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
         private readonly provider: EntityManagerProvider,
         @Inject(INTER_MEMBER_OBLIGATION_REPOSITORY)
         private readonly obligations: InterMemberObligationRepository,
+        @Optional()
+        @Inject(FINANCES_CLOCK)
+        private readonly clock?: FinancesClock,
     ) {}
     async save(income: IncomeCommitment): Promise<void> {
         const m = this.provider.get(),
@@ -116,6 +126,26 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
             where: { spaceId, commitmentId },
             order: { sequence: 'ASC' },
         });
+        const economicVersions = await nonRecurringVersions(
+            m,
+            spaceId,
+            commitmentId,
+        );
+        const applicable = applicableNonRecurringVersion(
+            economicVersions,
+            c.id,
+            this.clock?.today() ??
+                new Date().toLocaleDateString('en-CA', {
+                    timeZone: 'America/Sao_Paulo',
+                }),
+            receipts.map((receipt) => receipt.factDate).sort()[0],
+        );
+        if (applicable) {
+            c.description = applicable.description;
+            v.amountInCents = applicable.amountInCents;
+            v.splitInput = applicable.distribution;
+            v.expectedRecipientMemberId = applicable.expectedMemberId;
+        }
         return new IncomeCommitment(
             c.id,
             c.spaceId,
@@ -270,16 +300,25 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
         };
     }
     private summaryQuery(spaceId: string) {
+        const today =
+            this.clock?.today() ??
+            new Date().toLocaleDateString('en-CA', {
+                timeZone: 'America/Sao_Paulo',
+            });
+        const reference = `'${today}'::date`;
         return this.provider
             .get()
             .createQueryBuilder(FinancialCommitmentOrmEntity, 'c')
             .innerJoin(
-                FinancialIncomeVersionOrmEntity,
+                `(${withNonRecurringReadModels('SELECT * FROM financial_income_versions', reference)})`,
                 'v',
                 'v.commitment_id=c.id AND v.space_id=c.space_id',
             )
             .select('c.id', 'id')
-            .addSelect('c.description', 'description')
+            .addSelect(
+                `COALESCE((SELECT change.description FROM financial_non_recurring_versions change WHERE change.space_id=c.space_id AND change.commitment_id=c.id AND change.target_id=c.id AND change.effective_from<=LEAST(${reference},COALESCE((SELECT MIN(r.fact_date) FROM financial_receipts r WHERE r.space_id=c.space_id AND r.commitment_id=c.id),${reference})) ORDER BY change.effective_from DESC LIMIT 1),c.description)`,
+                'description',
+            )
             .addSelect('v.amount_in_cents', 'amountInCents')
             .addSelect('v.expected_receipt_date::text', 'expectedReceiptDate')
             .addSelect('c.registered_at', 'registeredAt')

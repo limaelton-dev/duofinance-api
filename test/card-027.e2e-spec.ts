@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { rewindFinanceMigrationsTo } from './settlement-fixture.js';
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import { type INestApplication } from '@nestjs/common';
@@ -487,8 +488,10 @@ describe('CARD-027 finite installment commitments', () => {
         await app.close();
         await migrationSource.initialize();
         try {
-            await migrationSource.undoLastMigration();
-            await migrationSource.undoLastMigration();
+            await rewindFinanceMigrationsTo(
+                migrationSource,
+                'FiniteInstallmentCommitments1792165400000',
+            );
             await migrationSource.undoLastMigration();
             expect(
                 (

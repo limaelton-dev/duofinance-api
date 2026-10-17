@@ -798,11 +798,74 @@ export class RecurringCommitmentHandler {
             const uncertain =
                 (a.fixed > 0n && b.variableWeight > 0) ||
                 (a.variableWeight > 0 && b.fixed > 0n);
+            const monthlyOnerous = [
+                ...new Set(
+                    [...before, ...after].map((item) =>
+                        item.referenceDate.slice(0, 7),
+                    ),
+                ),
+            ].some((month) => {
+                const prior = before.find((item) =>
+                    item.referenceDate.startsWith(month),
+                )?.configuration;
+                const proposed = after.find((item) =>
+                    item.referenceDate.startsWith(month),
+                )?.configuration;
+                const exposure = (
+                    configuration: RecurringCommitment | undefined,
+                ) => {
+                    if (
+                        !configuration ||
+                        configuration.participation.type !== 'SHARED'
+                    )
+                        return { amount: 0, numerator: 0n, denominator: 1n };
+                    const participation = configuration.participation;
+                    const amount =
+                        configuration.valueMode === 'FIXED'
+                            ? (configuration
+                                  .effectiveSplit(configuration.amountInCents!)!
+                                  .shares.find(
+                                      (share) => share.memberId === memberId,
+                                  )?.amountInCents ?? 0)
+                            : 0;
+                    const share = participation.distribution.shares.find(
+                        (share) => share.memberId === memberId,
+                    );
+                    const numerator = BigInt(
+                        share
+                            ? 'basisPoints' in share
+                                ? share.basisPoints
+                                : share.amountInCents
+                            : 0,
+                    );
+                    const denominator = BigInt(
+                        share && 'basisPoints' in share
+                            ? 10000
+                            : (configuration.amountInCents ?? 1),
+                    );
+                    return { amount, numerator, denominator };
+                };
+                const p = exposure(prior),
+                    n = exposure(proposed);
+                return root.kind === 'EXPENSE'
+                    ? n.amount > p.amount ||
+                          n.numerator * p.denominator >
+                              p.numerator * n.denominator
+                    : n.amount < p.amount ||
+                          n.numerator * p.denominator <
+                              p.numerator * n.denominator;
+            });
             const onerous =
                 memberId !== actorMemberId &&
                 (root.kind === 'EXPENSE'
-                    ? fixedDelta > 0n || variableDelta > 0 || uncertain
-                    : fixedDelta < 0n || variableDelta < 0 || uncertain);
+                    ? fixedDelta > 0n ||
+                      variableDelta > 0 ||
+                      uncertain ||
+                      monthlyOnerous
+                    : fixedDelta < 0n ||
+                      variableDelta < 0 ||
+                      uncertain ||
+                      monthlyOnerous);
             return {
                 memberId,
                 currentFixedAmountInCents: a.fixed.toString(),
@@ -935,56 +998,21 @@ export class RecurringCommitmentHandler {
                 c.actorId,
                 c.spaceId,
             );
-            const context =
-                access.type === 'SHARED'
-                    ? await this.context.lockForWrite(c.actorId, c.spaceId)
-                    : null;
-            if (!context)
-                await this.access.assertCanWrite(c.actorId, c.spaceId);
-            if ((context !== null) !== 'expectedSpaceVersion' in c)
-                throw new FinancesError('VALIDATION_ERROR', [
-                    'expectedSpaceVersion',
-                ]);
-            if (
-                context &&
-                context.version !==
-                    ('expectedSpaceVersion' in c
-                        ? c.expectedSpaceVersion
-                        : undefined)
-            )
-                throw new FinancesError('EXPENSE_OPTIONS_CHANGED');
-            const root = await this.repository.find(
-                c.spaceId.value,
-                c.commitmentId,
-                true,
+            if (access.type === 'SHARED')
+                await this.context.lockForWrite(c.actorId, c.spaceId);
+            else await this.access.assertCanWrite(c.actorId, c.spaceId);
+            const replay = await this.repository.findReceipt(
+                c.actorId.value,
+                'CHANGE_RECURRING_COMMITMENT',
+                c.idempotencyKey,
+                hash,
             );
-            if (!root)
-                throw new FinancesError('FINANCIAL_COMMITMENT_NOT_FOUND');
-            const candidate = await this.candidate(
-                c,
-                root,
-                context?.members.map((m) => m.memberId) ?? null,
-            );
-            const impact = await this.changeImpact(
-                root,
-                candidate,
-                context?.actorMemberId ?? null,
-            );
-            if (impact.requiresAcceptance)
-                throw new FinancesError('RECURRENCE_ACCEPTANCE_REQUIRED');
-            await this.repository.saveVersion(root, candidate, c.effectiveFrom);
-            const result = {
-                commitment: rootView(
-                    this.withCandidate(root, candidate),
-                    this.clock.today(),
-                ),
-                impact,
-                replayed: false,
-            };
+            if (replay) return { ...(replay as object), replayed: true };
+            const result = await this.applyVersion(c);
             await this.repository.saveReceipt(
                 c.actorId.value,
                 c.spaceId.value,
-                root.id,
+                c.commitmentId,
                 null,
                 'CHANGE_RECURRING_COMMITMENT',
                 c.idempotencyKey,
@@ -994,6 +1022,67 @@ export class RecurringCommitmentHandler {
             );
             return result;
         });
+    }
+
+    async applyVersion(
+        c: Base & { commitmentId: string } & ChangeRecurringCommitmentDto,
+        acceptance?: { proposedByMemberId: string; acceptedByMemberId: string },
+    ) {
+        const access = await this.access.assertCanRead(c.actorId, c.spaceId);
+        const context =
+            access.type === 'SHARED'
+                ? await this.context.lockForWrite(c.actorId, c.spaceId)
+                : null;
+        if (!context) await this.access.assertCanWrite(c.actorId, c.spaceId);
+        if ((context !== null) !== 'expectedSpaceVersion' in c)
+            throw new FinancesError('VALIDATION_ERROR', [
+                'expectedSpaceVersion',
+            ]);
+        if (
+            context &&
+            context.version !==
+                ('expectedSpaceVersion' in c
+                    ? c.expectedSpaceVersion
+                    : undefined)
+        )
+            throw new FinancesError('EXPENSE_OPTIONS_CHANGED');
+        const root = await this.repository.find(
+            c.spaceId.value,
+            c.commitmentId,
+            true,
+        );
+        if (!root) throw new FinancesError('FINANCIAL_COMMITMENT_NOT_FOUND');
+        const candidate = await this.candidate(
+            c,
+            root,
+            context?.members.map((m) => m.memberId) ?? null,
+        );
+        const impact = await this.changeImpact(
+            root,
+            candidate,
+            acceptance?.proposedByMemberId ?? context?.actorMemberId ?? null,
+        );
+        if (
+            impact.requiresAcceptance &&
+            (!acceptance ||
+                acceptance.acceptedByMemberId !== context?.actorMemberId ||
+                impact.impactByMember.some(
+                    (member) =>
+                        member.requiresAcceptance &&
+                        member.memberId !== acceptance.acceptedByMemberId,
+                ))
+        )
+            throw new FinancesError('RECURRENCE_ACCEPTANCE_REQUIRED');
+        await this.repository.saveVersion(root, candidate, c.effectiveFrom);
+        const result = {
+            commitment: rootView(
+                this.withCandidate(root, candidate),
+                this.clock.today(),
+            ),
+            impact,
+            replayed: false,
+        };
+        return result;
     }
 
     async terminationPreview(

@@ -1,4 +1,8 @@
 export type FinancesErrorCode =
+    | 'FINANCIAL_CHANGE_PROPOSAL_NOT_FOUND'
+    | 'FINANCIAL_CHANGE_RECIPIENT_REQUIRED'
+    | 'FINANCIAL_CHANGE_PROPOSAL_RESOLVED'
+    | 'FINANCIAL_CHANGE_PROPOSAL_OBSOLETE'
     | 'INSTALLMENT_SELECTION_CHANGED'
     | 'SETTLEMENT_RESOLUTION_ALREADY_REVERSED'
     | 'REVERSAL_CORRECTION_CYCLE_REQUIRED'
@@ -28,6 +32,13 @@ export type FinancesErrorCode =
     | 'RECURRENCE_ACCEPTANCE_REQUIRED'
     | 'RECURRENCE_ALREADY_TERMINATED';
 const messages: Record<FinancesErrorCode, string> = {
+    FINANCIAL_CHANGE_PROPOSAL_NOT_FOUND:
+        'Proposta de alteração não encontrada.',
+    FINANCIAL_CHANGE_RECIPIENT_REQUIRED:
+        'Somente a pessoa afetada pode decidir esta alteração.',
+    FINANCIAL_CHANGE_PROPOSAL_RESOLVED: 'Esta proposta já foi decidida.',
+    FINANCIAL_CHANGE_PROPOSAL_OBSOLETE:
+        'O compromisso ou a vigência mudou. Revise e envie uma nova proposta.',
     INSTALLMENT_SELECTION_CHANGED:
         'A seleção ou o estado das parcelas mudou. Atualize a prévia e confirme novamente.',
     SETTLEMENT_RESOLUTION_ALREADY_REVERSED:

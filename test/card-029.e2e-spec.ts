@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { rewindFinanceMigrationsTo } from './settlement-fixture.js';
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import { type INestApplication } from '@nestjs/common';
@@ -644,6 +645,10 @@ describe('CARD-029 installment resolutions', () => {
                     })
                     .expect(201);
             }
+            await rewindFinanceMigrationsTo(
+                migrationSource,
+                'InstallmentResolutions1792165600000',
+            );
             await expect(migrationSource.undoLastMigration()).rejects.toThrow(
                 'Cannot revert installment resolutions',
             );
@@ -656,6 +661,7 @@ describe('CARD-029 installment resolutions', () => {
                 )[0].n,
             ).toBe(1);
         } finally {
+            await migrationSource.runMigrations();
             await migrationSource.destroy();
         }
     });
@@ -663,6 +669,10 @@ describe('CARD-029 installment resolutions', () => {
     it('reverses the empty schema and rolls back a payoff when audit persistence fails', async () => {
         await migrationSource.initialize();
         try {
+            await rewindFinanceMigrationsTo(
+                migrationSource,
+                'InstallmentResolutions1792165600000',
+            );
             await migrationSource.undoLastMigration();
             expect(
                 (

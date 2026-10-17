@@ -6,7 +6,7 @@ import { Money } from './money.js';
 import { civilDate } from './settlement-cycle.js';
 import { invalidExpense } from './validation.js';
 export interface CommitmentVersion {
-    readonly version: 1;
+    readonly version: number;
     readonly split: ResponsibilitySplit;
     readonly expectedPayerMemberId: string | null;
     readonly factDate: string | null;
@@ -56,7 +56,7 @@ export interface PersonalExternalLiability extends Omit<
 export type ExpenseExternalLiability<V extends ExpenseVersion> =
     V extends CommitmentVersion ? ExternalLiability : PersonalExternalLiability;
 export interface PersonalCommitmentVersion {
-    readonly version: 1;
+    readonly version: number;
     readonly ownerPersonId: string;
     readonly amount: Money;
     readonly factDate: string | null;
@@ -127,7 +127,8 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
             !id ||
             !spaceId ||
             !createdByPersonId ||
-            initialVersion.version !== 1 ||
+            !Number.isSafeInteger(initialVersion.version) ||
+            initialVersion.version < 1 ||
             original < 1 ||
             !description.trim() ||
             description !== description.trim() ||
