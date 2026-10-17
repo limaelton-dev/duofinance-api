@@ -62,6 +62,10 @@ export interface InstallmentPayoffImpact {
     expectedRemainingShares: readonly EconomicShare[] | null;
     effectiveEconomicShares: readonly EconomicShare[] | null;
     recognizedRemainingShares: readonly EconomicShare[] | null;
+    recognizedManualAdjustments: {
+        amountInCents: number;
+        shareChanges: readonly EconomicShare[] | null;
+    } | null;
 }
 
 export class InstallmentCommitment {
@@ -102,7 +106,10 @@ export class InstallmentCommitment {
                 (share) => share.memberId,
             );
             ResponsibilitySplit.create(
-                plan.totalAmountInCents,
+                plan.installments.reduce(
+                    (sum, item) => sum + item.originalAmountInCents,
+                    0,
+                ),
                 members,
                 participation.distribution,
             );
@@ -123,18 +130,22 @@ export class InstallmentCommitment {
         const installment = this.plan.installments[position - 1];
         if (!installment || installment.position !== position)
             throw new FinancesError('FINANCIAL_COMMITMENT_NOT_FOUND');
+        if (installment.economicShares) return installment.economicShares;
         const members = this.participation.distribution.shares.map(
             (share) => share.memberId,
         );
         const split = ResponsibilitySplit.create(
-            this.plan.totalAmountInCents,
+            this.plan.installments.reduce(
+                (sum, item) => sum + item.originalAmountInCents,
+                0,
+            ),
             members,
             this.participation.distribution,
         );
         const before = this.plan.installments
             .slice(0, position - 1)
-            .reduce((sum, item) => sum + item.amountInCents, 0);
-        const after = before + installment.amountInCents;
+            .reduce((sum, item) => sum + item.originalAmountInCents, 0);
+        const after = before + installment.originalAmountInCents;
         const prior = new Map(
             split
                 .realizedShares(before)
@@ -201,6 +212,21 @@ export class InstallmentCommitment {
         );
     }
 
+    assertGlobalFulfillment(
+        amountInCents: number,
+        economicAdjustmentInCents = 0,
+    ): void {
+        if (
+            !Number.isSafeInteger(amountInCents) ||
+            amountInCents < 1 ||
+            !Number.isSafeInteger(economicAdjustmentInCents) ||
+            BigInt(amountInCents) >
+                BigInt(this.plan.remainingAmountInCents) +
+                    BigInt(economicAdjustmentInCents)
+        )
+            throw new FinancesError('VALIDATION_ERROR', ['amountInCents']);
+    }
+
     payoffImpact(
         paidAmountInCents: number,
         actorMemberId: string | null,
@@ -218,9 +244,9 @@ export class InstallmentCommitment {
             throw new FinancesError('OCCURRENCE_ALREADY_RESOLVED');
         const expectedBig = items.reduce(
             (sum, item) => sum + BigInt(item.expectedRemainingAmountInCents),
-            0n,
+            BigInt(this.plan.globalAdjustmentInCents),
         );
-        if (expectedBig > BigInt(Number.MAX_SAFE_INTEGER))
+        if (expectedBig < 1n || expectedBig > BigInt(Number.MAX_SAFE_INTEGER))
             throw new FinancesError('VALIDATION_ERROR', ['amountInCents']);
         const expected = Number(expectedBig);
         const fulfilledBefore = this.plan.installments.reduce(
@@ -255,10 +281,22 @@ export class InstallmentCommitment {
                         0,
                     ),
                 }));
-            expectedShares = sumShares(items);
+            expectedShares = sumShares(items).map((share) => ({
+                memberId: share.memberId,
+                amountInCents:
+                    share.amountInCents +
+                    (this.plan.globalAdjustmentShares?.find(
+                        (adjustment) => adjustment.memberId === share.memberId,
+                    )?.amountInCents ?? 0),
+            }));
             recognizedShares = sumShares(
                 items.filter(
-                    (item) => item.previouslyFulfilledAmountInCents > 0,
+                    (item) =>
+                        item.previouslyFulfilledAmountInCents > 0 ||
+                        this.plan.installments.find(
+                            (installment) =>
+                                installment.id === item.installmentId,
+                        )!.reversals.length > 0,
                 ),
             );
             effectiveShares =
@@ -276,6 +314,69 @@ export class InstallmentCommitment {
                                   : 0),
                       }));
         }
+        const manualAdjustments = this.plan.installments
+            .filter(
+                (item) =>
+                    items.some(
+                        (selected) => selected.installmentId === item.id,
+                    ) &&
+                    item.fulfilledAmountInCents === 0 &&
+                    item.reversals.length === 0 &&
+                    !item.resolutionHistory.some(
+                        (resolution) => resolution.type === 'PAYOFF',
+                    ),
+            )
+            .flatMap((item) => item.adjustments);
+        const recognizedAmount = manualAdjustments.reduce(
+            (sum, adjustment) =>
+                sum +
+                (adjustment.direction === 'INCREASE'
+                    ? BigInt(adjustment.amountInCents)
+                    : -BigInt(adjustment.amountInCents)),
+            0n,
+        );
+        if (
+            recognizedAmount < -BigInt(Number.MAX_SAFE_INTEGER) ||
+            recognizedAmount > BigInt(Number.MAX_SAFE_INTEGER)
+        )
+            throw new FinancesError('VALIDATION_ERROR', ['amountInCents']);
+        const recognizedManualAdjustments = manualAdjustments.length
+            ? {
+                  amountInCents: Number(recognizedAmount),
+                  shareChanges:
+                      this.participation.type === 'PERSONAL'
+                          ? null
+                          : this.participation.distribution.shares.map(
+                                (share) => {
+                                    const change = manualAdjustments.reduce(
+                                        (sum, adjustment) =>
+                                            sum +
+                                            BigInt(
+                                                adjustment.shareChanges?.find(
+                                                    (item) =>
+                                                        item.memberId ===
+                                                        share.memberId,
+                                                )?.amountInCents ?? 0,
+                                            ),
+                                        0n,
+                                    );
+                                    if (
+                                        change <
+                                            -BigInt(Number.MAX_SAFE_INTEGER) ||
+                                        change > BigInt(Number.MAX_SAFE_INTEGER)
+                                    )
+                                        throw new FinancesError(
+                                            'VALIDATION_ERROR',
+                                            ['distribution'],
+                                        );
+                                    return {
+                                        memberId: share.memberId,
+                                        amountInCents: Number(change),
+                                    };
+                                },
+                            ),
+              }
+            : null;
         return Object.freeze({
             items,
             expectedRemainingAmountInCents: expected,
@@ -284,6 +385,7 @@ export class InstallmentCommitment {
             expectedRemainingShares: expectedShares,
             effectiveEconomicShares: effectiveShares,
             recognizedRemainingShares: recognizedShares,
+            recognizedManualAdjustments,
         });
     }
 
@@ -348,6 +450,12 @@ export class InstallmentCommitment {
             )
         )
             throw new FinancesError('INSTALLMENT_SELECTION_CHANGED');
+        const expectedSelected = selected.reduce(
+            (sum, item) => sum + BigInt(item!.remainingAmountInCents),
+            0n,
+        );
+        if (expectedSelected > BigInt(this.plan.remainingAmountInCents))
+            throw new FinancesError('VALIDATION_ERROR', ['selection']);
         return Object.freeze(
             selected.map((item, index) => {
                 const installment = item!;

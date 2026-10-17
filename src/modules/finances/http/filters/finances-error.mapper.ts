@@ -4,6 +4,7 @@ export const mapFinancesError: HttpErrorMapper = (error) =>
     error instanceof FinancesError
         ? {
               status:
+                  error.code === 'FINANCIAL_CHANGE_RECIPIENT_REQUIRED' ||
                   error.code === 'EXTERNAL_LIABILITY_HOLDER_REQUIRED' ||
                   error.code === 'OBLIGATION_CREDITOR_REQUIRED'
                       ? 403

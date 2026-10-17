@@ -1,3 +1,4 @@
+import { nonRecurringReadQuery } from '../../infrastructure/typeorm/queries/non-recurring-version-selection.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { EntityManagerProvider } from '../../../../shared/technical/database/typeorm/entity-manager.provider.js';
 import {
@@ -90,7 +91,8 @@ export class ListPlannedExpensesQuery {
             remaining: string;
         };
         const [result]: Row[] = await this.managers.readSnapshot(() =>
-            this.managers.get().query(
+            nonRecurringReadQuery(
+                this.managers.get(),
                 `WITH planned AS MATERIALIZED (
                     SELECT c.id,c.description,c.version,c.registered_at,c.created_by,c.personal_owner_person_id,
                         v.amount_in_cents,v.expected_payment_date,
@@ -124,6 +126,7 @@ export class ListPlannedExpensesQuery {
                     after?.date ?? null,
                     after?.id ?? null,
                 ],
+                this.clock.today(),
             ),
         );
         await this.access.assertCanRead(actor, space);

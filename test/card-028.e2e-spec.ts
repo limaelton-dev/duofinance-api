@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { rewindFinanceMigrationsTo } from './settlement-fixture.js';
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import { type INestApplication } from '@nestjs/common';
@@ -685,7 +686,10 @@ describe('CARD-028 installment anticipations', () => {
     it('keeps the anticipation migration reversible without facts and refuses destructive rollback after a fact', async () => {
         await migrationSource.initialize();
         try {
-            await migrationSource.undoLastMigration();
+            await rewindFinanceMigrationsTo(
+                migrationSource,
+                'InstallmentAnticipations1792165500000',
+            );
             await migrationSource.undoLastMigration();
             expect(
                 (
@@ -731,7 +735,10 @@ describe('CARD-028 installment anticipations', () => {
             .expect(201);
         await migrationSource.initialize();
         try {
-            await migrationSource.undoLastMigration();
+            await rewindFinanceMigrationsTo(
+                migrationSource,
+                'InstallmentAnticipations1792165500000',
+            );
             await expect(migrationSource.undoLastMigration()).rejects.toThrow(
                 'Cannot revert installment anticipations',
             );

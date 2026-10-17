@@ -694,7 +694,7 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
         const original = manager.query.bind(manager);
         vi.spyOn(manager, 'query').mockImplementation(async (sql, params) => {
             const rows = await original(sql, params);
-            if (sql.startsWith('WITH overdue'))
+            if (sql.includes('overdue AS MATERIALIZED ('))
                 await original(
                     `UPDATE space_members SET person_id=$2 WHERE id=$1`,
                     [f.ma, outsider.context.person.id],
@@ -733,7 +733,7 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
         const spy = vi.spyOn(manager, 'query');
         await today(f);
         const statements = spy.mock.calls.filter(([sql]) =>
-            sql.startsWith('WITH overdue'),
+            sql.includes('overdue AS MATERIALIZED ('),
         );
         expect(statements).toHaveLength(1);
         const [sql, parameters] = statements[0];
@@ -863,7 +863,7 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
         expect(financial.overdueCycles.totalCount).toBe(3000);
         expect(financial.overdueCycles.items).toHaveLength(3);
         const statements = spy.mock.calls.filter(([sql]) =>
-            sql.startsWith('WITH overdue'),
+            sql.includes('overdue AS MATERIALIZED ('),
         );
         expect(statements).toHaveLength(1);
         const [sql, parameters] = statements[0];
@@ -902,7 +902,7 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
         const manager = app.get(EntityManagerProvider).get();
         const original = manager.query.bind(manager);
         vi.spyOn(manager, 'query').mockImplementation((sql, params) =>
-            sql.startsWith('WITH overdue')
+            sql.includes('overdue AS MATERIALIZED (')
                 ? Promise.reject(
                       Object.assign(new Error('secret SQL'), { code: '57014' }),
                   )
@@ -945,7 +945,7 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
             const original = manager.query.bind(manager);
             vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
             vi.spyOn(manager, 'query').mockImplementation((sql, params) =>
-                sql.startsWith('WITH overdue')
+                sql.includes('overdue AS MATERIALIZED (')
                     ? Promise.reject(
                           Object.assign(new Error('secret SQL data'), { code }),
                       )

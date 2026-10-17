@@ -1,4 +1,15 @@
 export type FinancesErrorCode =
+    | 'FINANCIAL_REVERSAL_NOT_FOUND'
+    | 'FINANCIAL_REVERSAL_EXCEEDS_AVAILABLE'
+    | 'FINANCIAL_REVERSAL_SETTLEMENT_REQUIRED'
+    | 'FINANCIAL_REVERSAL_FULL_REQUIRED'
+    | 'FINANCIAL_ADJUSTMENT_BELOW_FULFILLED'
+    | 'FINANCIAL_COMMITMENT_CANCELLED'
+    | 'FINANCIAL_CANCELLATION_NOT_ALLOWED'
+    | 'FINANCIAL_CHANGE_PROPOSAL_NOT_FOUND'
+    | 'FINANCIAL_CHANGE_RECIPIENT_REQUIRED'
+    | 'FINANCIAL_CHANGE_PROPOSAL_RESOLVED'
+    | 'FINANCIAL_CHANGE_PROPOSAL_OBSOLETE'
     | 'INSTALLMENT_SELECTION_CHANGED'
     | 'SETTLEMENT_RESOLUTION_ALREADY_REVERSED'
     | 'REVERSAL_CORRECTION_CYCLE_REQUIRED'
@@ -28,6 +39,27 @@ export type FinancesErrorCode =
     | 'RECURRENCE_ACCEPTANCE_REQUIRED'
     | 'RECURRENCE_ALREADY_TERMINATED';
 const messages: Record<FinancesErrorCode, string> = {
+    FINANCIAL_REVERSAL_NOT_FOUND:
+        'Realização financeira não encontrada nesta origem.',
+    FINANCIAL_REVERSAL_EXCEEDS_AVAILABLE:
+        'O valor supera o saldo válido que ainda pode ser revertido.',
+    FINANCIAL_REVERSAL_SETTLEMENT_REQUIRED:
+        'Reverta explicitamente as liquidações necessárias antes de reduzir esta obrigação externa.',
+    FINANCIAL_REVERSAL_FULL_REQUIRED:
+        'Esta quitação global exige reversão integral do desembolso para desfazer sua resolução.',
+    FINANCIAL_ADJUSTMENT_BELOW_FULFILLED:
+        'O ajuste deixaria o valor abaixo do que já foi realizado. Corrija a realização antes de confirmar.',
+    FINANCIAL_COMMITMENT_CANCELLED:
+        'Este compromisso foi cancelado e não aceita novas realizações ou ajustes.',
+    FINANCIAL_CANCELLATION_NOT_ALLOWED:
+        'Este compromisso possui realização ou obrigação externa válida e não pode ser cancelado integralmente.',
+    FINANCIAL_CHANGE_PROPOSAL_NOT_FOUND:
+        'Proposta de alteração não encontrada.',
+    FINANCIAL_CHANGE_RECIPIENT_REQUIRED:
+        'Somente a pessoa afetada pode decidir esta alteração.',
+    FINANCIAL_CHANGE_PROPOSAL_RESOLVED: 'Esta proposta já foi decidida.',
+    FINANCIAL_CHANGE_PROPOSAL_OBSOLETE:
+        'O compromisso ou a vigência mudou. Revise e envie uma nova proposta.',
     INSTALLMENT_SELECTION_CHANGED:
         'A seleção ou o estado das parcelas mudou. Atualize a prévia e confirme novamente.',
     SETTLEMENT_RESOLUTION_ALREADY_REVERSED:

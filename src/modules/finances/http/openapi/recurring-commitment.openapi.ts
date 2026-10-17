@@ -262,6 +262,12 @@ const result = object({
         remainingAmountInCents: { type: 'integer', minimum: 0 },
     }),
 });
+occurrence.properties = {
+    ...occurrence.properties,
+    reversals: { type: 'array', items: ref('FinancialFulfillmentReversal') },
+    validFacts: { type: 'array', items: fact },
+    validExternalSettlements: occurrence.properties!.externalSettlements,
+};
 result.required = result.required!.filter((name) => name !== 'settlement');
 const commonFact = {
     expectedCommitmentVersion: version,

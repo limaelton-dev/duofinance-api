@@ -1,3 +1,4 @@
+import { nonRecurringReadQuery } from './non-recurring-version-selection.js';
 import { Injectable } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
 import { FinanceTodayUnavailableError } from '../../../application/ports/public/finance-today-query.port.js';
@@ -118,7 +119,8 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
     async today(spaceId: string, actorMemberId: string, referenceDate: string) {
         let rows: (CycleRow & { overdue_count: number })[];
         try {
-            rows = await this.managers.get().query(
+            rows = await nonRecurringReadQuery(
+                this.managers.get(),
                 `WITH overdue AS MATERIALIZED (
                     SELECT s.id,s.target_date FROM settlement_cycles s
                     WHERE s.space_id=$1 AND s.status='OPEN' AND s.target_date<$3::date
@@ -183,7 +185,8 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
         referenceDate: string,
         after: SettlementCycleKey | null,
     ): Promise<SettlementCycleRead[]> {
-        const rows: CycleRow[] = await this.managers.get().query(
+        const rows: CycleRow[] = await nonRecurringReadQuery(
+            this.managers.get(),
             `
             WITH page AS MATERIALIZED (
                 SELECT * FROM settlement_cycles WHERE space_id=$1 AND status=CASE WHEN $3='FINALIZED' THEN 'FINALIZED' ELSE 'OPEN' END
@@ -215,7 +218,8 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
         direction: PositionDirection,
         after: PositionKey | null,
     ) {
-        const rows: DetailRow[] = await this.managers.get().query(
+        const rows: DetailRow[] = await nonRecurringReadQuery(
+            this.managers.get(),
             `
             WITH selected_cycle AS MATERIALIZED (
                 SELECT * FROM settlement_cycles WHERE space_id=$1 AND id=$3
@@ -320,7 +324,8 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
         after: PositionKey | null,
     ) {
         return this.managers.readSnapshot(async () => {
-            const selected: CycleRow[] = await this.managers.get().query(
+            const selected: CycleRow[] = await nonRecurringReadQuery(
+                this.managers.get(),
                 `
                 WITH selected_cycles AS MATERIALIZED (SELECT * FROM settlement_cycles WHERE space_id=$1 AND id=ANY($3::uuid[]))
                 SELECT ${cycleColumns},${aggregate},${cycleReversals},
@@ -347,7 +352,8 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                 gross_receivable: string;
                 payable: string;
                 receivable: string;
-            }[] = await this.managers.get().query(
+            }[] = await nonRecurringReadQuery(
+                this.managers.get(),
                 `
                 WITH selected_obligations AS MATERIALIZED (SELECT * FROM inter_member_obligations WHERE space_id=$1 AND cycle_id=ANY($3::uuid[])),
                 selected_allocations AS MATERIALIZED (SELECT a.* FROM settlement_allocations a WHERE a.space_id=$1 AND a.cycle_id=ANY($3::uuid[])),
@@ -369,7 +375,8 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                 [spaceId, actorMemberId, cycleIds],
             );
             const rows: { item: SelectedSettlementObligation }[] =
-                await this.managers.get().query(
+                await nonRecurringReadQuery(
+                    this.managers.get(),
                     `
                 WITH page AS MATERIALIZED (
                     SELECT * FROM inter_member_obligations WHERE space_id=$1 AND cycle_id=ANY($3::uuid[])
@@ -403,7 +410,7 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                     LEFT JOIN financial_income_versions i ON i.space_id=c.space_id AND i.commitment_id=c.id
                     LEFT JOIN financial_recurrence_versions r ON r.space_id=c.space_id AND r.commitment_id=c.id AND r.version=o.economic_version
                     LEFT JOIN financial_installments fi ON fi.space_id=c.space_id AND fi.commitment_id=c.id AND fi.id=p0.occurrence_id
-                    LEFT JOIN financial_installment_payoffs ip ON ip.space_id=c.space_id AND ip.commitment_id=c.id AND p0.occurrence_id IS NULL
+                    LEFT JOIN public.financial_installment_payoffs ip ON ip.space_id=c.space_id AND ip.commitment_id=c.id AND ip.fact_id=COALESCE(p0.disbursement_id,p0.external_liability_id) AND p0.occurrence_id IS NULL
                     WHERE c.space_id=$1
                 )
                 SELECT jsonb_build_object('id',p.id,'version',p.version,'status',p.status,'debtorMemberId',p.debtor_member_id,'creditorMemberId',p.creditor_member_id,

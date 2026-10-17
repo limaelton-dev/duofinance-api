@@ -124,3 +124,35 @@ export function reconcileInitialObligation(
         amountInCents: excess,
     };
 }
+
+export function correctedExpenseDifference(
+    split: ResponsibilitySplit,
+    validPayments: readonly { payerMemberId: string; amountInCents: number }[],
+    settlements: readonly OriginSettlement[] = [],
+): InitialDifference | null {
+    if (split.shares.length < 2) return null;
+    const member = split.shares[0].memberId;
+    const other = split.shares[1].memberId;
+    const base = expenseDifference(split, validPayments);
+    let credit = base
+        ? base.creditorMemberId === member
+            ? BigInt(base.amountInCents)
+            : -BigInt(base.amountInCents)
+        : 0n;
+    for (const settlement of settlements)
+        credit +=
+            settlement.payerMemberId === member
+                ? BigInt(settlement.amountInCents)
+                : settlement.recipientMemberId === member
+                  ? -BigInt(settlement.amountInCents)
+                  : 0n;
+    if (credit === 0n) return null;
+    const amountInCents = Money.from(
+        Number(credit > 0n ? credit : -credit),
+    ).amountInCents;
+    return {
+        debtorMemberId: credit > 0n ? other : member,
+        creditorMemberId: credit > 0n ? member : other,
+        amountInCents,
+    };
+}

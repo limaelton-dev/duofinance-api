@@ -1,4 +1,13 @@
 import { FinancialExternalLiabilitySettlementOrmEntity } from '../entities/external-liability-settlement.orm-entity.js';
+import { financialFulfillmentReversals } from '../queries/financial-fulfillment-reversal-projection.js';
+import {
+    financialCorrections,
+    applyFinancialAdjustments,
+} from '../queries/financial-correction-projection.js';
+import {
+    applicableNonRecurringVersion,
+    nonRecurringVersions,
+} from '../queries/non-recurring-version-selection.js';
 import { FinancialCommitmentSettlementRuleOrmEntity } from '../entities/settlement-adjustment.orm-entity.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
@@ -141,21 +150,64 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
                 order: { sequence: 'ASC' },
             },
         );
+        const economicVersions = await nonRecurringVersions(
+            m,
+            spaceId,
+            commitmentId,
+        );
+        const firstFactDate = [...facts, ...liabilities]
+            .map((fact) => fact.factDate)
+            .sort()[0];
+        const applicable = applicableNonRecurringVersion(
+            economicVersions,
+            c.id,
+            this.clock.today(),
+            firstFactDate,
+        );
+        if (applicable) {
+            v.amountInCents = applicable.amountInCents;
+            v.splitInput = applicable.distribution;
+            v.expectedPayerMemberId = applicable.expectedMemberId;
+            c.description = applicable.description;
+        }
+        const corrections = await financialCorrections(
+            m,
+            spaceId,
+            commitmentId,
+            c.id,
+        );
+        const adjusted = applyFinancialAdjustments(
+            v.amountInCents,
+            c.personalOwnerPersonId
+                ? null
+                : ResponsibilitySplit.create(
+                      v.amountInCents,
+                      v.splitInput!.shares.map((share) => share.memberId),
+                      v.splitInput!,
+                  ).shares,
+            corrections.adjustments,
+            applicable?.version ?? 1,
+        );
         const p = c.personalOwnerPersonId
             ? {
-                  version: 1 as const,
+                  version: applicable?.version ?? 1,
                   ownerPersonId: c.personalOwnerPersonId,
-                  amount: Money.from(v.amountInCents),
+                  amount: Money.from(adjusted.amountInCents),
                   factDate: v.factDate,
                   expectedPaymentDate: v.expectedPaymentDate,
               }
             : {
-                  version: 1 as const,
-                  split: ResponsibilitySplit.create(
-                      v.amountInCents,
-                      v.splitInput!.shares.map((s) => s.memberId),
-                      v.splitInput!,
-                  ),
+                  version: applicable?.version ?? 1,
+                  split: corrections.adjustments.length
+                      ? ResponsibilitySplit.fromEffectiveShares(
+                            adjusted.amountInCents,
+                            adjusted.economicShares!,
+                        )
+                      : ResponsibilitySplit.create(
+                            v.amountInCents,
+                            v.splitInput!.shares.map((s) => s.memberId),
+                            v.splitInput!,
+                        ),
                   expectedPayerMemberId: v.expectedPayerMemberId,
                   factDate: v.factDate,
                   expectedPaymentDate: v.expectedPaymentDate,
@@ -210,6 +262,9 @@ export class TypeOrmFinancialCommitmentRepository implements FinancialCommitment
                 registeredAt: f.registeredAt.toISOString(),
                 recordedByPersonId: f.recordedByPersonId,
             })),
+            corrections.adjustments,
+            corrections.cancellation,
+            await financialFulfillmentReversals(m, spaceId, commitmentId, c.id),
         );
     }
     async saveDisbursement(

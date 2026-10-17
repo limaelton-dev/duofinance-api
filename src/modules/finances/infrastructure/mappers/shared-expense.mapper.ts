@@ -121,6 +121,9 @@ export function obligationChangeRow(o: InterMemberObligation) {
         type: 'CREATED',
         snapshot: {
             originCommitmentId: o.originCommitmentId,
+            ...(o.correctionCauseId
+                ? { causeFinancialCorrectionId: o.correctionCauseId }
+                : {}),
             ...(o.occurrenceId ? { occurrenceId: o.occurrenceId } : {}),
             ...(o.originKind === 'EXPENSE'
                 ? o.originExternalLiabilityId

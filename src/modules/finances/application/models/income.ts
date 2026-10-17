@@ -75,7 +75,9 @@ export interface IncomeView {
     };
     receipt: null | NonNullable<IncomeCommitment['receipt']>;
     receipts: IncomeCommitment['receipts'];
-    status: 'PENDING' | 'PARTIALLY_RECEIVED' | 'RECEIVED';
+    reversals?: IncomeCommitment['reversals'];
+    validReceipts?: IncomeCommitment['validReceipts'];
+    status: 'PENDING' | 'PARTIALLY_RECEIVED' | 'RECEIVED' | 'CANCELLED';
     receivedAmountInCents: number;
     remainingAmountInCents: number;
     obligation: FulfillmentObligationView | null;

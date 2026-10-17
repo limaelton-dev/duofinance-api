@@ -14,13 +14,17 @@ import {
 } from '../../domain/shared-expense/financial-commitment.js';
 import {
     expenseDifference,
+    correctedExpenseDifference,
     planObligationReconciliation,
 } from '../../domain/shared-expense/obligation-reconciler.js';
 import { InterMemberObligation } from '../../domain/shared-expense/inter-member-obligation.js';
 import { SettlementRule } from '../../domain/settlement-rule/settlement-rule.js';
 import { civilDate } from '../../domain/shared-expense/settlement-cycle.js';
 import type { SettlementSelection } from '../../domain/shared-expense/settlement-selection.js';
-import { FinancesError } from '../../domain/errors/finances.error.js';
+import {
+    FinancesError,
+    type FinancesErrorCode,
+} from '../../domain/errors/finances.error.js';
 import {
     INTER_MEMBER_OBLIGATION_REPOSITORY,
     SETTLEMENT_CYCLE_REPOSITORY,
@@ -38,6 +42,145 @@ export class ReconcileFinancialOrigin {
         @Inject(SETTLEMENT_ADJUSTMENT_REPOSITORY)
         private readonly adjustments?: SettlementAdjustmentRepository,
     ) {}
+    private async suggestedDate(
+        origin: IncomeCommitment | FinancialCommitment<ExpenseVersion>,
+        selection: Extract<SettlementSelection, { mode: 'SUGGESTED' }>,
+        today: string,
+    ) {
+        const participation =
+            origin instanceof IncomeCommitment
+                ? origin.participation
+                : origin.initialVersion;
+        const snapshot =
+            'settlementRuleSnapshot' in participation
+                ? participation.settlementRuleSnapshot
+                : null;
+        const source =
+            'settlementRuleSourceVersion' in participation
+                ? participation.settlementRuleSourceVersion
+                : 0;
+        const effective = this.adjustments
+            ? await this.adjustments.effectiveRule(
+                  origin.spaceId,
+                  origin.id,
+                  snapshot,
+                  source,
+              )
+            : { rule: snapshot, version: source };
+        if (
+            !effective.rule ||
+            selection.referenceDate !== today ||
+            selection.expectedRuleVersion !== effective.version
+        )
+            throw new FinancesError(
+                origin instanceof IncomeCommitment
+                    ? 'INCOME_OPTIONS_CHANGED'
+                    : 'EXPENSE_OPTIONS_CHANGED',
+            );
+        return SettlementRule.from(effective.rule).suggestTargetDate(today);
+    }
+    private difference(
+        origin: IncomeCommitment | FinancialCommitment<ExpenseVersion>,
+        settlements: Parameters<typeof expenseDifference>[2],
+        corrected: boolean,
+    ) {
+        if (origin instanceof IncomeCommitment)
+            return incomeDifference(origin, settlements);
+        if (!('split' in origin.initialVersion)) return null;
+        const payments = [
+            ...origin.validDisbursements,
+            ...origin.validExternalLiabilities.map((fact) => ({
+                payerMemberId:
+                    'holderMemberId' in fact ? fact.holderMemberId : '',
+                amountInCents: fact.amountInCents,
+            })),
+        ];
+        return (
+            corrected || origin.reversals.length > 0
+                ? correctedExpenseDifference
+                : expenseDifference
+        )(
+            origin.initialVersion.split,
+            payments as Parameters<typeof expenseDifference>[1],
+            settlements,
+        );
+    }
+    async preview(
+        origin: IncomeCommitment | FinancialCommitment<ExpenseVersion>,
+        occurrenceId: string | null = null,
+        selection: SettlementSelection = { mode: 'NONE' },
+        today?: string,
+    ) {
+        const state = await this.obligations.originState(
+            origin.spaceId,
+            origin.id,
+            occurrenceId,
+        );
+        const difference = this.difference(origin, state.settlements, true);
+        const finalizedCycleIds: string[] = [];
+        for (const id of [
+            ...new Set(
+                state.obligations
+                    .map((obligation) => obligation.cycleId)
+                    .filter((id): id is string => id !== null),
+            ),
+        ].sort()) {
+            const cycle = await this.adjustments?.cycle(origin.spaceId, id);
+            if (cycle?.status === 'FINALIZED') finalizedCycleIds.push(id);
+        }
+        const plan = planObligationReconciliation(
+            state.obligations,
+            difference,
+            finalizedCycleIds,
+        );
+        const requiresOpenCycle =
+            finalizedCycleIds.length > 0 &&
+            difference !== null &&
+            (!plan.reusedObligation?.cycleId ||
+                finalizedCycleIds.includes(plan.reusedObligation.cycleId));
+        let blockingReason: FinancesErrorCode | null = null;
+        const targetDate =
+            selection.mode === 'SUGGESTED'
+                ? await this.suggestedDate(
+                      origin,
+                      selection,
+                      today ?? selection.referenceDate,
+                  )
+                : selection.mode === 'DATE'
+                  ? selection.targetDate
+                  : null;
+        const destination =
+            selection.mode === 'CYCLE'
+                ? await this.adjustments?.cycle(
+                      origin.spaceId,
+                      selection.cycleId,
+                  )
+                : targetDate
+                  ? await this.adjustments?.cycleForDate(
+                        origin.spaceId,
+                        targetDate,
+                    )
+                  : null;
+        if (selection.mode === 'CYCLE' && !destination)
+            blockingReason = 'SETTLEMENT_CYCLE_NOT_FOUND';
+        else if (destination?.status === 'FINALIZED')
+            blockingReason = 'SETTLEMENT_CYCLE_FINALIZED';
+        else if (requiresOpenCycle && selection.mode === 'NONE')
+            blockingReason = 'REVERSAL_CORRECTION_CYCLE_REQUIRED';
+        return {
+            currentPendingAmountInCents: state.obligations
+                .reduce(
+                    (sum, obligation) =>
+                        sum + BigInt(obligation.remainingAmountInCents),
+                    0n,
+                )
+                .toString(),
+            proposedDifference: difference,
+            requiresOpenCycle,
+            finalizedCycleIds,
+            blockingReason,
+        };
+    }
     async execute(
         origin: IncomeCommitment | FinancialCommitment<ExpenseVersion>,
         selection: SettlementSelection,
@@ -45,6 +188,18 @@ export class ReconcileFinancialOrigin {
         today: string,
         now: string,
         occurrenceId: string | null = null,
+        cause?: {
+            id: string;
+            factDate: string;
+            kind: 'ADJUSTMENT' | 'REVERSAL';
+            preserveSettlementEffects?: boolean;
+            originalFact?: {
+                id: string;
+                kind: 'DISBURSEMENT' | 'EXTERNAL_LIABILITY' | 'RECEIPT';
+                factDate: string;
+            };
+        },
+        preserveSettlementEffects = false,
     ) {
         const state = await this.obligations.originState(
             origin.spaceId,
@@ -52,41 +207,42 @@ export class ReconcileFinancialOrigin {
             occurrenceId,
         );
         const income = origin instanceof IncomeCommitment;
-        const difference = income
-            ? incomeDifference(origin, state.settlements)
-            : 'split' in origin.initialVersion
-              ? expenseDifference(
-                    origin.initialVersion.split,
-                    [
-                        ...(origin.disbursements as FinancialCommitment['disbursements']),
-                        ...origin.externalLiabilities.map((f) => ({
-                            payerMemberId:
-                                'holderMemberId' in f ? f.holderMemberId : '',
-                            amountInCents: f.amountInCents,
-                        })),
-                    ],
-                    state.settlements,
-                )
-              : null;
-        const fact = income
-            ? origin.receipts.at(-1)!
-            : origin.fulfillments.at(-1)!;
-        const latest = state.obligations.at(-1);
-        const latestCycle =
-            latest?.status === 'SETTLED' && latest.cycleId
-                ? await this.adjustments?.cycle(origin.spaceId, latest.cycleId)
-                : null;
-        if (
-            latestCycle?.status === 'FINALIZED' &&
-            difference &&
-            selection.mode === 'NONE'
-        )
-            throw new FinancesError('SETTLEMENT_CYCLE_FINALIZED');
+        const difference = this.difference(
+            origin,
+            state.settlements,
+            cause?.preserveSettlementEffects ?? preserveSettlementEffects,
+        );
+        const fact =
+            cause?.originalFact ??
+            (income ? origin.receipts.at(-1)! : origin.fulfillments.at(-1)!);
+        const finalizedCycleIds: string[] = [];
+        for (const id of [
+            ...new Set(
+                state.obligations
+                    .map((obligation) => obligation.cycleId)
+                    .filter((id): id is string => id !== null),
+            ),
+        ].sort()) {
+            const cycle = await this.adjustments?.cycle(origin.spaceId, id);
+            if (cycle?.status === 'FINALIZED') finalizedCycleIds.push(id);
+        }
         const plan = planObligationReconciliation(
             state.obligations,
             difference,
-            latestCycle?.status === 'FINALIZED' ? [latestCycle.id] : [],
+            finalizedCycleIds,
         );
+        if (
+            finalizedCycleIds.length > 0 &&
+            difference &&
+            selection.mode === 'NONE' &&
+            (!plan.reusedObligation?.cycleId ||
+                finalizedCycleIds.includes(plan.reusedObligation.cycleId))
+        )
+            throw new FinancesError(
+                cause?.kind === 'REVERSAL'
+                    ? 'REVERSAL_CORRECTION_CYCLE_REQUIRED'
+                    : 'SETTLEMENT_CYCLE_FINALIZED',
+            );
         const matching = plan.reusedObligation;
         let cycleId: string | null = matching?.cycleId ?? null;
         let targetDate: string | null = null;
@@ -100,36 +256,7 @@ export class ReconcileFinancialOrigin {
                     ]);
                 targetDate = selection.targetDate;
             } else if (selection.mode === 'SUGGESTED') {
-                const p = income ? origin.participation : origin.initialVersion;
-                const snapshot =
-                    'settlementRuleSnapshot' in p
-                        ? p.settlementRuleSnapshot
-                        : null;
-                const source =
-                    'settlementRuleSourceVersion' in p
-                        ? p.settlementRuleSourceVersion
-                        : 0;
-                const effective = this.adjustments
-                    ? await this.adjustments.effectiveRule(
-                          origin.spaceId,
-                          origin.id,
-                          snapshot,
-                          source,
-                      )
-                    : { rule: snapshot, version: source };
-                if (
-                    !effective.rule ||
-                    selection.referenceDate !== today ||
-                    selection.expectedRuleVersion !== effective.version
-                )
-                    throw new FinancesError(
-                        income
-                            ? 'INCOME_OPTIONS_CHANGED'
-                            : 'EXPENSE_OPTIONS_CHANGED',
-                    );
-                targetDate = SettlementRule.from(
-                    effective.rule,
-                ).suggestTargetDate(today);
+                targetDate = await this.suggestedDate(origin, selection, today);
             }
         }
         if (targetDate) {
@@ -190,7 +317,7 @@ export class ReconcileFinancialOrigin {
                 before.reconcile(
                     change.remainingAmountInCents,
                     actorId,
-                    fact.id,
+                    cause?.id ?? fact.id,
                     now,
                 ),
             );
@@ -206,7 +333,7 @@ export class ReconcileFinancialOrigin {
                 difference.creditorMemberId,
                 difference.amountInCents,
                 cycleId,
-                fact.factDate,
+                cause?.factDate ?? fact.factDate,
                 now,
                 actorId,
                 undefined,
@@ -216,9 +343,14 @@ export class ReconcileFinancialOrigin {
                 undefined,
                 undefined,
                 null,
-                !income && 'holderMemberId' in fact ? fact.id : null,
+                !income &&
+                    ('holderMemberId' in fact ||
+                        ('kind' in fact && fact.kind === 'EXTERNAL_LIABILITY'))
+                    ? fact.id
+                    : null,
                 false,
                 occurrenceId,
+                cause?.id ?? null,
             ),
         );
     }

@@ -1,3 +1,40 @@
+import { financialChangeEntities } from './infrastructure/typeorm/entities/financial-change.orm-entity.js';
+import {
+    FinancialCommitmentAdjustmentOrmEntity,
+    FinancialCommitmentCancellationOrmEntity,
+} from './infrastructure/typeorm/entities/financial-correction.orm-entity.js';
+import { FinancialCorrectionController } from './http/controllers/financial-correction.controller.js';
+import { FinancialReversalController } from './http/controllers/financial-reversal.controller.js';
+import { FinancialFulfillmentReversals } from './application/handlers/financial-fulfillment-reversals.js';
+import {
+    FinancialReversalPipe,
+    FinancialReversalListPipe,
+} from './http/dto/financial-reversal.dto.js';
+import { FINANCIAL_FULFILLMENT_REVERSAL_REPOSITORY } from './application/ports/private/financial-fulfillment-reversal.repository.js';
+import { TypeOrmFinancialFulfillmentReversalRepository } from './infrastructure/typeorm/repositories/typeorm-financial-fulfillment-reversal.repository.js';
+import { FinancialFulfillmentReversalOrmEntity } from './infrastructure/typeorm/entities/financial-fulfillment-reversal.orm-entity.js';
+import { FinancialCommitmentAdjustments } from './application/handlers/financial-commitment-adjustments.js';
+import { FinancialCommitmentCancellations } from './application/handlers/financial-commitment-cancellations.js';
+import {
+    AdjustmentPipe,
+    CancellationPipe,
+} from './http/dto/financial-correction.dto.js';
+import { FINANCIAL_CORRECTION_REPOSITORY } from './application/ports/private/financial-correction.repository.js';
+import { TypeOrmFinancialCorrectionRepository } from './infrastructure/typeorm/repositories/typeorm-financial-correction.repository.js';
+import { FinancialNonRecurringVersionOrmEntity } from './infrastructure/typeorm/entities/non-recurring-version.orm-entity.js';
+import { FinancialChangeController } from './http/controllers/financial-change.controller.js';
+import {
+    FinancialChangePipe,
+    FinancialChangeDecisionPipe,
+    FinancialChangeListPipe,
+} from './http/dto/financial-change.dto.js';
+import { FinancialCommitmentChangesHandler } from './application/handlers/financial-commitment-changes.handler.js';
+import { FinancialIntegrityCommands } from './application/handlers/financial-integrity-commands.js';
+import { NonRecurringCommitmentChanges } from './application/handlers/non-recurring-commitment-changes.js';
+import { FINANCIAL_CHANGE_REPOSITORY } from './application/ports/private/financial-change.repository.js';
+import { NON_RECURRING_CHANGE_REPOSITORY } from './application/ports/private/non-recurring-change.repository.js';
+import { TypeOrmFinancialChangeRepository } from './infrastructure/typeorm/repositories/typeorm-financial-change.repository.js';
+import { TypeOrmNonRecurringChangeRepository } from './infrastructure/typeorm/repositories/typeorm-non-recurring-change.repository.js';
 import { settlementAdjustmentEntities } from './infrastructure/typeorm/entities/settlement-adjustment.orm-entity.js';
 import { settlementOffsetEntities } from './infrastructure/typeorm/entities/settlement-offset.orm-entity.js';
 import { SettlementCycleChangeOrmEntity } from './infrastructure/typeorm/entities/settlement-cycle-change.orm-entity.js';
@@ -78,6 +115,12 @@ import { recurrenceEntities } from './infrastructure/typeorm/entities/recurrence
 import { installmentEntities } from './infrastructure/typeorm/entities/installment.orm-entity.js';
 import { InstallmentCommitmentController } from './http/controllers/installment-commitment.controller.js';
 import { InstallmentCommitmentHandler } from './application/handlers/installment-commitment.handler.js';
+import { CreateInstallmentCommitmentHandler } from './application/handlers/create-installment-commitment.handler.js';
+import { InstallmentCommitmentQueries } from './application/handlers/installment-commitment.queries.js';
+import { AnticipateInstallmentCommitmentHandler } from './application/handlers/anticipate-installment-commitment.handler.js';
+import { ResolveInstallmentCommitmentHandler } from './application/handlers/resolve-installment-commitment.handler.js';
+import { CancelInstallmentCommitmentHandler } from './application/handlers/cancel-installment-commitment.handler.js';
+import { RecordInstallmentCommitmentHandler } from './application/handlers/record-installment-commitment.handler.js';
 import {
     InstallmentCommitmentPipe,
     InstallmentDisbursementPipe,
@@ -202,6 +245,11 @@ import {
         DatabaseModule,
         SpacesModule,
         TypeOrmModule.forFeature([
+            ...financialChangeEntities,
+            FinancialCommitmentAdjustmentOrmEntity,
+            FinancialCommitmentCancellationOrmEntity,
+            FinancialFulfillmentReversalOrmEntity,
+            FinancialNonRecurringVersionOrmEntity,
             ...settlementAdjustmentEntities,
             ...settlementOffsetEntities,
             SettlementCycleChangeOrmEntity,
@@ -223,6 +271,9 @@ import {
         ]),
     ],
     controllers: [
+        FinancialChangeController,
+        FinancialCorrectionController,
+        FinancialReversalController,
         PlannedExpenseController,
         RecurringCommitmentController,
         InstallmentCommitmentController,
@@ -244,9 +295,44 @@ import {
         SettlementTransferController,
     ],
     providers: [
+        FinancialCommitmentChangesHandler,
+        FinancialCommitmentAdjustments,
+        FinancialCommitmentCancellations,
+        FinancialFulfillmentReversals,
+        FinancialReversalPipe,
+        FinancialReversalListPipe,
+        {
+            provide: FINANCIAL_FULFILLMENT_REVERSAL_REPOSITORY,
+            useClass: TypeOrmFinancialFulfillmentReversalRepository,
+        },
+        AdjustmentPipe,
+        CancellationPipe,
+        {
+            provide: FINANCIAL_CORRECTION_REPOSITORY,
+            useClass: TypeOrmFinancialCorrectionRepository,
+        },
+        FinancialIntegrityCommands,
+        NonRecurringCommitmentChanges,
+        FinancialChangePipe,
+        FinancialChangeDecisionPipe,
+        FinancialChangeListPipe,
+        {
+            provide: FINANCIAL_CHANGE_REPOSITORY,
+            useClass: TypeOrmFinancialChangeRepository,
+        },
+        {
+            provide: NON_RECURRING_CHANGE_REPOSITORY,
+            useClass: TypeOrmNonRecurringChangeRepository,
+        },
         CreatePlannedExpenseHandler,
         RecurringCommitmentHandler,
         InstallmentCommitmentHandler,
+        CreateInstallmentCommitmentHandler,
+        InstallmentCommitmentQueries,
+        AnticipateInstallmentCommitmentHandler,
+        ResolveInstallmentCommitmentHandler,
+        CancelInstallmentCommitmentHandler,
+        RecordInstallmentCommitmentHandler,
         InstallmentCommitmentPipe,
         InstallmentDisbursementPipe,
         InstallmentLiabilityPipe,

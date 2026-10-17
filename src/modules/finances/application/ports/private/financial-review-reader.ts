@@ -18,6 +18,7 @@ export interface FinancialReviewReader {
     ): Promise<{
         items: FinancialForecastItem[];
         totals: FinancialForecast['totals'];
+        globalCorrections?: FinancialForecast['globalCorrections'];
     }>;
     overview(
         scope: FinancialReviewScope,

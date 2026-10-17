@@ -1,3 +1,4 @@
+import { nonRecurringReadQuery } from './non-recurring-version-selection.js';
 import { Injectable } from '@nestjs/common';
 import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
 import type { FinancialReviewReader } from '../../../application/ports/private/financial-review-reader.js';
@@ -16,9 +17,33 @@ import {
 const instant = (name: string) =>
     `to_char(${name} AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 const recurringDate = `make_date(EXTRACT(YEAR FROM $2::date)::integer,EXTRACT(MONTH FROM $2::date)::integer,LEAST(v.day_of_month,EXTRACT(DAY FROM (date_trunc('month',$2::date)+interval '1 month - 1 day')::date)::integer))`;
+const correctionDelta = (target: string) =>
+    `(SELECT COALESCE(SUM(CASE WHEN a.direction='INCREASE' THEN a.amount_in_cents ELSE -a.amount_in_cents END),0) FROM financial_commitment_adjustments a WHERE a.space_id=$1 AND a.target_id=${target})`;
+const correctionShareDelta = (target: string, member: string) =>
+    `(SELECT COALESCE(SUM((change->>'amountInCents')::bigint),0) FROM financial_commitment_adjustments a CROSS JOIN LATERAL jsonb_array_elements(a.share_changes) change WHERE a.space_id=$1 AND a.target_id=${target} AND (change->>'memberId')::uuid=${member})`;
+const recognitionType = (amount: string, target: string) =>
+    `CASE WHEN ${amount}-${correctionDelta(target)}<0 THEN 'EXPENSE_DISCOUNT'::text ELSE 'EXPENSE'::text END`;
+const recognitionAmount = (amount: string, target: string) =>
+    `abs(${amount}-${correctionDelta(target)})`;
+const originalTargetSequence = (
+    target: string,
+) => `(SELECT MIN(f.sequence) FROM (
+    SELECT d.sequence FROM public.financial_disbursements d WHERE d.space_id=$1 AND d.occurrence_id=${target}
+    UNION ALL SELECT l.sequence FROM public.financial_external_liabilities l WHERE l.space_id=$1 AND l.occurrence_id=${target}
+) f)`;
+const payoffSequence = (payoff: string) => `(SELECT f.sequence FROM (
+    SELECT d.sequence FROM public.financial_disbursements d WHERE d.space_id=${payoff}.space_id AND d.id=${payoff}.fact_id
+    UNION ALL SELECT l.sequence FROM public.financial_external_liabilities l WHERE l.space_id=${payoff}.space_id AND l.id=${payoff}.fact_id
+) f)`;
+const priorCompensatedPayoff = (payoff: string) =>
+    `EXISTS (SELECT 1 FROM public.financial_installment_payoffs previous WHERE previous.space_id=${payoff}.space_id AND previous.commitment_id=${payoff}.commitment_id AND previous.compensated AND ${payoffSequence('previous')}<${payoffSequence(payoff)})`;
+const recognizedByPriorPayoff = (target: string) => `EXISTS (
+    SELECT 1 FROM public.financial_installment_resolutions resolved JOIN public.financial_installment_payoffs prior ON prior.space_id=resolved.space_id AND prior.id=resolved.payoff_id
+    WHERE resolved.space_id=$1 AND resolved.installment_id=${target} AND ${payoffSequence('prior')}<${originalTargetSequence(target)}
+)`;
 // Only facts owned by Finances are read. All branches retain their own date and author.
 const facts = `WITH facts AS (
-    SELECT c.id,'EXPENSE'::text AS type,c.id AS commitment_id,NULL::uuid AS external_liability_id,c.description,v.amount_in_cents,
+    SELECT c.id,${recognitionType('v.amount_in_cents', 'c.id')} AS type,c.id AS commitment_id,NULL::uuid AS external_liability_id,c.description,${recognitionAmount('v.amount_in_cents', 'c.id')} AS amount_in_cents,
         COALESCE(v.fact_date,(SELECT MIN(first_fact.fact_date) FROM (
             SELECT d.fact_date FROM financial_disbursements d WHERE d.space_id=c.space_id AND d.commitment_id=c.id
             UNION ALL SELECT l.fact_date FROM financial_external_liabilities l WHERE l.space_id=c.space_id AND l.commitment_id=c.id
@@ -27,7 +52,7 @@ const facts = `WITH facts AS (
         ARRAY(SELECT s.member_id FROM financial_commitment_shares s WHERE s.space_id=c.space_id AND s.commitment_id=c.id AND s.version=v.version) AS member_ids
     FROM financial_commitments c JOIN financial_commitment_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id WHERE c.space_id=$1 AND c.kind='EXPENSE'
     UNION ALL
-    SELECT o.id,'EXPENSE',c.id,NULL,(SELECT v.description FROM financial_recurrence_versions v WHERE v.commitment_id=o.commitment_id AND v.version=o.economic_version),o.amount_in_cents,
+    SELECT o.id,${recognitionType('o.amount_in_cents', 'o.id')},c.id,NULL,(SELECT v.description FROM financial_recurrence_versions v WHERE v.commitment_id=o.commitment_id AND v.version=o.economic_version),${recognitionAmount('o.amount_in_cents', 'o.id')},
         (SELECT MIN(f.fact_date) FROM (
             SELECT d.fact_date FROM financial_disbursements d WHERE d.space_id=o.space_id AND d.occurrence_id=o.id
             UNION ALL SELECT l.fact_date FROM financial_external_liabilities l WHERE l.space_id=o.space_id AND l.occurrence_id=o.id
@@ -36,14 +61,14 @@ const facts = `WITH facts AS (
     FROM financial_occurrences o JOIN financial_commitments c ON c.space_id=o.space_id AND c.id=o.commitment_id
     WHERE o.space_id=$1 AND c.kind='EXPENSE' AND c.modality='RECURRING'
     UNION ALL
-    SELECT i.id,'EXPENSE',c.id,NULL,c.description,i.amount_in_cents,
+    SELECT i.id,${recognitionType('i.amount_in_cents', 'i.id')},c.id,NULL,c.description,${recognitionAmount('i.amount_in_cents', 'i.id')},
         (SELECT MIN(f.fact_date) FROM (
             SELECT d.fact_date FROM financial_disbursements d WHERE d.space_id=i.space_id AND d.occurrence_id=i.id
             UNION ALL SELECT l.fact_date FROM financial_external_liabilities l WHERE l.space_id=i.space_id AND l.occurrence_id=i.id
         ) f),c.registered_at,c.created_by,NULL,c.personal_owner_person_id,NULL,
         ARRAY(SELECT s.member_id FROM financial_installment_shares s WHERE s.installment_id=i.id)
     FROM financial_installments i JOIN financial_commitments c ON c.space_id=i.space_id AND c.id=i.commitment_id
-    WHERE i.space_id=$1 AND c.modality='INSTALLMENT'
+    WHERE i.space_id=$1 AND c.modality='INSTALLMENT' AND NOT ${recognizedByPriorPayoff('i.id')}
     UNION ALL
     SELECT a.id,CASE WHEN a.adjustment_in_cents<0 THEN 'EXPENSE_DISCOUNT' ELSE 'EXPENSE_SURCHARGE' END,c.id,NULL,c.description,abs(a.adjustment_in_cents),a.fact_date,a.registered_at,a.actor_id,NULL,c.personal_owner_person_id,NULL,
         ARRAY(SELECT s.member_id FROM financial_installment_shares s WHERE s.installment_id=a.installment_id)
@@ -65,7 +90,7 @@ const facts = `WITH facts AS (
     FROM financial_commitments c JOIN financial_commitment_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id
     WHERE c.space_id=$1 AND c.kind='EXPENSE' AND v.expected_payment_date IS NOT NULL
     UNION ALL
-    SELECT i.id,'EXPECTED_EXPENSE',c.id,NULL,c.description,i.amount_in_cents,i.due_date,c.registered_at,c.created_by,
+    SELECT i.id,'EXPECTED_EXPENSE',c.id,NULL,c.description,CASE WHEN EXISTS (SELECT 1 FROM financial_installment_anticipations anticipated WHERE anticipated.space_id=i.space_id AND anticipated.installment_id=i.id) THEN o.amount_in_cents ELSE i.amount_in_cents END,i.due_date,c.registered_at,c.created_by,
         p.expected_member_id,c.personal_owner_person_id,NULL,
         ARRAY(SELECT s.member_id FROM financial_installment_shares s WHERE s.installment_id=i.id)
     FROM financial_installments i JOIN financial_commitments c ON c.space_id=i.space_id AND c.id=i.commitment_id
@@ -111,6 +136,15 @@ const facts = `WITH facts AS (
     JOIN financial_recurrence_versions v ON v.space_id=o.space_id AND v.commitment_id=o.commitment_id AND v.version=o.economic_version
     WHERE o.space_id=$1 AND o.status<>'CANCELLED'
     UNION ALL
+    SELECT a.id,CASE WHEN c.kind='EXPENSE' THEN CASE WHEN a.direction='INCREASE' THEN 'EXPENSE_SURCHARGE' ELSE 'EXPENSE_DISCOUNT' END ELSE CASE WHEN a.direction='INCREASE' THEN 'INCOME_INCREASE' ELSE 'INCOME_DECREASE' END END,c.id,NULL,c.description,a.amount_in_cents,a.fact_date,a.registered_at,a.actor_id,NULL,c.personal_owner_person_id,NULL,
+        ARRAY(SELECT (share->>'memberId')::uuid FROM jsonb_array_elements(a.economic_shares) share)
+    FROM financial_commitment_adjustments a JOIN financial_commitments c ON c.space_id=a.space_id AND c.id=a.commitment_id WHERE a.space_id=$1
+    UNION ALL
+    SELECT k.id,CASE WHEN c.kind='EXPENSE' THEN 'EXPENSE_CANCELLATION' ELSE 'INCOME_CANCELLATION' END,c.id,NULL,c.description,
+        COALESCE((SELECT amount_in_cents FROM public.financial_commitment_versions v WHERE v.commitment_id=c.id AND v.version=1),(SELECT amount_in_cents FROM public.financial_income_versions v WHERE v.commitment_id=c.id)),k.fact_date,k.registered_at,k.actor_id,NULL,c.personal_owner_person_id,NULL,
+        ARRAY(SELECT s.member_id FROM public.financial_commitment_shares s WHERE s.commitment_id=c.id UNION SELECT s.member_id FROM public.financial_income_shares s WHERE s.commitment_id=c.id)
+    FROM financial_commitment_cancellations k JOIN financial_commitments c ON c.space_id=k.space_id AND c.id=k.commitment_id WHERE k.space_id=$1
+    UNION ALL
     SELECT f.id,'DISBURSEMENT',c.id,NULL,COALESCE((SELECT v.description FROM financial_occurrences o JOIN financial_recurrence_versions v ON v.commitment_id=o.commitment_id AND v.version=o.economic_version WHERE o.id=f.occurrence_id),c.description),f.amount_in_cents,f.fact_date,f.registered_at,f.recorded_by_person_id,f.payer_member_id,f.payer_person_id,NULL,ARRAY[f.payer_member_id]
     FROM financial_disbursements f JOIN financial_commitments c ON c.space_id=f.space_id AND c.id=f.commitment_id WHERE f.space_id=$1
     UNION ALL
@@ -142,14 +176,28 @@ const facts = `WITH facts AS (
     SELECT f.id,'INTERNAL_REVERSAL',NULL,NULL,CASE WHEN f.original_kind='TRANSFER' THEN 'Reversão de transferência' ELSE 'Reversão de compensação' END,f.amount_in_cents,f.fact_date,f.registered_at,f.created_by,NULL,NULL,NULL,
         ARRAY(SELECT DISTINCT a.debtor_member_id FROM settlement_reversal_applications a WHERE a.space_id=f.space_id AND a.reversal_id=f.id UNION SELECT DISTINCT a.creditor_member_id FROM settlement_reversal_applications a WHERE a.space_id=f.space_id AND a.reversal_id=f.id)
     FROM settlement_reversals f WHERE f.space_id=$1
+    UNION ALL
+    SELECT r.id,r.original_kind||'_REVERSAL',c.id,original.external_liability_id,c.description,r.amount_in_cents,r.fact_date,r.registered_at,r.actor_id,original.member_id,original.person_id,NULL,
+        ARRAY[original.member_id] || CASE WHEN r.original_kind='RECEIPT' THEN ARRAY(SELECT s.member_id FROM financial_income_shares s WHERE s.space_id=c.space_id AND s.commitment_id=c.id UNION SELECT s.member_id FROM financial_occurrence_shares s WHERE s.space_id=c.space_id AND s.occurrence_id=r.occurrence_id UNION SELECT s.member_id FROM financial_recurrence_shares s JOIN financial_occurrences o ON o.space_id=s.space_id AND o.commitment_id=s.commitment_id AND o.economic_version=s.version WHERE o.id=r.occurrence_id) ELSE ARRAY[]::uuid[] END
+    FROM financial_fulfillment_reversals r JOIN financial_commitments c ON c.space_id=r.space_id AND c.id=r.commitment_id
+    JOIN LATERAL (
+        SELECT d.payer_member_id AS member_id,d.payer_person_id AS person_id,NULL::uuid AS external_liability_id FROM public.financial_disbursements d WHERE r.original_kind='DISBURSEMENT' AND d.space_id=r.space_id AND d.id=r.original_id
+        UNION ALL SELECT f.recipient_member_id,f.recipient_person_id,NULL FROM public.financial_receipts f WHERE r.original_kind='RECEIPT' AND f.space_id=r.space_id AND f.id=r.original_id
+        UNION ALL SELECT l.holder_member_id,l.holder_person_id,l.id FROM public.financial_external_liabilities l WHERE r.original_kind='EXTERNAL_LIABILITY' AND l.space_id=r.space_id AND l.id=r.original_id
+        UNION ALL SELECT s.holder_member_id,s.holder_person_id,s.external_liability_id FROM public.financial_external_liability_settlements s WHERE r.original_kind='EXTERNAL_SETTLEMENT' AND s.space_id=r.space_id AND s.id=r.original_id
+    ) original ON true WHERE r.space_id=$1
 ), selected AS (
     SELECT * FROM (
         SELECT facts.*,ROW_NUMBER() OVER (PARTITION BY type,commitment_id,date_trunc('month',relevant_date) ORDER BY relevant_date,id) AS occurrence_rank
         FROM facts WHERE relevant_date >= $2::date AND relevant_date < $3::date AND ($4::uuid IS NULL OR $4::uuid=ANY(member_ids))
+            AND (type NOT IN ('EXPECTED_EXPENSE','EXPECTED_INCOME') OR NOT EXISTS (SELECT 1 FROM financial_commitment_cancellations cancelled WHERE cancelled.space_id=$1 AND cancelled.commitment_id=facts.commitment_id))
     ) ranked WHERE type NOT IN ('EXPECTED_EXPENSE','EXPECTED_INCOME') OR id<>commitment_id OR occurrence_rank=1
 )`;
-const projection = `id,type,commitment_id AS "commitmentId",external_liability_id AS "externalLiabilityId",description,amount_in_cents::text AS "amountInCents",to_char(relevant_date,'YYYY-MM-DD') AS "relevantDate",
-    CASE WHEN type IN ('EXPECTED_INCOME','EXPECTED_EXPENSE') THEN 'EXPECTED' ELSE 'ACTUAL' END AS "dateNature",${instant('registered_at')} AS "registeredAt",recorded_by_person_id AS "recordedByPersonId",participant_member_id AS "participantMemberId",participant_person_id AS "participantPersonId",recipient_member_id AS "recipientMemberId",array_remove(member_ids,NULL) AS "memberIds"`;
+const projection = (
+    source: string,
+) => `id,type,commitment_id AS "commitmentId",external_liability_id AS "externalLiabilityId",description,amount_in_cents::text AS "amountInCents",to_char(relevant_date,'YYYY-MM-DD') AS "relevantDate",
+    CASE WHEN type IN ('EXPECTED_INCOME','EXPECTED_EXPENSE') THEN 'EXPECTED' ELSE 'ACTUAL' END AS "dateNature",${instant('registered_at')} AS "registeredAt",recorded_by_person_id AS "recordedByPersonId",participant_member_id AS "participantMemberId",participant_person_id AS "participantPersonId",recipient_member_id AS "recipientMemberId",array_remove(member_ids,NULL) AS "memberIds",(SELECT reason FROM financial_commitment_adjustments a WHERE a.id=${source}.id UNION ALL SELECT reason FROM financial_commitment_cancellations k WHERE k.id=${source}.id UNION ALL SELECT reason FROM financial_fulfillment_reversals r WHERE r.id=${source}.id LIMIT 1) AS reason,
+    (SELECT original_kind FROM financial_fulfillment_reversals r WHERE r.id=${source}.id) AS "originalKind",(SELECT original_id FROM financial_fulfillment_reversals r WHERE r.id=${source}.id) AS "originalId"`;
 const safe = (value: string) => {
     const amount = Number(value);
     if (!Number.isSafeInteger(amount) || amount < 0)
@@ -245,9 +293,10 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
         scope: FinancialReviewScope,
         after: FinancialReviewKey | null,
     ) {
-        const rows: ItemRow[] = await this.managers.get().query(
+        const rows: ItemRow[] = await nonRecurringReadQuery(
+            this.managers.get(),
             `${facts}
-            SELECT ${projection} FROM selected WHERE ($5::date IS NULL OR (relevant_date,registered_at,type,id)<($5::date,$6::timestamptz,$7::text,$8::uuid))
+            SELECT ${projection('selected')} FROM selected WHERE ($5::date IS NULL OR (relevant_date,registered_at,type,id)<($5::date,$6::timestamptz,$7::text,$8::uuid))
             ORDER BY relevant_date DESC,registered_at DESC,type DESC,id DESC LIMIT 21`,
             [
                 scope.spaceId,
@@ -259,6 +308,8 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                 after?.type ?? null,
                 after?.id ?? null,
             ],
+            scope.referenceDate,
+            false,
         );
         return rows.map(item);
     }
@@ -279,7 +330,13 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
             fulfilledExpense: string;
             remainingExpense: string;
             unknownCount: string;
-        }[] = await this.managers.get().query(
+            globalCorrections: {
+                commitmentId: string;
+                globalAdjustmentInCents: string;
+                globalRemainingAmountInCents: string;
+            }[];
+        }[] = await nonRecurringReadQuery(
+            this.managers.get(),
             `${facts}, pending AS (
             SELECT s.*,CASE WHEN s.type='EXPECTED_INCOME'
                 THEN COALESCE((SELECT SUM(r.amount_in_cents) FROM financial_receipts r JOIN financial_commitments c ON c.space_id=r.space_id AND c.id=r.commitment_id WHERE r.space_id=$1 AND r.commitment_id=s.commitment_id AND (c.modality='ONE_TIME' OR r.occurrence_id=s.id)),0)
@@ -287,12 +344,18 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                     + COALESCE((SELECT SUM(l.amount_in_cents) FROM financial_external_liabilities l JOIN financial_commitments c ON c.space_id=l.space_id AND c.id=l.commitment_id WHERE l.space_id=$1 AND l.commitment_id=s.commitment_id AND (c.modality='ONE_TIME' OR l.occurrence_id=s.id)),0)
                 END AS received
             FROM selected s WHERE type='EXPECTED_EXPENSE' OR (type='EXPECTED_INCOME' AND relevant_date >= $5::date)
-        ), outstanding AS (SELECT *,amount_in_cents-received AS remaining FROM pending WHERE received<amount_in_cents OR amount_in_cents IS NULL), page AS (
-            SELECT ${projection},received::text AS "receivedAmountInCents",remaining::text AS "remainingAmountInCents",
+        ), outstanding AS (SELECT *,amount_in_cents-received AS remaining FROM pending WHERE received<amount_in_cents OR amount_in_cents IS NULL), global_corrections AS (
+            SELECT p.commitment_id AS "commitmentId",SUM(p.adjustment_in_cents)::text AS "globalAdjustmentInCents",
+                (CASE WHEN EXISTS (SELECT 1 FROM public.financial_installment_payoffs active WHERE active.space_id=$1 AND active.commitment_id=p.commitment_id AND NOT active.compensated) THEN 0 ELSE
+                    COALESCE((SELECT SUM(CASE WHEN EXISTS (SELECT 1 FROM financial_installment_resolutions resolved WHERE resolved.space_id=i.space_id AND resolved.installment_id=i.id) THEN 0 ELSE GREATEST(CASE WHEN EXISTS (SELECT 1 FROM financial_installment_anticipations anticipated WHERE anticipated.space_id=i.space_id AND anticipated.installment_id=i.id) THEN o.amount_in_cents ELSE i.amount_in_cents END-COALESCE((SELECT SUM(d.amount_in_cents) FROM financial_disbursements d WHERE d.space_id=i.space_id AND d.occurrence_id=i.id),0)-COALESCE((SELECT SUM(l.amount_in_cents) FROM financial_external_liabilities l WHERE l.space_id=i.space_id AND l.occurrence_id=i.id),0),0) END) FROM financial_installments i JOIN public.financial_occurrences o ON o.space_id=i.space_id AND o.installment_id=i.id WHERE i.space_id=$1 AND i.commitment_id=p.commitment_id),0)+SUM(p.adjustment_in_cents) END)::text AS "globalRemainingAmountInCents"
+            FROM public.financial_installment_payoffs p WHERE p.space_id=$1 AND p.compensated AND p.commitment_id IN (SELECT DISTINCT commitment_id FROM outstanding WHERE type='EXPECTED_EXPENSE') GROUP BY p.commitment_id
+        ), page AS (
+            SELECT ${projection('outstanding')},received::text AS "receivedAmountInCents",remaining::text AS "remainingAmountInCents",
                 COALESCE((SELECT v.amount_in_cents::text FROM financial_occurrences o JOIN financial_recurrence_versions v ON v.space_id=o.space_id AND v.commitment_id=o.commitment_id AND v.version=o.economic_version WHERE o.id=outstanding.id AND o.space_id=$1),
                     (SELECT v.amount_in_cents::text FROM financial_recurrence_versions v WHERE v.space_id=$1 AND v.commitment_id=outstanding.commitment_id AND v.effective_from<=outstanding.relevant_date ORDER BY v.effective_from DESC LIMIT 1),amount_in_cents::text) AS "expectedAmountInCents" FROM outstanding
             WHERE ($6::date IS NULL OR (relevant_date,id)>($6::date,$7::uuid)) ORDER BY relevant_date,id LIMIT 21
         ) SELECT COALESCE((SELECT jsonb_agg(p ORDER BY p."relevantDate",p.id) FROM page p),'[]'::jsonb) AS items,
+            COALESCE((SELECT jsonb_agg(g ORDER BY g."commitmentId") FROM global_corrections g),'[]'::jsonb) AS "globalCorrections",
             COALESCE(SUM(amount_in_cents) FILTER (WHERE type='EXPECTED_INCOME'),0)::text AS expected,
             COALESCE(SUM(received) FILTER (WHERE type='EXPECTED_INCOME'),0)::text AS received,
             COALESCE(SUM(remaining) FILTER (WHERE type='EXPECTED_INCOME'),0)::text AS remaining,
@@ -309,8 +372,10 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                 after?.relevantDate ?? null,
                 after?.id ?? null,
             ],
+            scope.referenceDate,
         );
         return {
+            globalCorrections: rows[0].globalCorrections,
             items: rows[0].items.map((row) => ({
                 ...item(row),
                 type: row.type as 'EXPECTED_INCOME' | 'EXPECTED_EXPENSE',
@@ -364,10 +429,11 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
             income: IncomePeriodDelta[];
             open: { memberId: string | null; amount: string }[];
         };
-        const rows: Row[] = await this.managers.get().query(
+        const rows: Row[] = await nonRecurringReadQuery(
+            this.managers.get(),
             `WITH
             expenses AS (
-                SELECT v.space_id,v.commitment_id,v.version,v.amount_in_cents,c.personal_owner_person_id,'ONE_TIME'::text AS modality,NULL::uuid AS occurrence_id FROM financial_commitment_versions v
+                SELECT v.space_id,v.commitment_id,v.version,v.amount_in_cents-${correctionDelta('v.commitment_id')} AS amount_in_cents,c.personal_owner_person_id,'ONE_TIME'::text AS modality,NULL::uuid AS occurrence_id FROM financial_commitment_versions v
                 JOIN financial_commitments c ON c.space_id=v.space_id AND c.id=v.commitment_id
                 WHERE v.space_id=$1 AND COALESCE(v.fact_date,(
                     SELECT MIN(first_fact.fact_date) FROM (
@@ -381,7 +447,7 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                     ) first_fact
                 )) < $3::date
                 UNION ALL
-                SELECT o.space_id,o.commitment_id,o.economic_version,o.amount_in_cents,c.personal_owner_person_id,'RECURRING',o.id
+                SELECT o.space_id,o.commitment_id,o.economic_version,o.amount_in_cents-${correctionDelta('o.id')},c.personal_owner_person_id,'RECURRING',o.id
                 FROM financial_occurrences o JOIN financial_commitments c ON c.space_id=o.space_id AND c.id=o.commitment_id
                 WHERE o.space_id=$1 AND c.kind='EXPENSE' AND c.modality='RECURRING' AND (
                     SELECT MIN(f.fact_date) FROM (
@@ -395,9 +461,9 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                     ) f
                 ) < $3::date
                 UNION ALL
-                SELECT i.space_id,i.commitment_id,1,i.amount_in_cents,c.personal_owner_person_id,'INSTALLMENT',i.id
+                SELECT i.space_id,i.commitment_id,1,i.amount_in_cents-${correctionDelta('i.id')},c.personal_owner_person_id,'INSTALLMENT',i.id
                 FROM financial_installments i JOIN financial_commitments c ON c.space_id=i.space_id AND c.id=i.commitment_id
-                WHERE i.space_id=$1 AND (
+                WHERE i.space_id=$1 AND NOT ${recognizedByPriorPayoff('i.id')} AND (
                     SELECT MIN(f.fact_date) FROM (
                         SELECT d.fact_date FROM financial_disbursements d WHERE d.space_id=i.space_id AND d.occurrence_id=i.id
                         UNION ALL SELECT l.fact_date FROM financial_external_liabilities l WHERE l.space_id=i.space_id AND l.occurrence_id=i.id
@@ -413,10 +479,7 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                 FROM financial_installment_anticipations a JOIN financial_commitments c ON c.space_id=a.space_id AND c.id=a.commitment_id
                 WHERE a.space_id=$1 AND a.fact_date >= $2::date AND a.fact_date < $3::date
                 UNION ALL
-                SELECT p.space_id,p.commitment_id,1,p.paid_amount_in_cents-COALESCE(SUM(r.expected_remaining_amount_in_cents) FILTER (WHERE EXISTS (
-                    SELECT 1 FROM financial_disbursements d WHERE d.occurrence_id=r.installment_id
-                    UNION ALL SELECT 1 FROM financial_external_liabilities l WHERE l.occurrence_id=r.installment_id
-                )),0),c.personal_owner_person_id,'INSTALLMENT_PAYOFF',NULL::uuid
+                SELECT p.space_id,p.commitment_id,1,CASE WHEN ${priorCompensatedPayoff('p')} THEN p.adjustment_in_cents ELSE p.paid_amount_in_cents-COALESCE(SUM(r.expected_remaining_amount_in_cents) FILTER (WHERE ${originalTargetSequence('r.installment_id')}<${payoffSequence('p')}),0)-COALESCE((p.recognized_manual_adjustments->>'amountInCents')::bigint,0) END,c.personal_owner_person_id,'INSTALLMENT_PAYOFF',p.id
                 FROM financial_installment_payoffs p JOIN financial_commitments c ON c.space_id=p.space_id AND c.id=p.commitment_id
                 JOIN financial_installment_resolutions r ON r.payoff_id=p.id
                 WHERE p.space_id=$1 AND p.fact_date >= $2::date AND p.fact_date < $3::date
@@ -430,22 +493,41 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
                 FROM financial_installment_resolutions r JOIN financial_commitments c ON c.space_id=r.space_id AND c.id=r.commitment_id
                 WHERE r.space_id=$1 AND r.type='CANCELLED' AND r.fact_date >= $2::date AND r.fact_date < $3::date
             ),
-            period_receipts AS (SELECT r.* FROM financial_receipts r WHERE r.space_id=$1),
+            period_receipts AS (
+                SELECT r.* FROM public.financial_receipts r WHERE r.space_id=$1
+                UNION ALL SELECT corrected.* FROM financial_fulfillment_reversals reversal
+                JOIN public.financial_receipts original ON original.space_id=reversal.space_id AND original.id=reversal.original_id AND reversal.original_kind='RECEIPT'
+                CROSS JOIN LATERAL jsonb_populate_record(NULL::public.financial_receipts,to_jsonb(original)||jsonb_build_object('id',reversal.id,'amount_in_cents',-reversal.amount_in_cents,'fact_date',reversal.fact_date,'registered_at',reversal.registered_at,'recorded_by_person_id',reversal.actor_id)) corrected WHERE reversal.space_id=$1
+            ), reversed_support AS (
+                SELECT r.amount_in_cents,r.fact_date,original.member_id,CASE r.original_kind WHEN 'DISBURSEMENT' THEN 'paidAmountInCents' WHEN 'EXTERNAL_LIABILITY' THEN 'assumedAmountInCents' ELSE 'externalSettledAmountInCents' END AS metric
+                FROM financial_fulfillment_reversals r JOIN LATERAL (
+                    SELECT d.payer_member_id AS member_id FROM public.financial_disbursements d WHERE r.original_kind='DISBURSEMENT' AND d.space_id=r.space_id AND d.id=r.original_id
+                    UNION ALL SELECT l.holder_member_id FROM public.financial_external_liabilities l WHERE r.original_kind='EXTERNAL_LIABILITY' AND l.space_id=r.space_id AND l.id=r.original_id
+                    UNION ALL SELECT s.holder_member_id FROM public.financial_external_liability_settlements s WHERE r.original_kind='EXTERNAL_SETTLEMENT' AND s.space_id=r.space_id AND s.id=r.original_id
+                ) original ON true WHERE r.space_id=$1 AND r.fact_date >= $2::date AND r.fact_date < $3::date
+            ),
             contributions AS (
                 SELECT NULL::uuid AS member_id,'expenseAmountInCents' AS metric,SUM(amount_in_cents)::numeric AS amount FROM expenses
-                UNION ALL SELECT s.member_id,'expenseAmountInCents',SUM(s.amount_in_cents) FROM expenses e JOIN financial_commitment_shares s ON s.space_id=e.space_id AND s.commitment_id=e.commitment_id AND s.version=e.version WHERE e.modality='ONE_TIME' GROUP BY s.member_id
-                UNION ALL SELECT s.member_id,'expenseAmountInCents',SUM(s.amount_in_cents) FROM expenses e JOIN financial_recurrence_shares s ON s.space_id=e.space_id AND s.commitment_id=e.commitment_id AND s.version=e.version WHERE e.modality='RECURRING' GROUP BY s.member_id
-                UNION ALL SELECT s.member_id,'expenseAmountInCents',SUM(s.amount_in_cents) FROM expenses e JOIN financial_occurrence_shares s ON s.occurrence_id=e.occurrence_id WHERE e.modality='RECURRING' GROUP BY s.member_id
-                UNION ALL SELECT s.member_id,'expenseAmountInCents',SUM(s.amount_in_cents) FROM expenses e JOIN financial_installment_shares s ON s.installment_id=e.occurrence_id WHERE e.modality='INSTALLMENT' GROUP BY s.member_id
+                UNION ALL SELECT member_id,metric,-SUM(amount_in_cents) FROM reversed_support GROUP BY GROUPING SETS((metric),(metric,member_id)) HAVING GROUPING(member_id)=1 OR member_id IS NOT NULL
+                UNION ALL SELECT NULL,'expenseAmountInCents',SUM(CASE WHEN a.direction='INCREASE' THEN a.amount_in_cents ELSE -a.amount_in_cents END)
+                    FROM financial_commitment_adjustments a JOIN financial_commitments c ON c.space_id=a.space_id AND c.id=a.commitment_id
+                    WHERE a.space_id=$1 AND c.kind='EXPENSE' AND a.fact_date >= $2::date AND a.fact_date < $3::date
+                UNION ALL SELECT (change->>'memberId')::uuid,'expenseAmountInCents',SUM((change->>'amountInCents')::bigint)
+                    FROM financial_commitment_adjustments a JOIN financial_commitments c ON c.space_id=a.space_id AND c.id=a.commitment_id CROSS JOIN LATERAL jsonb_array_elements(a.share_changes) change
+                    WHERE a.space_id=$1 AND c.kind='EXPENSE' AND a.fact_date >= $2::date AND a.fact_date < $3::date GROUP BY (change->>'memberId')::uuid
+                UNION ALL SELECT s.member_id,'expenseAmountInCents',SUM(s.amount_in_cents-${correctionShareDelta('e.commitment_id', 's.member_id')}) FROM expenses e JOIN financial_commitment_shares s ON s.space_id=e.space_id AND s.commitment_id=e.commitment_id AND s.version=e.version WHERE e.modality='ONE_TIME' GROUP BY s.member_id
+                UNION ALL SELECT s.member_id,'expenseAmountInCents',SUM(s.amount_in_cents) FROM expenses e JOIN financial_recurrence_shares s ON s.space_id=e.space_id AND s.commitment_id=e.commitment_id AND s.version=e.version WHERE e.modality='RECURRING' AND NOT EXISTS (SELECT 1 FROM financial_occurrence_shares specific WHERE specific.occurrence_id=e.occurrence_id) GROUP BY s.member_id
+                UNION ALL SELECT s.member_id,'expenseAmountInCents',SUM(s.amount_in_cents-${correctionShareDelta('e.occurrence_id', 's.member_id')}) FROM expenses e JOIN financial_occurrence_shares s ON s.occurrence_id=e.occurrence_id WHERE e.modality='RECURRING' GROUP BY s.member_id
+                UNION ALL SELECT s.member_id,'expenseAmountInCents',SUM(s.amount_in_cents-${correctionShareDelta('e.occurrence_id', 's.member_id')}) FROM expenses e JOIN financial_installment_shares s ON s.installment_id=e.occurrence_id WHERE e.modality='INSTALLMENT' GROUP BY s.member_id
                 UNION ALL SELECT x."memberId",'expenseAmountInCents',SUM(x."amountInCents"-s.amount_in_cents) FROM expenses e JOIN financial_installment_anticipations a ON a.installment_id=e.occurrence_id CROSS JOIN LATERAL jsonb_to_recordset(a.economic_shares) AS x("memberId" uuid,"amountInCents" bigint) JOIN financial_installment_shares s ON s.installment_id=a.installment_id AND s.member_id=x."memberId" WHERE e.modality='INSTALLMENT_ADJUSTMENT' GROUP BY x."memberId"
-                UNION ALL SELECT x."memberId",'expenseAmountInCents',SUM(x."amountInCents"-COALESCE((SELECT y."amountInCents" FROM jsonb_to_recordset(p.recognized_remaining_shares) AS y("memberId" uuid,"amountInCents" bigint) WHERE y."memberId"=x."memberId"),0))
-                    FROM expenses e JOIN financial_installment_payoffs p ON p.commitment_id=e.commitment_id
+                UNION ALL SELECT x."memberId",'expenseAmountInCents',SUM(x."amountInCents"-COALESCE((SELECT y."amountInCents" FROM jsonb_to_recordset(CASE WHEN ${priorCompensatedPayoff('p')} THEN p.expected_economic_shares ELSE p.recognized_remaining_shares END) AS y("memberId" uuid,"amountInCents" bigint) WHERE y."memberId"=x."memberId"),0)-CASE WHEN ${priorCompensatedPayoff('p')} THEN 0 ELSE COALESCE((SELECT (change->>'amountInCents')::bigint FROM jsonb_array_elements(COALESCE(NULLIF(p.recognized_manual_adjustments->'shareChanges','null'::jsonb),'[]'::jsonb)) change WHERE (change->>'memberId')::uuid=x."memberId"),0) END)
+                    FROM expenses e JOIN financial_installment_payoffs p ON p.space_id=e.space_id AND p.commitment_id=e.commitment_id AND p.id=e.occurrence_id
                     CROSS JOIN LATERAL jsonb_to_recordset(p.economic_shares) AS x("memberId" uuid,"amountInCents" bigint)
                     WHERE e.modality='INSTALLMENT_PAYOFF' GROUP BY x."memberId"
                 UNION ALL SELECT x."memberId",'expenseAmountInCents',-SUM(x."amountInCents")
                     FROM expenses e JOIN financial_installment_resolutions r ON r.installment_id=e.occurrence_id
                     CROSS JOIN LATERAL jsonb_to_recordset(r.economic_shares) AS x("memberId" uuid,"amountInCents" bigint)
-                    WHERE e.modality='INSTALLMENT_CANCELLATION' AND e.amount_in_cents<0 GROUP BY x."memberId"
+                    WHERE e.modality='INSTALLMENT_CANCELLATION' AND r.type='CANCELLED' AND e.amount_in_cents<0 GROUP BY x."memberId"
                 UNION ALL SELECT NULL,'realizedIncomeAmountInCents',SUM(amount_in_cents) FROM period_receipts WHERE fact_date >= $2::date AND fact_date < $3::date
                 UNION ALL SELECT payer_member_id,'paidAmountInCents',SUM(amount_in_cents) FROM financial_disbursements WHERE space_id=$1 AND fact_date >= $2::date AND fact_date < $3::date GROUP BY GROUPING SETS((),(payer_member_id)) HAVING GROUPING(payer_member_id)=1 OR payer_member_id IS NOT NULL
                 UNION ALL SELECT recipient_member_id,'receivedAmountInCents',SUM(amount_in_cents) FROM period_receipts WHERE fact_date >= $2::date AND fact_date < $3::date GROUP BY GROUPING SETS((),(recipient_member_id)) HAVING GROUPING(recipient_member_id)=1 OR recipient_member_id IS NOT NULL
@@ -461,7 +543,7 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
             income AS (
                 SELECT v.amount_in_cents::text AS amount,COALESCE(SUM(r.amount_in_cents) FILTER (WHERE r.fact_date < $2::date),0)::text AS before,SUM(r.amount_in_cents)::text AS after,v.split_input AS "splitInput" FROM period_receipts r JOIN financial_income_versions v ON v.space_id=r.space_id AND v.commitment_id=r.commitment_id WHERE r.fact_date < $3::date AND v.split_input IS NOT NULL GROUP BY v.commitment_id,v.amount_in_cents,v.split_input HAVING COUNT(*) FILTER (WHERE r.fact_date >= $2::date)>0
                 UNION ALL
-                SELECT o.amount_in_cents::text,COALESCE(SUM(r.amount_in_cents) FILTER (WHERE r.fact_date < $2::date),0)::text,SUM(r.amount_in_cents)::text,v.split_input
+                SELECT o.amount_in_cents::text,COALESCE(SUM(r.amount_in_cents) FILTER (WHERE r.fact_date < $2::date),0)::text,SUM(r.amount_in_cents)::text,COALESCE((SELECT jsonb_build_object('mode','AMOUNTS','shares',a.economic_shares) FROM financial_commitment_adjustments a WHERE a.space_id=o.space_id AND a.target_id=o.id ORDER BY a.commitment_version DESC LIMIT 1),v.split_input)
                 FROM period_receipts r JOIN financial_occurrences o ON o.space_id=r.space_id AND o.id=r.occurrence_id
                 JOIN financial_recurrence_versions v ON v.space_id=o.space_id AND v.commitment_id=o.commitment_id AND v.version=o.economic_version
                 WHERE r.fact_date < $3::date AND v.split_input IS NOT NULL
@@ -471,6 +553,8 @@ export class TypeOrmFinancialReviewReader implements FinancialReviewReader {
             SELECT COALESCE((SELECT jsonb_agg(payload || jsonb_build_object('memberId',member_id)) FROM metrics),'[]'::jsonb) AS metrics,
                 COALESCE((SELECT jsonb_agg(i) FROM income i),'[]'::jsonb) AS income,COALESCE((SELECT jsonb_agg(o) FROM open o),'[]'::jsonb) AS open`,
             [scope.spaceId, scope.start, scope.end],
+            scope.referenceDate,
+            false,
         );
         const row = rows[0];
         // SQL sums remain decimal strings; only bounded original amounts enter domain allocation.

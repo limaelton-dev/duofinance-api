@@ -97,6 +97,20 @@ result.properties = {
     externalLiability: ref('ExternalLiability'),
     settlement: ref('ExternalLiabilitySettlement'),
 };
+for (const schema of [view, result]) {
+    schema.properties = {
+        ...schema.properties,
+        reversals: {
+            type: 'array',
+            items: ref('FinancialFulfillmentReversal'),
+        },
+        validDisbursements: { type: 'array', items: payment },
+        validExternalLiabilities: {
+            type: 'array',
+            items: ref('ExternalLiability'),
+        },
+    };
+}
 const response = (
     schema: SchemaObject | ReferenceObject,
     description: string,

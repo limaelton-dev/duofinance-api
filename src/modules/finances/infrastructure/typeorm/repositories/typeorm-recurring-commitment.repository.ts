@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { financialFulfillmentReversals } from '../queries/financial-fulfillment-reversal-projection.js';
+import { financialCorrections } from '../queries/financial-correction-projection.js';
 import { randomUUID } from 'node:crypto';
 import { In } from 'typeorm';
 import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
@@ -550,6 +552,12 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
             );
         if (row.economicVersion === null)
             throw new Error('Recurring occurrence without economic version');
+        const corrections = await financialCorrections(
+            m,
+            root.spaceId,
+            root.id,
+            row.id,
+        );
         return new FinancialOccurrence(
             row.id,
             row.commitmentId,
@@ -585,6 +593,14 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
                       registeredAt: cancellation.registered_at.toISOString(),
                   }
                 : null,
+            corrections.adjustments,
+            corrections.adjustments.at(-1)?.economicShares ?? null,
+            await financialFulfillmentReversals(
+                m,
+                root.spaceId,
+                root.id,
+                row.id,
+            ),
         );
     }
 

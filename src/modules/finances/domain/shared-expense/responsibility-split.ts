@@ -16,9 +16,40 @@ export class EconomicShare {
     }
 }
 export class ResponsibilitySplit {
+    static fromEffectiveShares(
+        total: number,
+        shares: readonly EconomicShare[],
+    ): ResponsibilitySplit {
+        if (total > 0)
+            return ResponsibilitySplit.create(
+                total,
+                shares.map((share) => share.memberId),
+                {
+                    mode: 'AMOUNTS',
+                    shares: shares.map((share) => ({ ...share })),
+                },
+            );
+        Money.from(total);
+        if (
+            shares.length < 1 ||
+            shares.length > 2 ||
+            new Set(shares.map((share) => share.memberId)).size !==
+                shares.length ||
+            shares.some((share) => share.amountInCents !== 0)
+        )
+            invalidExpense();
+        return new ResponsibilitySplit(
+            Money.from(0),
+            { mode: 'AMOUNTS', shares: shares.map((share) => ({ ...share })) },
+            Object.freeze(
+                shares.map((share) => new EconomicShare(share.memberId, 0)),
+            ),
+        );
+    }
     realizedShares(total: number): readonly EconomicShare[] {
         Money.from(total);
         if (total > this.total.amountInCents) invalidExpense();
+        if (this.total.amountInCents === 0) return this.shares;
         const denominator =
             this.original.mode === 'PERCENTAGES'
                 ? 10000n

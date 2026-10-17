@@ -3,6 +3,31 @@ import type { Server } from 'node:http';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { DataSource } from 'typeorm';
+import { TEST_DATABASE_URL } from './setup-env.js';
+
+export async function rewindFinanceMigrationsTo(
+    source: DataSource,
+    name: string,
+) {
+    if (
+        source.options.type !== 'postgres' ||
+        source.options.url !== TEST_DATABASE_URL ||
+        !source.migrations.some(
+            (migration) =>
+                (migration.name ?? migration.constructor.name) === name,
+        )
+    )
+        throw new Error('Expected a known migration in disposable PostgreSQL');
+    for (let index = 0; index <= source.migrations.length; index++) {
+        const [latest]: { name: string }[] = await source.query(
+            'SELECT name FROM migrations ORDER BY id DESC LIMIT 1',
+        );
+        if (latest?.name === name) return;
+        if (!latest) break;
+        await source.undoLastMigration();
+    }
+    throw new Error('Requested migration is not applied');
+}
 import { expect, vi } from 'vitest';
 
 export const financeBase = (space: string) => `/v2/spaces/${space}`;

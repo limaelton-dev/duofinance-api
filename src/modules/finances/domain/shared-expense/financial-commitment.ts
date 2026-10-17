@@ -5,8 +5,17 @@ import { ResponsibilitySplit } from './responsibility-split.js';
 import { Money } from './money.js';
 import { civilDate } from './settlement-cycle.js';
 import { invalidExpense } from './validation.js';
+import type {
+    FinancialAdjustment,
+    FinancialCancellation,
+} from '../corrections/financial-correction.js';
+import {
+    assertFinancialReversalHistory,
+    validFinancialAmount,
+    type FinancialFulfillmentReversal,
+} from '../reversals/financial-fulfillment-reversal.js';
 export interface CommitmentVersion {
-    readonly version: 1;
+    readonly version: number;
     readonly split: ResponsibilitySplit;
     readonly expectedPayerMemberId: string | null;
     readonly factDate: string | null;
@@ -56,7 +65,7 @@ export interface PersonalExternalLiability extends Omit<
 export type ExpenseExternalLiability<V extends ExpenseVersion> =
     V extends CommitmentVersion ? ExternalLiability : PersonalExternalLiability;
 export interface PersonalCommitmentVersion {
-    readonly version: 1;
+    readonly version: number;
     readonly ownerPersonId: string;
     readonly amount: Money;
     readonly factDate: string | null;
@@ -78,6 +87,11 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
     readonly disbursement: ExpenseDisbursement<V> | null;
     readonly disbursements: readonly ExpenseDisbursement<V>[];
     readonly externalLiabilities: readonly ExpenseExternalLiability<V>[];
+    readonly validDisbursements: readonly ExpenseDisbursement<V>[];
+    readonly validExternalLiabilities: readonly ExpenseExternalLiability<V>[];
+    readonly validFulfillments: readonly (
+        ExpenseDisbursement<V> | ExpenseExternalLiability<V>
+    )[];
     readonly fulfillments: readonly (
         ExpenseDisbursement<V> | ExpenseExternalLiability<V>
     )[];
@@ -94,8 +108,10 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
         | 'PENDING'
         | 'PARTIALLY_PAID'
         | 'PAID'
+        | 'CANCELLED'
         | 'PARTIALLY_FULFILLED'
         | 'FULFILLED';
+    readonly cancellation: FinancialCancellation | null;
     constructor(
         readonly id: string,
         readonly spaceId: string,
@@ -107,6 +123,9 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
         today: string,
         version?: number,
         liabilities: readonly ExpenseExternalLiability<V>[] = [],
+        readonly adjustments: readonly FinancialAdjustment[] = [],
+        cancellation: FinancialCancellation | null = null,
+        readonly reversals: readonly FinancialFulfillmentReversal[] = [],
     ) {
         const facts: readonly ExpenseDisbursement<V>[] = Array.isArray(payments)
             ? payments
@@ -118,6 +137,27 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
         const events = [...all, ...settlements].sort(
             (a, b) => a.sequence - b.sequence,
         );
+        assertFinancialReversalHistory(
+            reversals,
+            [
+                ...facts.map((fact) => ({
+                    id: fact.id,
+                    amountInCents: fact.amountInCents,
+                    kind: 'DISBURSEMENT' as const,
+                })),
+                ...liabilities.map((fact) => ({
+                    id: fact.id,
+                    amountInCents: fact.amountInCents,
+                    kind: 'EXTERNAL_LIABILITY' as const,
+                })),
+                ...settlements.map((fact) => ({
+                    ...fact,
+                    kind: 'EXTERNAL_SETTLEMENT' as const,
+                })),
+            ],
+            spaceId,
+            id,
+        );
         const personal = 'ownerPersonId' in initialVersion;
         const original = personal
             ? initialVersion.amount.amountInCents
@@ -127,8 +167,9 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
             !id ||
             !spaceId ||
             !createdByPersonId ||
-            initialVersion.version !== 1 ||
-            original < 1 ||
+            !Number.isSafeInteger(initialVersion.version) ||
+            initialVersion.version < 1 ||
+            (original < 1 && !(original === 0 && adjustments.length > 0)) ||
             !description.trim() ||
             description !== description.trim() ||
             description.length > 160 ||
@@ -202,7 +243,14 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
                       ))
             )
                 invalidExpense();
-            total += BigInt(fact.amountInCents);
+            total += BigInt(
+                validFinancialAmount(
+                    fact.amountInCents,
+                    reversals,
+                    'DISBURSEMENT',
+                    fact.id,
+                ),
+            );
         }
         let assumed = 0n;
         let settled = 0n;
@@ -232,12 +280,33 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
                           payment.holderPersonId !== undefined)
                 )
                     invalidExpense();
-                liabilitySettled += BigInt(payment.amountInCents);
+                liabilitySettled += BigInt(
+                    validFinancialAmount(
+                        payment.amountInCents,
+                        reversals,
+                        'EXTERNAL_SETTLEMENT',
+                        payment.id,
+                    ),
+                );
             }
             if (
-                liabilitySettled > BigInt(fact.amountInCents) ||
+                liabilitySettled >
+                    BigInt(
+                        validFinancialAmount(
+                            fact.amountInCents,
+                            reversals,
+                            'EXTERNAL_LIABILITY',
+                            fact.id,
+                        ),
+                    ) ||
                 fact.remainingAmountInCents !==
-                    fact.amountInCents - Number(liabilitySettled)
+                    validFinancialAmount(
+                        fact.amountInCents,
+                        reversals,
+                        'EXTERNAL_LIABILITY',
+                        fact.id,
+                    ) -
+                        Number(liabilitySettled)
             )
                 invalidExpense();
             settled += liabilitySettled;
@@ -260,7 +329,14 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
                       ))
             )
                 invalidExpense();
-            assumed += BigInt(fact.amountInCents);
+            assumed += BigInt(
+                validFinancialAmount(
+                    fact.amountInCents,
+                    reversals,
+                    'EXTERNAL_LIABILITY',
+                    fact.id,
+                ),
+            );
         }
         if (total + assumed > BigInt(original)) invalidExpense();
         this.initialVersion = Object.freeze(
@@ -307,6 +383,48 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
                 (a, b) => a.sequence! - b.sequence!,
             ),
         );
+        this.validDisbursements = Object.freeze(
+            this.disbursements
+                .map((fact) => ({
+                    ...fact,
+                    amountInCents: validFinancialAmount(
+                        fact.amountInCents,
+                        reversals,
+                        'DISBURSEMENT',
+                        fact.id,
+                    ),
+                }))
+                .filter((fact) => fact.amountInCents > 0),
+        ) as unknown as readonly ExpenseDisbursement<V>[];
+        this.validExternalLiabilities = Object.freeze(
+            this.externalLiabilities
+                .map((fact) => ({
+                    ...fact,
+                    amountInCents: validFinancialAmount(
+                        fact.amountInCents,
+                        reversals,
+                        'EXTERNAL_LIABILITY',
+                        fact.id,
+                    ),
+                    settlements: (fact.settlements ?? [])
+                        .map((settlement) => ({
+                            ...settlement,
+                            amountInCents: validFinancialAmount(
+                                settlement.amountInCents,
+                                reversals,
+                                'EXTERNAL_SETTLEMENT',
+                                settlement.id,
+                            ),
+                        }))
+                        .filter((settlement) => settlement.amountInCents > 0),
+                }))
+                .filter((fact) => fact.amountInCents > 0),
+        ) as unknown as readonly ExpenseExternalLiability<V>[];
+        this.validFulfillments = Object.freeze(
+            [...this.validDisbursements, ...this.validExternalLiabilities].sort(
+                (a, b) => a.sequence! - b.sequence!,
+            ),
+        );
         this.disbursement = this.disbursements[0] ?? null;
         this.version = version ?? Math.max(1, events.length);
         this.assumedAmountInCents = Number(assumed);
@@ -320,13 +438,19 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
             initialVersion.expectedPaymentDate < today &&
             this.remainingAmountInCents > 0;
         this.fulfillmentStatus =
-            events.length === 0
-                ? 'PENDING'
-                : this.remainingAmountInCents === 0
-                  ? 'FULFILLED'
-                  : 'PARTIALLY_FULFILLED';
-        this.status =
-            events.length === 0
+            this.remainingAmountInCents === 0 && adjustments.length > 0
+                ? 'FULFILLED'
+                : total + assumed === 0n
+                  ? 'PENDING'
+                  : this.remainingAmountInCents === 0
+                    ? 'FULFILLED'
+                    : 'PARTIALLY_FULFILLED';
+        this.cancellation = cancellation;
+        this.status = cancellation
+            ? 'CANCELLED'
+            : this.remainingAmountInCents === 0 && adjustments.length > 0
+              ? 'FULFILLED'
+              : total + assumed === 0n
                 ? 'PENDING'
                 : liabilities.length
                   ? this.fulfillmentStatus
@@ -383,6 +507,9 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
                       }
                     : f,
             ) as readonly ExpenseExternalLiability<V>[],
+            this.adjustments,
+            this.cancellation,
+            this.reversals,
         );
     }
     recordExternalLiability(
@@ -390,6 +517,8 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
         expectedVersion: number,
         today: string,
     ): FinancialCommitment<V> {
+        if (this.cancellation)
+            throw new FinancesError('FINANCIAL_COMMITMENT_CANCELLED');
         if (expectedVersion !== this.version)
             throw new FinancesError('CONCURRENT_MODIFICATION');
         if (this.remainingAmountInCents === 0)
@@ -408,6 +537,9 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
                 ...this.externalLiabilities,
                 { ...liability, sequence: this.nextFactSequence },
             ],
+            this.adjustments,
+            this.cancellation,
+            this.reversals,
         );
     }
     recordDisbursement(
@@ -415,6 +547,8 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
         expectedVersion: number,
         today: string,
     ): FinancialCommitment<V> {
+        if (this.cancellation)
+            throw new FinancesError('FINANCIAL_COMMITMENT_CANCELLED');
         if (expectedVersion !== this.version)
             throw new FinancesError('CONCURRENT_MODIFICATION');
         if (this.remainingAmountInCents === 0)
@@ -433,6 +567,9 @@ export class FinancialCommitment<V extends ExpenseVersion = CommitmentVersion> {
             today,
             this.version + 1,
             this.externalLiabilities,
+            this.adjustments,
+            this.cancellation,
+            this.reversals,
         );
     }
     private get nextFactSequence(): number {

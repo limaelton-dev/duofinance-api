@@ -1,4 +1,14 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { financialFulfillmentReversals } from '../queries/financial-fulfillment-reversal-projection.js';
+import {
+    financialCorrections,
+    applyFinancialAdjustments,
+} from '../queries/financial-correction-projection.js';
+import {
+    applicableNonRecurringVersion,
+    nonRecurringVersions,
+    withNonRecurringReadModels,
+} from '../queries/non-recurring-version-selection.js';
 import { FinancialCommitmentSettlementRuleOrmEntity } from '../entities/settlement-adjustment.orm-entity.js';
 import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
 import type { IncomeRepository } from '../../../application/ports/private/income.ports.js';
@@ -14,6 +24,8 @@ import { ResponsibilitySplit } from '../../../domain/shared-expense/responsibili
 import { FinancesError } from '../../../domain/errors/finances.error.js';
 import {
     INTER_MEMBER_OBLIGATION_REPOSITORY,
+    FINANCES_CLOCK,
+    type FinancesClock,
     type InterMemberObligationRepository,
 } from '../../../application/ports/private/shared-expense.repositories.js';
 import {
@@ -31,6 +43,9 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
         private readonly provider: EntityManagerProvider,
         @Inject(INTER_MEMBER_OBLIGATION_REPOSITORY)
         private readonly obligations: InterMemberObligationRepository,
+        @Optional()
+        @Inject(FINANCES_CLOCK)
+        private readonly clock?: FinancesClock,
     ) {}
     async save(income: IncomeCommitment): Promise<void> {
         const m = this.provider.get(),
@@ -116,11 +131,49 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
             where: { spaceId, commitmentId },
             order: { sequence: 'ASC' },
         });
+        const economicVersions = await nonRecurringVersions(
+            m,
+            spaceId,
+            commitmentId,
+        );
+        const applicable = applicableNonRecurringVersion(
+            economicVersions,
+            c.id,
+            this.clock?.today() ??
+                new Date().toLocaleDateString('en-CA', {
+                    timeZone: 'America/Sao_Paulo',
+                }),
+            receipts.map((receipt) => receipt.factDate).sort()[0],
+        );
+        if (applicable) {
+            c.description = applicable.description;
+            v.amountInCents = applicable.amountInCents;
+            v.splitInput = applicable.distribution;
+            v.expectedRecipientMemberId = applicable.expectedMemberId;
+        }
+        const corrections = await financialCorrections(
+            m,
+            spaceId,
+            commitmentId,
+            c.id,
+        );
+        const adjusted = applyFinancialAdjustments(
+            v.amountInCents,
+            v.ownerPersonId
+                ? null
+                : ResponsibilitySplit.create(
+                      v.amountInCents,
+                      v.splitInput!.shares.map((share) => share.memberId),
+                      v.splitInput!,
+                  ).shares,
+            corrections.adjustments,
+            applicable?.version ?? 1,
+        );
         return new IncomeCommitment(
             c.id,
             c.spaceId,
             c.description,
-            v.amountInCents,
+            adjusted.amountInCents,
             v.expectedReceiptDate,
             c.createdBy,
             c.registeredAt.toISOString(),
@@ -128,11 +181,16 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
                 ? { type: 'PERSONAL', ownerPersonId: v.ownerPersonId }
                 : {
                       type: 'SHARED',
-                      split: ResponsibilitySplit.create(
-                          v.amountInCents,
-                          v.splitInput!.shares.map((s) => s.memberId),
-                          v.splitInput!,
-                      ),
+                      split: corrections.adjustments.length
+                          ? ResponsibilitySplit.fromEffectiveShares(
+                                adjusted.amountInCents,
+                                adjusted.economicShares!,
+                            )
+                          : ResponsibilitySplit.create(
+                                v.amountInCents,
+                                v.splitInput!.shares.map((s) => s.memberId),
+                                v.splitInput!,
+                            ),
                       expectedRecipientMemberId: v.expectedRecipientMemberId,
                       settlementRuleSnapshot: v.ruleSnapshot,
                       settlementRuleSourceVersion: v.ruleSourceVersion,
@@ -147,6 +205,9 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
                 recipientMemberId: r.recipientMemberId,
             })),
             c.version,
+            corrections.adjustments,
+            corrections.cancellation,
+            await financialFulfillmentReversals(m, spaceId, commitmentId, c.id),
         );
     }
     async saveReceipt(
@@ -256,6 +317,21 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
             receipt: income.receipt,
             receipts: income.receipts,
             status: income.status,
+            ...(income.reversals.length
+                ? {
+                      reversals: income.reversals,
+                      validReceipts: income.validReceipts,
+                  }
+                : {}),
+            ...(income.adjustments.length || income.cancellation
+                ? {
+                      adjustments: income.adjustments,
+                      cancellation: income.cancellation,
+                      originalAmountInCents:
+                          income.adjustments[0]?.previousAmountInCents ??
+                          income.amountInCents,
+                  }
+                : {}),
             receivedAmountInCents: income.receivedAmountInCents,
             remainingAmountInCents: income.remainingAmountInCents,
             obligations,
@@ -270,21 +346,30 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
         };
     }
     private summaryQuery(spaceId: string) {
+        const today =
+            this.clock?.today() ??
+            new Date().toLocaleDateString('en-CA', {
+                timeZone: 'America/Sao_Paulo',
+            });
+        const reference = `'${today}'::date`;
         return this.provider
             .get()
             .createQueryBuilder(FinancialCommitmentOrmEntity, 'c')
             .innerJoin(
-                FinancialIncomeVersionOrmEntity,
+                `(${withNonRecurringReadModels('SELECT * FROM financial_income_versions', reference)})`,
                 'v',
                 'v.commitment_id=c.id AND v.space_id=c.space_id',
             )
             .select('c.id', 'id')
-            .addSelect('c.description', 'description')
+            .addSelect(
+                `COALESCE((SELECT change.description FROM financial_non_recurring_versions change WHERE change.space_id=c.space_id AND change.commitment_id=c.id AND change.target_id=c.id AND change.effective_from<=LEAST(${reference},COALESCE((SELECT MIN(r.fact_date) FROM financial_receipts r WHERE r.space_id=c.space_id AND r.commitment_id=c.id),${reference})) ORDER BY change.effective_from DESC LIMIT 1),c.description)`,
+                'description',
+            )
             .addSelect('v.amount_in_cents', 'amountInCents')
             .addSelect('v.expected_receipt_date::text', 'expectedReceiptDate')
             .addSelect('c.registered_at', 'registeredAt')
             .addSelect(
-                `COALESCE((SELECT SUM(r.amount_in_cents) FROM financial_receipts r WHERE r.space_id=c.space_id AND r.commitment_id=c.id),0)::text`,
+                `COALESCE((SELECT SUM(r.amount_in_cents-COALESCE((SELECT SUM(rev.amount_in_cents) FROM financial_fulfillment_reversals rev WHERE rev.space_id=r.space_id AND rev.original_id=r.id AND rev.original_kind='RECEIPT'),0)) FROM financial_receipts r WHERE r.space_id=c.space_id AND r.commitment_id=c.id),0)::text`,
                 'received',
             )
             .where('c.space_id=:spaceId AND c.kind=:kind', {
@@ -319,7 +404,7 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
                       : 'PARTIALLY_RECEIVED',
         }));
     }
-    private readonly remainingSql = `COALESCE((SELECT SUM(r.amount_in_cents) FROM financial_receipts r WHERE r.space_id=c.space_id AND r.commitment_id=c.id),0)<v.amount_in_cents`;
+    private readonly remainingSql = `COALESCE((SELECT SUM(r.amount_in_cents-COALESCE((SELECT SUM(rev.amount_in_cents) FROM financial_fulfillment_reversals rev WHERE rev.space_id=r.space_id AND rev.original_id=r.id AND rev.original_kind='RECEIPT'),0)) FROM financial_receipts r WHERE r.space_id=c.space_id AND r.commitment_id=c.id),0)<v.amount_in_cents`;
     async list(
         spaceId: string,
         status: 'ALL' | 'PENDING' | 'RECEIVED',

@@ -206,6 +206,20 @@ const detail = object({
 detail.required = detail.required!.filter(
     (name) => !(name in expenseSupportProperties) && name !== 'overdue',
 );
+for (const schema of [detail, result]) {
+    schema.properties = {
+        ...schema.properties,
+        reversals: {
+            type: 'array',
+            items: ref('FinancialFulfillmentReversal'),
+        },
+        validDisbursements: { type: 'array', items: payment },
+        validExternalLiabilities: {
+            type: 'array',
+            items: ref('ExternalLiability'),
+        },
+    };
+}
 const input = object({
     expectedSpaceVersion: positive,
     description: { type: 'string', minLength: 1, maxLength: 160 },

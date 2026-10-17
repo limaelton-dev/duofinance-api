@@ -21,6 +21,8 @@ export const externalLiabilityProjection = `
                 jsonb_strip_nulls(jsonb_build_object(
                     'id',f.id,'sequence',f.sequence,'holderMemberId',f.holder_member_id,'holderPersonId',f.holder_person_id,
                     'amountInCents',f.amount_in_cents,'remainingAmountInCents',f.remaining_amount_in_cents,
+                    'originalAmountInCents',CASE WHEN EXISTS(SELECT 1 FROM financial_fulfillment_reversals r WHERE r.space_id=f.space_id AND r.original_kind='EXTERNAL_LIABILITY' AND r.original_id=f.id) THEN (SELECT original.amount_in_cents FROM public.financial_external_liabilities original WHERE original.space_id=f.space_id AND original.id=f.id) END,
+                    'validAmountInCents',CASE WHEN EXISTS(SELECT 1 FROM financial_fulfillment_reversals r WHERE r.space_id=f.space_id AND r.original_kind='EXTERNAL_LIABILITY' AND r.original_id=f.id) THEN (SELECT original.amount_in_cents FROM public.financial_external_liabilities original WHERE original.space_id=f.space_id AND original.id=f.id)-(SELECT SUM(r.amount_in_cents) FROM financial_fulfillment_reversals r WHERE r.space_id=f.space_id AND r.original_kind='EXTERNAL_LIABILITY' AND r.original_id=f.id) END,
                     'factDate',f.fact_date,'registeredAt',to_char(f.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
                     'recordedByPersonId',f.recorded_by_person_id,'settlements',COALESCE((
                         SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object(

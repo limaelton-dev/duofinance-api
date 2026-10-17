@@ -49,6 +49,7 @@ export class InterMemberObligation {
         readonly originExternalLiabilityId: string | null = null,
         readonly waived = false,
         readonly occurrenceId: string | null = null,
+        readonly correctionCauseId: string | null = null,
     ) {
         if (
             debtorMemberId === creditorMemberId ||
