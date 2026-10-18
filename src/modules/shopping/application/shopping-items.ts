@@ -6,6 +6,7 @@ import {
     changeItemNeed,
     itemProgress,
     validateItem,
+    removeItem,
     type ShoppingItem,
 } from '../domain/shopping-item.js';
 import { ShoppingError } from '../domain/shopping-error.js';
@@ -59,6 +60,7 @@ export class ShoppingItems {
                     unit: normalized.unit,
                     creator: shoppingAuthor(context, actor),
                     createdAt: now,
+                    removedAt: null,
                 };
                 validateItem(item);
                 const after = { ...before, version: before.version + 1 };
@@ -152,6 +154,53 @@ export class ShoppingItems {
                             unit: item.unit,
                         },
                     },
+                });
+                return {
+                    id: listId,
+                    version: after.version,
+                    item: itemProgress(item, oldItem.purchasedQuantity),
+                };
+            },
+        );
+    }
+    remove(
+        actor: string,
+        space: string,
+        listId: string,
+        itemId: string,
+        key: string,
+        input: { expectedVersion: number },
+    ) {
+        return this.commands.execute(
+            actor,
+            space,
+            key,
+            'REMOVE_SHOPPING_ITEM',
+            `${listId}/${itemId}`,
+            input,
+            async (context, now) => {
+                const before = await this.store.find(space, listId);
+                requireActiveList(before);
+                if (before.version !== input.expectedVersion)
+                    throw new ShoppingError('CONCURRENT_MODIFICATION');
+                const oldItem = await this.store.findItem(
+                    space,
+                    listId,
+                    itemId,
+                );
+                const item = removeItem(oldItem, now);
+                const after = { ...before, version: before.version + 1 };
+                await this.store.update(before, after);
+                await this.store.updateItem(space, item);
+                await this.store.event({
+                    id: randomUUID(),
+                    spaceId: space,
+                    aggregateId: listId,
+                    sequence: after.version,
+                    type: 'ITEM_REMOVED',
+                    actor: shoppingAuthor(context, actor),
+                    registeredAt: new Date(now),
+                    data: { itemId, removedAt: now },
                 });
                 return {
                     id: listId,

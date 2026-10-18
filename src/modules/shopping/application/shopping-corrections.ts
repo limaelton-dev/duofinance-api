@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { requireActiveList } from '../domain/shopping-list.js';
 import { Quantity } from '../domain/quantity.js';
-import { itemProgress } from '../domain/shopping-item.js';
+import { itemProgress, requireActiveItem } from '../domain/shopping-item.js';
 import { purchaseView } from '../domain/purchase-record.js';
 import {
     correctedPurchased,
@@ -48,6 +48,7 @@ export class ShoppingCorrections {
                 if (before.version !== input.expectedVersion)
                     throw new ShoppingError('CONCURRENT_MODIFICATION');
                 const item = await this.store.findItem(space, listId, itemId);
+                requireActiveItem(item);
                 const purchase = await this.store.findPurchase(
                     space,
                     listId,

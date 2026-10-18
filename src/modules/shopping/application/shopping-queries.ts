@@ -32,15 +32,24 @@ export function shoppingListView(
 ) {
     return {
         ...list,
-        summary,
+        summary: {
+            ...summary,
+            canSuggestArchival:
+                list.status === 'ACTIVE' && summary.canSuggestArchival,
+        },
         allowedActions:
-            canWrite && list.status === 'ACTIVE' ? ['RENAME', 'ADD_ITEM'] : [],
+            canWrite && list.status === 'ACTIVE'
+                ? ['RENAME', 'ADD_ITEM', 'ARCHIVE']
+                : [],
     };
 }
 export function shoppingItemView(item: ShoppingItemState, canWrite = true) {
     return {
         ...itemProgress(item, item.purchasedQuantity),
-        allowedActions: canWrite ? ['CHANGE_NEED', 'RECORD_PURCHASE'] : [],
+        allowedActions:
+            canWrite && item.removedAt === null
+                ? ['CHANGE_NEED', 'RECORD_PURCHASE', 'REMOVE']
+                : [],
     };
 }
 function itemScope(
@@ -74,12 +83,14 @@ function itemPage(
                       createdAt: page.items[limit - 1].createdAt,
                       id: page.items[limit - 1].id,
                       group:
-                          itemProgress(
-                              page.items[limit - 1],
-                              page.items[limit - 1].purchasedQuantity,
-                          ).status === 'PURCHASED'
-                              ? 1
-                              : 0,
+                          page.items[limit - 1].removedAt !== null
+                              ? 2
+                              : itemProgress(
+                                      page.items[limit - 1],
+                                      page.items[limit - 1].purchasedQuantity,
+                                  ).status === 'PURCHASED'
+                                ? 1
+                                : 0,
                   })
                 : null,
     };
@@ -108,7 +119,7 @@ function itemKey(value: unknown): ShoppingItemKey | null {
         typeof value !== 'object' ||
         value === null ||
         !('group' in value) ||
-        (value.group !== 0 && value.group !== 1)
+        (value.group !== 0 && value.group !== 1 && value.group !== 2)
     )
         throw new ShoppingError('VALIDATION_ERROR', 'cursor');
     return { ...key, group: value.group };
@@ -240,7 +251,11 @@ export class ShoppingQueries {
             ({ list, summaries, page }, context) => ({
                 id: list.id,
                 version: list.version,
-                summary: summaries.get(id) ?? shoppingSummary(),
+                summary: shoppingListView(
+                    list,
+                    context.status === 'ACTIVE',
+                    summaries.get(id),
+                ).summary,
                 ...itemPage(
                     page,
                     scope,

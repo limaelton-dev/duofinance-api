@@ -102,13 +102,15 @@ export class TypeOrmShoppingStore implements ShoppingStore {
             .insert(ShoppingItemOrmEntity, itemToRow(space, item));
     }
     async updateItem(spaceId: string, item: ShoppingItem) {
-        const changed = await this.provider
-            .get()
-            .update(
-                ShoppingItemOrmEntity,
-                { spaceId, listId: item.listId, id: item.id },
-                { desiredQuantity: item.desiredQuantity, unit: item.unit },
-            );
+        const changed = await this.provider.get().update(
+            ShoppingItemOrmEntity,
+            { spaceId, listId: item.listId, id: item.id },
+            {
+                desiredQuantity: item.desiredQuantity,
+                unit: item.unit,
+                removedAt: item.removedAt ? new Date(item.removedAt) : null,
+            },
+        );
         if (changed.affected !== 1)
             throw new ShoppingError('SHOPPING_ITEM_NOT_FOUND');
     }
@@ -124,10 +126,10 @@ export class TypeOrmShoppingStore implements ShoppingStore {
             partial: string;
             purchased: string;
         }[] = await this.provider.get().query(
-            `${shoppingProgressSql} SELECT list_id AS "listId",COUNT(*) AS active,
-                COUNT(*) FILTER (WHERE purchased_quantity=0) AS pending,
-                COUNT(*) FILTER (WHERE purchased_quantity>0 AND purchased_quantity<desired_quantity) AS partial,
-                COUNT(*) FILTER (WHERE purchased_quantity>=desired_quantity) AS purchased
+            `${shoppingProgressSql} SELECT list_id AS "listId",COUNT(*) FILTER (WHERE removed_at IS NULL) AS active,
+                COUNT(*) FILTER (WHERE removed_at IS NULL AND purchased_quantity=0) AS pending,
+                COUNT(*) FILTER (WHERE removed_at IS NULL AND purchased_quantity>0 AND purchased_quantity<desired_quantity) AS partial,
+                COUNT(*) FILTER (WHERE removed_at IS NULL AND purchased_quantity>=desired_quantity) AS purchased
             FROM item_progress GROUP BY list_id`,
             [spaceId, lists],
         );

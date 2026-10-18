@@ -10,6 +10,7 @@ export interface ShoppingItem {
     unit: string | null;
     creator: ShoppingAuthor;
     createdAt: string;
+    removedAt: string | null;
 }
 export interface ShoppingItemState extends ShoppingItem {
     purchasedQuantity: string;
@@ -75,11 +76,13 @@ export function itemProgress(item: ShoppingItem, purchasedQuantity = '0') {
         purchasedQuantity: purchased.toString(),
         remainingQuantity: desired.subtractFloor(purchased).toString(),
         status:
-            purchased.scaledUnits === 0
-                ? ('PENDING' as const)
-                : purchased.scaledUnits < desired.scaledUnits
-                  ? ('PARTIALLY_PURCHASED' as const)
-                  : ('PURCHASED' as const),
+            item.removedAt !== null
+                ? ('REMOVED' as const)
+                : purchased.scaledUnits === 0
+                  ? ('PENDING' as const)
+                  : purchased.scaledUnits < desired.scaledUnits
+                    ? ('PARTIALLY_PURCHASED' as const)
+                    : ('PURCHASED' as const),
     };
 }
 export function changeItemNeed(
@@ -87,6 +90,7 @@ export function changeItemNeed(
     input: { desiredQuantity?: string; unit?: string | null },
     purchasedQuantity = '0',
 ): ShoppingItem {
+    requireActiveItem(item);
     if (input.desiredQuantity === undefined && input.unit === undefined)
         throw new ShoppingError('VALIDATION_ERROR', 'body');
     const desired = Quantity.from(
@@ -115,4 +119,12 @@ export function changeItemNeed(
     };
     validateItem(changed);
     return changed;
+}
+export function requireActiveItem(item: ShoppingItem) {
+    if (item.removedAt !== null)
+        throw new ShoppingError('SHOPPING_ITEM_REMOVED');
+}
+export function removeItem(item: ShoppingItem, now: string): ShoppingItem {
+    requireActiveItem(item);
+    return { ...item, removedAt: now };
 }

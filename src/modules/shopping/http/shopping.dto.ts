@@ -4,6 +4,7 @@ import { Quantity } from '../domain/quantity.js';
 
 export const uuid = z.uuid().transform((v) => v.toLowerCase());
 export const version = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+export const listVersion = z.object({ expectedVersion: version }).strict();
 export const listName = z.string().trim().min(1).max(120).nullable();
 export const createList = z.object({ name: listName.default(null) }).strict();
 export const renameList = z

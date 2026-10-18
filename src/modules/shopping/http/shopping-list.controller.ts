@@ -22,6 +22,7 @@ import {
     renameList,
     listQuery,
     pageQuery,
+    listVersion,
 } from './shopping.dto.js';
 
 @Controller('spaces/:spaceId/shopping-lists')
@@ -61,6 +62,24 @@ export class ShoppingListController {
             p.listId!,
             key,
             parseZodInput(renameList, body),
+        );
+    }
+    @Post(':listId/archival')
+    @HttpCode(200)
+    @Header('Cache-Control', 'no-store')
+    archive(
+        @CurrentActor() actor: RequestActor,
+        @Param() raw: unknown,
+        @IdempotencyKey() key: string,
+        @Body() body: unknown,
+    ) {
+        const p = params(raw);
+        return this.lists.archive(
+            actor.personId.value,
+            p.spaceId,
+            p.listId!,
+            key,
+            parseZodInput(listVersion, body),
         );
     }
     @Get()

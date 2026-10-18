@@ -21,6 +21,7 @@ import {
     addItem,
     changeNeed,
     itemQuery,
+    listVersion,
 } from './shopping.dto.js';
 
 @Controller('spaces/:spaceId/shopping-lists/:listId/items')
@@ -63,6 +64,25 @@ export class ShoppingItemController {
             p.itemId!,
             key,
             parseZodInput(changeNeed, body),
+        );
+    }
+    @Post(':itemId/removal')
+    @HttpCode(200)
+    @Header('Cache-Control', 'no-store')
+    remove(
+        @CurrentActor() actor: RequestActor,
+        @Param() raw: unknown,
+        @IdempotencyKey() key: string,
+        @Body() body: unknown,
+    ) {
+        const p = params(raw);
+        return this.commands.remove(
+            actor.personId.value,
+            p.spaceId,
+            p.listId!,
+            p.itemId!,
+            key,
+            parseZodInput(listVersion, body),
         );
     }
     @Get()

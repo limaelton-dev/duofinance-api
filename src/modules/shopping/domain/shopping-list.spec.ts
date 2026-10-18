@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     renameList,
+    archiveList,
     validateListName,
     type ShoppingList,
 } from './shopping-list.js';
@@ -17,6 +18,19 @@ const list: ShoppingList = {
 };
 
 describe('shopping list invariants', () => {
+    it('archives explicitly and preserves the list identity, author and creation', () => {
+        const archived = archiveList(list, '2026-10-18T15:00:00.000Z');
+        expect(archived).toEqual({
+            ...list,
+            status: 'ARCHIVED',
+            archivedAt: '2026-10-18T15:00:00.000Z',
+            version: 2,
+        });
+        expect(list.status).toBe('ACTIVE');
+        expect(() =>
+            archiveList(archived, '2026-10-18T16:00:00.000Z'),
+        ).toThrow();
+    });
     it('renames or clears a name without altering the original author or creation', () => {
         const changed = renameList(list, null);
         expect(changed).toEqual({ ...list, name: null, version: 2 });

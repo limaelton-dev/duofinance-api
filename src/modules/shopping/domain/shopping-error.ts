@@ -7,6 +7,7 @@ export class ShoppingError extends Error {
             | 'CONCURRENT_MODIFICATION'
             | 'IDEMPOTENCY_KEY_REUSED'
             | 'SHOPPING_LIST_ARCHIVED'
+            | 'SHOPPING_ITEM_REMOVED'
             | 'DESIRED_QUANTITY_BELOW_PURCHASED'
             | 'VALIDATION_ERROR',
         public readonly field?: string,
@@ -24,6 +25,8 @@ export class ShoppingError extends Error {
                     'Esta chave já foi utilizada com outros dados.',
                 SHOPPING_LIST_ARCHIVED:
                     'Esta lista está arquivada e permite somente consulta.',
+                SHOPPING_ITEM_REMOVED:
+                    'Este item foi removido e permite somente consulta.',
                 DESIRED_QUANTITY_BELOW_PURCHASED:
                     'A quantidade desejada não pode ser menor que a quantidade já comprada.',
                 VALIDATION_ERROR: 'Verifique os dados informados.',

@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import {
     renameList,
+    archiveList,
     validateListName,
     type ShoppingList,
 } from '../domain/shopping-list.js';
@@ -87,6 +88,40 @@ export class ShoppingLists {
                     actor: shoppingAuthor(context, actor),
                     registeredAt: new Date(now),
                     data: { before: before.name, after: name },
+                });
+                return after;
+            },
+        );
+    }
+    archive(
+        actor: string,
+        space: string,
+        id: string,
+        key: string,
+        input: { expectedVersion: number },
+    ) {
+        return this.commands.execute(
+            actor,
+            space,
+            key,
+            'ARCHIVE_SHOPPING_LIST',
+            id,
+            input,
+            async (context, now) => {
+                const before = await this.store.find(space, id);
+                if (before.version !== input.expectedVersion)
+                    throw new ShoppingError('CONCURRENT_MODIFICATION');
+                const after = archiveList(before, now);
+                await this.store.update(before, after);
+                await this.store.event({
+                    id: randomUUID(),
+                    spaceId: space,
+                    aggregateId: id,
+                    sequence: after.version,
+                    type: 'ARCHIVED',
+                    actor: shoppingAuthor(context, actor),
+                    registeredAt: new Date(now),
+                    data: { archivedAt: now },
                 });
                 return after;
             },

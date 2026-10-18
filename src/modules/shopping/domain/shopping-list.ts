@@ -37,3 +37,12 @@ export function renameList(
     validateListName(name);
     return { ...list, name, version: list.version + 1 };
 }
+export function archiveList(list: ShoppingList, now: string): ShoppingList {
+    requireActiveList(list);
+    return {
+        ...list,
+        status: 'ARCHIVED',
+        archivedAt: now,
+        version: list.version + 1,
+    };
+}

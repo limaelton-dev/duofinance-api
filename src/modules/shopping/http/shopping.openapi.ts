@@ -56,6 +56,7 @@ export const shoppingSchemas: Record<string, SchemaObject> = {
     }),
     ShoppingCreateList: object({ name }, []),
     ShoppingRenameList: object({ expectedVersion: version, name }),
+    ShoppingListVersion: object({ expectedVersion: version }),
     ShoppingList: object(listProperties),
     ShoppingAddItem: object(
         {
@@ -83,9 +84,10 @@ export const shoppingSchemas: Record<string, SchemaObject> = {
         unit,
         creator: ref('ShoppingAuthor'),
         createdAt: instant,
+        removedAt: nullable(instant),
         status: {
             type: 'string',
-            enum: ['PENDING', 'PARTIALLY_PURCHASED', 'PURCHASED'],
+            enum: ['PENDING', 'PARTIALLY_PURCHASED', 'PURCHASED', 'REMOVED'],
         },
     }),
     ShoppingItemCommand: object({
@@ -209,6 +211,8 @@ export const shoppingSchemas: Record<string, SchemaObject> = {
                         'ITEM_NEED_CHANGED',
                         'PURCHASE_RECORDED',
                         'PURCHASE_CORRECTED',
+                        'ITEM_REMOVED',
+                        'ARCHIVED',
                     ],
                 },
                 actor: ref('ShoppingAuthor'),
@@ -309,7 +313,7 @@ export function shoppingOperation(
                 {
                     description:
                         status === '409'
-                            ? 'CONCURRENT_MODIFICATION, IDEMPOTENCY_KEY_REUSED, SHOPPING_LIST_ARCHIVED ou DESIRED_QUANTITY_BELOW_PURCHASED'
+                            ? 'CONCURRENT_MODIFICATION, IDEMPOTENCY_KEY_REUSED, SHOPPING_LIST_ARCHIVED, SHOPPING_ITEM_REMOVED ou DESIRED_QUANTITY_BELOW_PURCHASED'
                             : status === '400'
                               ? 'VALIDATION_ERROR com campo útil em português'
                               : 'Resultado da operação',
@@ -422,5 +426,21 @@ shoppingOpenApi.paths[correctionBase] = {
         correctionBase,
         'ShoppingCorrectionCommand',
         'ShoppingCorrectPurchase',
+    ),
+};
+shoppingOpenApi.paths[`${base}/{listId}/archival`] = {
+    post: shoppingOperation(
+        'post',
+        `${base}/{listId}/archival`,
+        'ShoppingList',
+        'ShoppingListVersion',
+    ),
+};
+shoppingOpenApi.paths[`${itemBase}/{itemId}/removal`] = {
+    post: shoppingOperation(
+        'post',
+        `${itemBase}/{itemId}/removal`,
+        'ShoppingItemCommand',
+        'ShoppingListVersion',
     ),
 };

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     changeItemNeed,
     itemProgress,
+    removeItem,
     validateItem,
     type ShoppingItem,
 } from './shopping-item.js';
@@ -14,9 +15,25 @@ const item: ShoppingItem = {
     unit: 'kg',
     creator: { personId: 'person', memberId: null, displayName: 'Pessoa' },
     createdAt: '2026-10-18T14:00:00.000Z',
+    removedAt: null,
 };
 
 describe('shopping item needs', () => {
+    it('removes an item without changing its need, creator or purchased progress', () => {
+        const removed = removeItem(item, '2026-10-18T15:00:00.000Z');
+        expect(removed).toEqual({
+            ...item,
+            removedAt: '2026-10-18T15:00:00.000Z',
+        });
+        expect(itemProgress(removed, '2')).toMatchObject({
+            status: 'REMOVED',
+            purchasedQuantity: '2',
+            remainingQuantity: '0',
+        });
+        expect(item.removedAt).toBeNull();
+        expect(() => removeItem(removed, '2026-10-18T16:00:00.000Z')).toThrow();
+        expect(() => changeItemNeed(removed, { unit: null })).toThrow();
+    });
     it('changes the requested quantity and preserves description, author, unit and creation', () => {
         const changed = changeItemNeed(item, { desiredQuantity: '0.500' });
         expect(changed).toEqual({ ...item, desiredQuantity: '0.5' });

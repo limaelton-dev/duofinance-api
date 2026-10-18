@@ -93,6 +93,8 @@ export class ShoppingItemOrmEntity {
     @Column({ name: 'creator_display_name', type: 'varchar', length: 80 })
     creatorDisplayName!: string;
     @Column({ name: 'created_at', type: 'timestamptz' }) createdAt!: Date;
+    @Column({ name: 'removed_at', type: 'timestamptz', nullable: true })
+    removedAt!: Date | null;
 }
 @Entity('shopping_purchase_records')
 @Index('IDX_shopping_purchase_page', [
@@ -290,7 +292,7 @@ export function itemToRow(
     spaceId: string,
     item: ShoppingItem,
 ): ShoppingItemOrmEntity {
-    const { creator, createdAt, ...rest } = item;
+    const { creator, createdAt, removedAt, ...rest } = item;
     return {
         ...rest,
         spaceId,
@@ -298,6 +300,7 @@ export function itemToRow(
         creatorMemberId: creator.memberId,
         creatorDisplayName: creator.displayName,
         createdAt: new Date(createdAt),
+        removedAt: removedAt ? new Date(removedAt) : null,
     };
 }
 export function rowToItem(row: ShoppingItemOrmEntity): ShoppingItem {
@@ -316,6 +319,7 @@ export function rowToItem(row: ShoppingItemOrmEntity): ShoppingItem {
             displayName: row.creatorDisplayName,
         },
         createdAt: row.createdAt.toISOString(),
+        removedAt: row.removedAt?.toISOString() ?? null,
     };
 }
 export function purchaseToRow(
