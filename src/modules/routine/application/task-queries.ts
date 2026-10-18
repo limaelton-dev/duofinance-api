@@ -24,7 +24,7 @@ export function taskView(task: Task, canWrite = true) {
         allowedActions: !canWrite
             ? []
             : task.status === 'PENDING'
-              ? ['ASSIGN', 'COMPLETE']
+              ? ['ASSIGN', 'COMPLETE', 'DEADLINE', 'URGENCY', 'CANCEL']
               : task.status === 'COMPLETED'
                 ? ['REOPEN']
                 : [],

@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { TaskMaintenance } from './application/task-maintenance.js';
+import { TaskMaintenanceController } from './http/task-maintenance.controller.js';
 import { TaskCompletion } from './application/task-completion.js';
 import { TaskCompletionController } from './http/task-completion.controller.js';
 import { TASK_ATTENTION_READER } from './application/task-attention-reader.js';
@@ -34,6 +36,7 @@ import { TaskController } from './http/task.controller.js';
         ]),
     ],
     providers: [
+        TaskMaintenance,
         TaskCompletion,
         {
             provide: TASK_ATTENTION_READER,
@@ -47,7 +50,11 @@ import { TaskController } from './http/task.controller.js';
         TaskCreation,
         TaskQueries,
     ],
-    controllers: [TaskController, TaskCompletionController],
+    controllers: [
+        TaskController,
+        TaskCompletionController,
+        TaskMaintenanceController,
+    ],
     exports: [ROUTINE_ATTENTION_QUERY],
 })
 export class RoutineModule {}

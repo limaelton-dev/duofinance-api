@@ -261,12 +261,40 @@ export function routineOperation(
 }
 const base = '/v2/spaces/{spaceId}';
 routineSchemas.RoutineTaskVersion = object({ expectedVersion: integer });
+routineSchemas.RoutineDeadlineChange = object({
+    expectedVersion: integer,
+    deadline: nullable(ref('RoutineDeadline')),
+});
+routineSchemas.RoutineUrgencyChange = object({
+    expectedVersion: integer,
+    urgency: ref('RoutineUrgency'),
+});
 export const routineOpenApi: Pick<
     OpenAPIObject,
     'tags' | 'paths' | 'components'
 > = {
     tags: [{ name: 'Routine', description: 'Tarefas e histórico por espaço.' }],
     paths: {
+        ...Object.fromEntries(
+            Object.entries({
+                deadline: 'RoutineDeadlineChange',
+                urgency: 'RoutineUrgencyChange',
+                cancel: 'RoutineTaskVersion',
+            }).map(([action, body]) => {
+                const path = `${base}/tasks/{taskId}/${action}`;
+                return [
+                    path,
+                    {
+                        post: routineOperation(
+                            'post',
+                            path,
+                            'RoutineTask',
+                            body,
+                        ),
+                    },
+                ];
+            }),
+        ),
         ...Object.fromEntries(
             ['complete', 'reopen'].map((action) => {
                 const path = `${base}/tasks/{taskId}/${action}`;
