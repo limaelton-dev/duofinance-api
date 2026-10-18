@@ -6,10 +6,17 @@ import {
 } from '../../spaces/application/ports/public/space-participants.port.js';
 import { PersonId } from '../../spaces/domain/person/person-id.js';
 import { SpaceId } from '../../spaces/domain/space/space-id.js';
+import { SpacesDomainError } from '../../spaces/domain/errors/spaces-domain.error.js';
 import { ROUTINE_STORE, type RoutineStore } from './routine-store.js';
 import { cursorScope, decodeCursor, encodeCursor } from './routine-cursor.js';
 import { RoutineError } from '../domain/routine-error.js';
 import type { Task } from '../domain/task.js';
+import {
+    ROUTINE_CLOCK,
+    type RoutineClock,
+    routineReference,
+} from './routine-clock.js';
+import { taskAttention } from '../domain/task-attention.js';
 export function taskView(task: Task, canWrite = true) {
     return {
         ...task,
@@ -23,6 +30,7 @@ export class TaskQueries {
         @Inject(SPACE_PARTICIPANTS_PORT)
         private readonly participants: SpaceParticipantsPort,
         @Inject(ROUTINE_STORE) private readonly store: RoutineStore,
+        @Inject(ROUTINE_CLOCK) private readonly clock: RoutineClock,
     ) {}
     async context(actor: string, space: string) {
         return this.participants.read(
@@ -38,17 +46,39 @@ export class TaskQueries {
             result,
         ) => result,
     ) {
-        await this.context(actor, space);
-        const result = await this.store.snapshot(work);
+        const authorized = await this.context(actor, space);
+        let outcome: { ok: true; result: T } | { ok: false; error: unknown };
+        try {
+            outcome = { ok: true, result: await this.store.snapshot(work) };
+        } catch (error) {
+            outcome = { ok: false, error };
+        }
         const confirmed = await this.context(actor, space);
-        return present(result, confirmed);
+        if (
+            confirmed.actorMemberId !== authorized.actorMemberId ||
+            confirmed.type !== authorized.type
+        )
+            throw new SpacesDomainError('SPACE_NOT_FOUND');
+        if (!outcome.ok) throw outcome.error;
+        return present(outcome.result, confirmed);
     }
     detail(actor: string, space: string, id: string) {
+        const reference = routineReference(this.clock.now());
         return this.read(
             actor,
             space,
-            async () => taskView(await this.store.find(space, id)),
-            (task, context) => taskView(task, context.status === 'ACTIVE'),
+            async () => {
+                const task = await this.store.find(space, id);
+                return {
+                    ...taskView(task),
+                    ...reference,
+                    conditions: taskAttention(task, reference),
+                };
+            },
+            (task, context) => ({
+                ...task,
+                ...taskView(task, context.status === 'ACTIVE'),
+            }),
         );
     }
     list(actor: string, space: string, q: { limit: number; cursor?: string }) {

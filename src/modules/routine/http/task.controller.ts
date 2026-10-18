@@ -15,18 +15,21 @@ import {
 import { IdempotencyKey } from '../../../shared/technical/http/idempotency-key.decorator.js';
 import { TaskCreation } from '../application/task-creation.js';
 import { TaskQueries } from '../application/task-queries.js';
+import { TaskAttentionQuery } from '../application/task-attention-query.js';
 import {
     params,
     parseZodInput,
     createTask,
     assignTask,
     pageQuery,
+    attentionQuery,
 } from './routine.dto.js';
 @Controller('spaces/:spaceId')
 export class TaskController {
     constructor(
         private readonly creation: TaskCreation,
         private readonly queries: TaskQueries,
+        private readonly attention: TaskAttentionQuery,
     ) {}
     @Get('routine-context')
     @Header('Cache-Control', 'no-store')
@@ -73,10 +76,10 @@ export class TaskController {
         @Param() p: unknown,
         @Query() q: unknown,
     ) {
-        return this.queries.list(
+        return this.attention.list(
             a.personId.value,
             params(p).spaceId,
-            parseZodInput(pageQuery, q),
+            parseZodInput(attentionQuery, q),
         );
     }
     @Get('tasks/:taskId')

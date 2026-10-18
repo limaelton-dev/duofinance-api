@@ -1,4 +1,9 @@
 import { Module } from '@nestjs/common';
+import { TASK_ATTENTION_READER } from './application/task-attention-reader.js';
+import { TypeOrmTaskAttentionReader } from './infrastructure/typeorm-task-attention-reader.js';
+import { TaskAttentionQuery } from './application/task-attention-query.js';
+import { RoutineAttentionQuery } from './application/routine-attention-query.js';
+import { ROUTINE_ATTENTION_QUERY } from './application/ports/public/routine-attention-query.port.js';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DatabaseModule } from '../../shared/technical/database/database.module.js';
 import { SpacesModule } from '../spaces/spaces.module.js';
@@ -27,6 +32,12 @@ import { TaskController } from './http/task.controller.js';
         ]),
     ],
     providers: [
+        {
+            provide: TASK_ATTENTION_READER,
+            useClass: TypeOrmTaskAttentionReader,
+        },
+        { provide: ROUTINE_ATTENTION_QUERY, useClass: RoutineAttentionQuery },
+        TaskAttentionQuery,
         { provide: ROUTINE_STORE, useClass: TypeOrmRoutineStore },
         { provide: ROUTINE_CLOCK, useValue: { now: () => new Date() } },
         RoutineCommands,
@@ -34,5 +45,6 @@ import { TaskController } from './http/task.controller.js';
         TaskQueries,
     ],
     controllers: [TaskController],
+    exports: [ROUTINE_ATTENTION_QUERY],
 })
 export class RoutineModule {}

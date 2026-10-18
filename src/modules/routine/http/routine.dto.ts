@@ -35,6 +35,22 @@ export const pageQuery = z
         cursor: z.string().min(1).max(3000).optional(),
     })
     .strict();
+export const attentionQuery = pageQuery
+    .extend({
+        status: z
+            .enum(['PENDING', 'COMPLETED', 'CANCELLED', 'ALL'])
+            .default('PENDING'),
+        scope: z.enum(['MINE', 'ALL']).default('ALL'),
+        attention: z
+            .enum(['TODAY', 'URGENT', 'OVERDUE', 'UPCOMING', 'NO_DEADLINE'])
+            .optional(),
+        from: civilDate.optional(),
+        to: civilDate.optional(),
+    })
+    .refine((q) => !q.from || !q.to || q.from <= q.to, {
+        path: ['to'],
+        message: 'O fim deve ser igual ou posterior ao início.',
+    });
 export function params(input: unknown) {
     return parseZodInput(
         z.object({ spaceId: uuid, taskId: uuid.optional() }).strict(),

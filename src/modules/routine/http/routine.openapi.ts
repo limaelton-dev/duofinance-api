@@ -119,6 +119,53 @@ routineSchemas.RoutineTaskView = object({
     kind: { type: 'string', enum: ['ONE_OFF'] },
     allowedActions: { type: 'array', items: { type: 'string' } },
 });
+routineSchemas.RoutineConditions = object({
+    today: { type: 'boolean' },
+    overdue: { type: 'boolean' },
+    urgent: { type: 'boolean' },
+    upcoming: { type: 'boolean' },
+    noDeadline: { type: 'boolean' },
+    group: {
+        type: 'string',
+        enum: ['OVERDUE', 'TODAY', 'UPCOMING', 'NO_DEADLINE'],
+    },
+});
+routineSchemas.RoutineTaskView = object({
+    ...routineSchemas.RoutineTaskView.properties,
+    conditions: ref('RoutineConditions'),
+});
+routineSchemas.RoutineCounts = object(
+    Object.fromEntries(
+        [
+            'totalCount',
+            'today',
+            'overdue',
+            'urgent',
+            'upcoming',
+            'noDeadline',
+        ].map((k) => [k, { type: 'integer', minimum: 0 }]),
+    ),
+);
+routineSchemas.RoutineTaskPage = object({
+    ...routineSchemas.RoutineTaskPage.properties,
+    referenceDate: { type: 'string', format: 'date' },
+    referenceTime: { type: 'string' },
+    referenceInstant: { type: 'string', format: 'date-time' },
+    counts: ref('RoutineCounts'),
+});
+routineSchemas.RoutineAttentionSummary = object({
+    items: { type: 'array', maxItems: 4, items: ref('RoutineTaskView') },
+    counts: ref('RoutineCounts'),
+    hasMore: { type: 'boolean' },
+    referenceDate: { type: 'string', format: 'date' },
+    referenceInstant: { type: 'string', format: 'date-time' },
+});
+routineSchemas.RoutineTaskDetail = object({
+    ...routineSchemas.RoutineTaskView.properties,
+    referenceDate: { type: 'string', format: 'date' },
+    referenceTime: { type: 'string' },
+    referenceInstant: { type: 'string', format: 'date-time' },
+});
 export function routineOperation(
     method: 'get' | 'post',
     path: string,
@@ -239,7 +286,7 @@ export const routineOpenApi: Pick<
             get: routineOperation(
                 'get',
                 `${base}/tasks/{taskId}`,
-                'RoutineTaskView',
+                'RoutineTaskDetail',
             ),
         },
         [`${base}/tasks/{taskId}/history`]: {
@@ -260,3 +307,22 @@ export const routineOpenApi: Pick<
     },
     components: { schemas: routineSchemas },
 };
+const taskListOperation = routineOpenApi.paths[`${base}/tasks`]!.get!;
+taskListOperation.parameters!.push(
+    ...Object.entries({
+        status: ['PENDING', 'COMPLETED', 'CANCELLED', 'ALL'],
+        scope: ['MINE', 'ALL'],
+        attention: ['TODAY', 'URGENT', 'OVERDUE', 'UPCOMING', 'NO_DEADLINE'],
+    }).map(([name, values]) => ({
+        name,
+        in: 'query' as const,
+        schema: { type: 'string' as const, enum: values },
+    })),
+    ...['from', 'to'].map((name) => ({
+        name,
+        in: 'query' as const,
+        schema: { type: 'string' as const, format: 'date' },
+    })),
+);
+taskListOperation.description +=
+    ' Ordenação: atrasadas, hoje, próximas, sem prazo; urgência, prazo e identidade dentro de cada grupo. Cursor conserva referência temporal e filtros; Minhas considera responsável atual. Contagens usam os mesmos filtros. Horário local America/Sao_Paulo; prazo sem horário vale até o fim do dia.';

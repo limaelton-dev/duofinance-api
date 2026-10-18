@@ -201,6 +201,24 @@ export const todayOpenApi: Pick<
                 }),
             }),
             TodayResponse: object({
+                routine: {
+                    oneOf: [
+                        object({
+                            status: { type: 'string', enum: ['AVAILABLE'] },
+                            data: ref('RoutineAttentionSummary'),
+                        }),
+                        object({
+                            status: { type: 'string', enum: ['UNAVAILABLE'] },
+                            error: object({
+                                code: {
+                                    type: 'string',
+                                    enum: ['ROUTINE_TODAY_UNAVAILABLE'],
+                                },
+                                message: { type: 'string' },
+                            }),
+                        }),
+                    ],
+                },
                 spaceId: uuid,
                 spaceType: { type: 'string', enum: ['PERSONAL', 'SHARED'] },
                 spaceStatus: {
