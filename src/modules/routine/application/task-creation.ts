@@ -10,27 +10,47 @@ import {
 import { RoutineError } from '../domain/routine-error.js';
 import { RoutineCommands, resolveAssignee } from './routine-commands.js';
 import { ROUTINE_STORE, type RoutineStore } from './routine-store.js';
+import {
+    SHOPPING_LISTS_PORT,
+    type ShoppingListsPort,
+} from '../../shopping/application/ports/public/shopping-lists.port.js';
+import { PersonId } from '../../spaces/domain/person/person-id.js';
+import { SpaceId } from '../../spaces/domain/space/space-id.js';
 export interface CreateTaskInput {
     description: string;
     assigneeMemberId?: string | null;
     deadline?: Deadline;
     urgency: Urgency;
+    shoppingListId?: string | null;
 }
 @Injectable()
 export class TaskCreation {
     constructor(
         private readonly commands: RoutineCommands,
         @Inject(ROUTINE_STORE) private readonly store: RoutineStore,
+        @Inject(SHOPPING_LISTS_PORT)
+        private readonly shopping: ShoppingListsPort,
     ) {}
     create(actor: string, space: string, key: string, input: CreateTaskInput) {
+        const { shoppingListId, ...fields } = input;
+        const normalized = {
+            ...fields,
+            ...(shoppingListId ? { shoppingListId } : {}),
+        };
         return this.commands.execute(
             actor,
             space,
             key,
             'CREATE_TASK',
             space,
-            input,
+            normalized,
             async (context, now) => {
+                if (input.shoppingListId)
+                    await this.shopping.lockActive(
+                        PersonId.from(actor),
+                        SpaceId.from(space),
+                        input.shoppingListId,
+                    );
                 const task: Task = {
                     id: randomUUID(),
                     spaceId: space,
@@ -46,6 +66,7 @@ export class TaskCreation {
                     version: 1,
                     createdAt: now,
                     completion: null,
+                    shoppingListId: input.shoppingListId ?? null,
                 };
                 validateTask(task);
                 await this.store.insert(task);

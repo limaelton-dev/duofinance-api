@@ -18,6 +18,12 @@ import type { Task, Deadline, Participant, Urgency } from '../domain/task.js';
     'id',
 ])
 @Index('IDX_routine_task_assignee', ['spaceId', 'assigneePersonId', 'status'])
+@Index('IDX_routine_task_shopping_list', [
+    'spaceId',
+    'shoppingListId',
+    'createdAt',
+    'id',
+])
 @Unique('UQ_routine_task_space', ['spaceId', 'id'])
 @Check(
     'CHK_routine_task_values',
@@ -27,6 +33,12 @@ import type { Task, Deadline, Participant, Urgency } from '../domain/task.js';
     name: 'FK_routine_task_space',
     onDelete: 'RESTRICT',
 })
+@ForeignKey(
+    'shopping_lists',
+    ['spaceId', 'shoppingListId'],
+    ['spaceId', 'id'],
+    { name: 'FK_routine_task_shopping_list', onDelete: 'RESTRICT' },
+)
 @ForeignKey('persons', ['creatorPersonId'], ['id'], {
     name: 'FK_routine_task_creator',
     onDelete: 'RESTRICT',
@@ -73,6 +85,8 @@ export class TaskOrmEntity {
     @Column({ type: 'integer' }) version!: number;
     @Column({ name: 'created_at', type: 'timestamptz' }) createdAt!: Date;
     @Column({ type: 'jsonb', nullable: true }) completion!: Task['completion'];
+    @Column({ name: 'shopping_list_id', type: 'uuid', nullable: true })
+    shoppingListId!: string | null;
 }
 @Entity('routine_history')
 @Index('IDX_routine_history_page', ['spaceId', 'aggregateId', 'sequence'])
@@ -143,6 +157,7 @@ export function taskToRow(task: Task): TaskOrmEntity {
         version: task.version,
         createdAt: new Date(task.createdAt),
         completion: task.completion,
+        shoppingListId: task.shoppingListId ?? null,
     };
 }
 export function rowToTask(row: TaskOrmEntity): Task {
@@ -167,5 +182,6 @@ export function rowToTask(row: TaskOrmEntity): Task {
         version: row.version,
         createdAt: row.createdAt.toISOString(),
         completion: row.completion,
+        shoppingListId: row.shoppingListId,
     };
 }

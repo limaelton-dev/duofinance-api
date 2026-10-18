@@ -24,10 +24,17 @@ export const createTask = z
         assigneeMemberId: uuid.nullable().optional(),
         deadline: deadline.optional(),
         urgency: urgency.default('NORMAL'),
+        shoppingListId: uuid.nullable().optional(),
     })
     .strict();
 export const assignTask = z
     .object({ expectedVersion: version, assigneeMemberId: uuid.nullable() })
+    .strict();
+export const linkTaskShoppingList = z
+    .object({ expectedVersion: version, shoppingListId: uuid })
+    .strict();
+export const unlinkTaskShoppingList = z
+    .object({ expectedVersion: version })
     .strict();
 export const pageQuery = z
     .object({

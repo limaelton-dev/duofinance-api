@@ -44,6 +44,48 @@ export class TypeOrmRoutineStore implements RoutineStore {
         if (changed.affected !== 1)
             throw new RoutineError('CONCURRENT_MODIFICATION');
     }
+    async linkedTasks(
+        spaceId: string,
+        shoppingListId: string,
+        after: { createdAt: string; id: string } | null,
+        limit: number,
+    ) {
+        const query = this.provider
+            .get()
+            .createQueryBuilder(TaskOrmEntity, 't')
+            .select([
+                't.id',
+                't.description',
+                't.status',
+                't.createdAt',
+                't.shoppingListId',
+            ])
+            .where('t.spaceId=:spaceId AND t.shoppingListId=:shoppingListId', {
+                spaceId,
+                shoppingListId,
+            });
+        const totalCount = await query.clone().getCount();
+        if (after)
+            query.andWhere('(t.createdAt,t.id)>(:createdAt,:id)', {
+                createdAt: new Date(after.createdAt),
+                id: after.id,
+            });
+        const rows = await query
+            .orderBy('t.createdAt', 'ASC')
+            .addOrderBy('t.id', 'ASC')
+            .take(limit)
+            .getMany();
+        return {
+            items: rows.map((row) => ({
+                id: row.id,
+                description: row.description,
+                status: row.status,
+                createdAt: row.createdAt.toISOString(),
+                shoppingListId,
+            })),
+            totalCount,
+        };
+    }
     async event(event: HistoryEvent) {
         await this.provider.get().insert(RoutineHistoryOrmEntity, event);
     }

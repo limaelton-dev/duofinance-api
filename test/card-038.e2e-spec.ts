@@ -537,7 +537,12 @@ describe('CARD-038 shopping lists HTTP/PostgreSQL', () => {
                 ).toBeNull();
             expect(await legacySchema()).toEqual(legacy);
             await migrationSource.runMigrations();
+            await rewindFinanceMigrationsTo(
+                migrationSource,
+                'ShoppingLists1792344857988',
+            );
             expect(await legacySchema()).toEqual(legacy);
+            await migrationSource.runMigrations();
             const b = await financeBrowser(app);
             await b
                 .post(

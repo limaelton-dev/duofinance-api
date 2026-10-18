@@ -23,6 +23,8 @@ import { ShoppingQueries } from './application/shopping-queries.js';
 import { ShoppingListController } from './http/shopping-list.controller.js';
 import { ShoppingItemController } from './http/shopping-item.controller.js';
 import { ShoppingPurchaseController } from './http/shopping-purchase.controller.js';
+import { SHOPPING_LISTS_PORT } from './application/ports/public/shopping-lists.port.js';
+import { ShoppingPublicLists } from './application/shopping-public-lists.js';
 
 @Module({
     imports: [
@@ -47,11 +49,13 @@ import { ShoppingPurchaseController } from './http/shopping-purchase.controller.
         ShoppingPurchases,
         ShoppingCorrections,
         ShoppingQueries,
+        { provide: SHOPPING_LISTS_PORT, useClass: ShoppingPublicLists },
     ],
     controllers: [
         ShoppingListController,
         ShoppingItemController,
         ShoppingPurchaseController,
     ],
+    exports: [SHOPPING_LISTS_PORT],
 })
 export class ShoppingModule {}

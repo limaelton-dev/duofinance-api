@@ -3,6 +3,7 @@ import { routineOpenApi } from '../../modules/routine/http/routine.openapi.js';
 import { shoppingOpenApi } from '../../modules/shopping/http/shopping.openapi.js';
 import { financialReviewOpenApi } from '../../modules/finances/http/openapi/financial-review.openapi.js';
 import { todayOpenApi } from '../today/today.openapi.js';
+import { shoppingTasksOpenApi } from '../shopping-tasks/shopping-tasks.openapi.js';
 import type { OpenAPIObject } from '@nestjs/swagger';
 
 import { createAuthOpenApiDocument } from '../../modules/identity/http/openapi/auth.openapi.js';
@@ -36,6 +37,7 @@ export function createApiOpenApiDocument(isProduction: boolean): OpenAPIObject {
             ...todayOpenApi.paths,
             ...routineOpenApi.paths,
             ...shoppingOpenApi.paths,
+            ...shoppingTasksOpenApi.paths,
         },
         components: {
             ...auth.components,
@@ -48,6 +50,7 @@ export function createApiOpenApiDocument(isProduction: boolean): OpenAPIObject {
                 ...todayOpenApi.components?.schemas,
                 ...routineOpenApi.components?.schemas,
                 ...shoppingOpenApi.components?.schemas,
+                ...shoppingTasksOpenApi.components?.schemas,
             },
             parameters: {
                 ...auth.components?.parameters,

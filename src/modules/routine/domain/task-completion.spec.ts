@@ -13,6 +13,7 @@ const task: Task = {
     version: 1,
     createdAt: '2026-10-18T12:00:00Z',
     completion: null,
+    shoppingListId: null,
 };
 describe('completion and reopening', () => {
     it('keeps responsibility distinct from execution and preserves the completed snapshot', () => {

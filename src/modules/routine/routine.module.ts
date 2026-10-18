@@ -34,10 +34,16 @@ import { RoutineCommands } from './application/routine-commands.js';
 import { TaskCreation } from './application/task-creation.js';
 import { TaskQueries } from './application/task-queries.js';
 import { TaskController } from './http/task.controller.js';
+import { ShoppingModule } from '../shopping/shopping.module.js';
+import { TaskShoppingList } from './application/task-shopping-list.js';
+import { TaskShoppingListController } from './http/task-shopping-list.controller.js';
+import { ROUTINE_LINKED_TASKS_PORT } from './application/ports/public/routine-linked-tasks.port.js';
+import { RoutineLinkedTasks } from './application/routine-linked-tasks.js';
 @Module({
     imports: [
         DatabaseModule,
         SpacesModule,
+        ShoppingModule,
         TypeOrmModule.forFeature([
             TaskRecurrenceOrmEntity,
             TaskOccurrenceOrmEntity,
@@ -68,13 +74,16 @@ import { TaskController } from './http/task.controller.js';
         RoutineCommands,
         TaskCreation,
         TaskQueries,
+        TaskShoppingList,
+        { provide: ROUTINE_LINKED_TASKS_PORT, useClass: RoutineLinkedTasks },
     ],
     controllers: [
         TaskRecurrenceController,
         TaskController,
         TaskCompletionController,
         TaskMaintenanceController,
+        TaskShoppingListController,
     ],
-    exports: [ROUTINE_ATTENTION_QUERY],
+    exports: [ROUTINE_ATTENTION_QUERY, ROUTINE_LINKED_TASKS_PORT],
 })
 export class RoutineModule {}

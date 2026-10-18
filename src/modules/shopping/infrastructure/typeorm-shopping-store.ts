@@ -58,6 +58,14 @@ export class TypeOrmShoppingStore implements ShoppingStore {
         if (!row) throw new ShoppingError('SHOPPING_LIST_NOT_FOUND');
         return rowToList(row);
     }
+    async lockList(spaceId: string, id: string) {
+        const row = await this.provider.get().findOne(ShoppingListOrmEntity, {
+            where: { spaceId, id },
+            lock: { mode: 'pessimistic_read' },
+        });
+        if (!row) throw new ShoppingError('SHOPPING_LIST_NOT_FOUND');
+        return rowToList(row);
+    }
     async insert(list: ShoppingList) {
         await this.provider
             .get()

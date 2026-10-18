@@ -31,6 +31,7 @@ export interface ShoppingItemKey extends ShoppingListKey {
 }
 export interface ShoppingStore {
     find(space: string, id: string): Promise<ShoppingList>;
+    lockList(space: string, id: string): Promise<ShoppingList>;
     insert(list: ShoppingList): Promise<void>;
     update(before: ShoppingList, after: ShoppingList): Promise<void>;
     findItem(

@@ -170,7 +170,7 @@ describe('CARD-036 task maintenance HTTP/PostgreSQL', () => {
                 .expect(409);
         expect(
             (await b.agent.get(path).expect(200)).body.allowedActions,
-        ).toEqual([]);
+        ).toEqual(['LINK_SHOPPING_LIST']);
         expect((await db.query('SELECT * FROM routine_tasks')).length).toBe(1);
     });
     it.each(['deadline', 'cancel', 'urgency'])(
