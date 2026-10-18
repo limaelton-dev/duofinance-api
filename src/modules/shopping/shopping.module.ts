@@ -25,6 +25,8 @@ import { ShoppingItemController } from './http/shopping-item.controller.js';
 import { ShoppingPurchaseController } from './http/shopping-purchase.controller.js';
 import { SHOPPING_LISTS_PORT } from './application/ports/public/shopping-lists.port.js';
 import { ShoppingPublicLists } from './application/shopping-public-lists.js';
+import { SHOPPING_ATTENTION_QUERY_PORT } from './application/ports/public/shopping-attention-query.port.js';
+import { ShoppingAttentionQuery } from './application/shopping-attention-query.js';
 
 @Module({
     imports: [
@@ -50,12 +52,16 @@ import { ShoppingPublicLists } from './application/shopping-public-lists.js';
         ShoppingCorrections,
         ShoppingQueries,
         { provide: SHOPPING_LISTS_PORT, useClass: ShoppingPublicLists },
+        {
+            provide: SHOPPING_ATTENTION_QUERY_PORT,
+            useClass: ShoppingAttentionQuery,
+        },
     ],
     controllers: [
         ShoppingListController,
         ShoppingItemController,
         ShoppingPurchaseController,
     ],
-    exports: [SHOPPING_LISTS_PORT],
+    exports: [SHOPPING_LISTS_PORT, SHOPPING_ATTENTION_QUERY_PORT],
 })
 export class ShoppingModule {}

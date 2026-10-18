@@ -173,6 +173,8 @@ import { TypeOrmPersonalExpenseReceipts } from './infrastructure/typeorm/reposit
 import { TypeOrmPersonalExpenseReader } from './infrastructure/typeorm/queries/typeorm-personal-expense-reader.js';
 import { GetFinanceTodayQuery } from './application/queries/finance-today.query.js';
 import { FINANCE_TODAY_QUERY_PORT } from './application/ports/public/finance-today-query.port.js';
+import { FinanceTodayCompositionQuery } from './application/queries/finance-today-composition.query.js';
+import { FINANCE_TODAY_COMPOSITION_QUERY_PORT } from './application/ports/public/finance-today-composition-query.port.js';
 import {
     SettlementTransferOrmEntity,
     SettlementAllocationOrmEntity,
@@ -447,6 +449,10 @@ import {
         },
         GetFinanceTodayQuery,
         {
+            provide: FINANCE_TODAY_COMPOSITION_QUERY_PORT,
+            useClass: FinanceTodayCompositionQuery,
+        },
+        {
             provide: FINANCE_TODAY_QUERY_PORT,
             useExisting: GetFinanceTodayQuery,
         },
@@ -526,6 +532,7 @@ import {
     exports: [
         SETTLEMENT_CYCLE_QUERY_PORT,
         FINANCE_TODAY_QUERY_PORT,
+        FINANCE_TODAY_COMPOSITION_QUERY_PORT,
         INCOME_TODAY_QUERY_PORT,
         PLANNED_TODAY_QUERY_PORT,
     ],

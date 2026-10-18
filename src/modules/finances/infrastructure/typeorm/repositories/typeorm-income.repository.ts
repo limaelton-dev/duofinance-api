@@ -345,8 +345,9 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
                 : null,
         };
     }
-    private summaryQuery(spaceId: string) {
+    private summaryQuery(spaceId: string, referenceDate?: string) {
         const today =
+            referenceDate ??
             this.clock?.today() ??
             new Date().toLocaleDateString('en-CA', {
                 timeZone: 'America/Sao_Paulo',
@@ -433,7 +434,7 @@ export class TypeOrmIncomeRepository implements IncomeRepository {
         );
     }
     private async upcomingInSnapshot(spaceId: string, referenceDate: string) {
-        const query = this.summaryQuery(spaceId).andWhere(
+        const query = this.summaryQuery(spaceId, referenceDate).andWhere(
             `${this.remainingSql} AND v.expected_receipt_date>=:referenceDate`,
             { referenceDate },
         );

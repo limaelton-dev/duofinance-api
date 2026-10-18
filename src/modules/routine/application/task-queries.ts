@@ -17,6 +17,7 @@ import {
     routineReference,
 } from './routine-clock.js';
 import { taskAttention } from '../domain/task-attention.js';
+import { isPostgresqlUnavailable } from '../../../shared/technical/database/postgresql-unavailable.js';
 import {
     SHOPPING_LISTS_PORT,
     type ShoppingListsPort,
@@ -65,13 +66,20 @@ export class TaskQueries {
         present: (result: T, context: SpaceParticipantsContext) => T = (
             result,
         ) => result,
+        unavailableError?: Error,
     ) {
         const authorized = await this.context(actor, space);
         let outcome: { ok: true; result: T } | { ok: false; error: unknown };
         try {
             outcome = { ok: true, result: await this.store.snapshot(work) };
         } catch (error) {
-            outcome = { ok: false, error };
+            outcome = {
+                ok: false,
+                error:
+                    unavailableError && isPostgresqlUnavailable(error)
+                        ? unavailableError
+                        : error,
+            };
         }
         const confirmed = await this.context(actor, space);
         if (

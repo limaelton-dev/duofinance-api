@@ -24,6 +24,7 @@ import {
     type ShoppingSummary,
 } from '../domain/shopping-item.js';
 import { purchaseView } from '../domain/purchase-record.js';
+import { isPostgresqlUnavailable } from '../../../shared/technical/database/postgresql-unavailable.js';
 
 export function shoppingListView(
     list: ShoppingList,
@@ -144,13 +145,20 @@ export class ShoppingQueries {
         present: (result: T, context: SpaceParticipantsContext) => R = (
             result,
         ) => result as unknown as R,
+        unavailableError?: Error,
     ): Promise<R> {
         const authorized = await this.context(actor, space);
         let outcome: { ok: true; result: T } | { ok: false; error: unknown };
         try {
             outcome = { ok: true, result: await this.store.snapshot(work) };
         } catch (error) {
-            outcome = { ok: false, error };
+            outcome = {
+                ok: false,
+                error:
+                    unavailableError && isPostgresqlUnavailable(error)
+                        ? unavailableError
+                        : error,
+            };
         }
         const confirmed = await this.context(actor, space);
         if (

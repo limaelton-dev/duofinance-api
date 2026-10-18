@@ -16,6 +16,12 @@ import {
 } from '../domain/shopping-item.js';
 import { ShoppingError } from '../domain/shopping-error.js';
 import { Quantity } from '../domain/quantity.js';
+import { isPostgresqlUnavailable } from '../../../shared/technical/database/postgresql-unavailable.js';
+import {
+    ShoppingAttentionUnavailableError,
+    type ShoppingAttentionRead,
+} from '../application/ports/public/shopping-attention-query.port.js';
+import { shoppingAttentionSql } from './shopping-attention.sql.js';
 import type { PurchaseRecord } from '../domain/purchase-record.js';
 import type { PurchaseCorrection } from '../domain/purchase-correction.js';
 import {
@@ -50,6 +56,46 @@ export class TypeOrmShoppingStore implements ShoppingStore {
     constructor(private readonly provider: EntityManagerProvider) {}
     snapshot<T>(work: () => Promise<T>) {
         return this.provider.readSnapshot(work);
+    }
+    async attention(space: string) {
+        try {
+            const [result]: Pick<
+                ShoppingAttentionRead,
+                'items' | 'totalCount' | 'activeListCount'
+            >[] = await this.provider
+                .get()
+                .query(shoppingAttentionSql, [space]);
+            return {
+                ...result,
+                items: result.items.map((list) => ({
+                    ...list,
+                    pendingItems: {
+                        ...list.pendingItems,
+                        items: list.pendingItems.items.map((item) => ({
+                            ...item,
+                            desiredQuantity: Quantity.from(
+                                item.desiredQuantity,
+                                'desiredQuantity',
+                            ).toString(),
+                            purchasedQuantity: Quantity.from(
+                                item.purchasedQuantity,
+                                'purchasedQuantity',
+                                true,
+                            ).toString(),
+                            remainingQuantity: Quantity.from(
+                                item.remainingQuantity,
+                                'remainingQuantity',
+                                true,
+                            ).toString(),
+                        })),
+                    },
+                })),
+            };
+        } catch (error) {
+            if (isPostgresqlUnavailable(error))
+                throw new ShoppingAttentionUnavailableError();
+            throw error;
+        }
     }
     async find(spaceId: string, id: string) {
         const row = await this.provider

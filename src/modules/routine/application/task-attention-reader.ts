@@ -6,7 +6,7 @@ import type {
 export interface TaskListFilters {
     status: 'PENDING' | 'COMPLETED' | 'CANCELLED' | 'SKIPPED' | 'ALL';
     scope: 'MINE' | 'ALL';
-    attention?: TaskAttention | 'ATTENTION';
+    attention?: TaskAttention | 'ATTENTION' | 'NEEDS_ATTENTION';
     from?: string;
     to?: string;
 }

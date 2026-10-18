@@ -10,6 +10,7 @@ import type {
     PurchaseRecordState,
 } from '../domain/purchase-record.js';
 import type { PurchaseCorrection } from '../domain/purchase-correction.js';
+import type { ShoppingAttentionRead } from './ports/public/shopping-attention-query.port.js';
 
 export const SHOPPING_STORE = Symbol('SHOPPING_STORE');
 export interface ShoppingHistoryEvent {
@@ -30,6 +31,11 @@ export interface ShoppingItemKey extends ShoppingListKey {
     group: number;
 }
 export interface ShoppingStore {
+    attention(
+        space: string,
+    ): Promise<
+        Pick<ShoppingAttentionRead, 'items' | 'totalCount' | 'activeListCount'>
+    >;
     find(space: string, id: string): Promise<ShoppingList>;
     lockList(space: string, id: string): Promise<ShoppingList>;
     insert(list: ShoppingList): Promise<void>;
