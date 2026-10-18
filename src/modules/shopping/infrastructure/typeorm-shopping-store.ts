@@ -4,6 +4,7 @@ import { EntityManagerProvider } from '../../../shared/technical/database/typeor
 import type {
     ShoppingHistoryEvent,
     ShoppingListKey,
+    ShoppingItemKey,
     ShoppingStore,
 } from '../application/shopping-store.js';
 import type { ShoppingList } from '../domain/shopping-list.js';
@@ -14,9 +15,17 @@ import {
     type ShoppingSummary,
 } from '../domain/shopping-item.js';
 import { ShoppingError } from '../domain/shopping-error.js';
+import { Quantity } from '../domain/quantity.js';
+import type { PurchaseRecord } from '../domain/purchase-record.js';
+import {
+    shoppingProgressSql,
+    shoppingItemFilterSql,
+    shoppingItemColumnsSql,
+} from './shopping-items.sql.js';
 import {
     ShoppingListOrmEntity,
     ShoppingItemOrmEntity,
+    PurchaseRecordOrmEntity,
     ShoppingHistoryOrmEntity,
     ShoppingReceiptOrmEntity,
     ShoppingAuditOrmEntity,
@@ -24,6 +33,8 @@ import {
     listToRow,
     itemToRow,
     rowToItem,
+    purchaseToRow,
+    rowToPurchase,
 } from './shopping.orm-entity.js';
 
 @Injectable()
@@ -62,7 +73,20 @@ export class TypeOrmShoppingStore implements ShoppingStore {
             .get()
             .findOneBy(ShoppingItemOrmEntity, { spaceId, listId, id });
         if (!row) throw new ShoppingError('SHOPPING_ITEM_NOT_FOUND');
-        return rowToItem(row);
+        const [total] = await this.provider
+            .get()
+            .query(
+                `SELECT COALESCE(SUM(quantity),0)::text AS quantity FROM shopping_purchase_records WHERE space_id=$1 AND list_id=$2 AND item_id=$3`,
+                [spaceId, listId, id],
+            );
+        return {
+            ...rowToItem(row),
+            purchasedQuantity: Quantity.from(
+                total.quantity,
+                'purchasedQuantity',
+                true,
+            ).toString(),
+        };
     }
     async insertItem(space: string, item: ShoppingItem) {
         await this.provider
@@ -85,50 +109,104 @@ export class TypeOrmShoppingStore implements ShoppingStore {
         lists: string[],
     ): Promise<Map<string, ShoppingSummary>> {
         if (!lists.length) return new Map();
-        const rows: { listId: string; count: string }[] = await this.provider
-            .get()
-            .createQueryBuilder(ShoppingItemOrmEntity, 'i')
-            .select('i.listId', 'listId')
-            .addSelect('COUNT(*)', 'count')
-            .where('i.spaceId=:spaceId AND i.listId IN (:...lists)', {
-                spaceId,
-                lists,
-            })
-            .groupBy('i.listId')
-            .getRawMany();
+        const rows: {
+            listId: string;
+            active: string;
+            pending: string;
+            partial: string;
+            purchased: string;
+        }[] = await this.provider.get().query(
+            `${shoppingProgressSql} SELECT list_id AS "listId",COUNT(*) AS active,
+                COUNT(*) FILTER (WHERE purchased_quantity=0) AS pending,
+                COUNT(*) FILTER (WHERE purchased_quantity>0 AND purchased_quantity<desired_quantity) AS partial,
+                COUNT(*) FILTER (WHERE purchased_quantity>=desired_quantity) AS purchased
+            FROM item_progress GROUP BY list_id`,
+            [spaceId, lists],
+        );
         const result = new Map(lists.map((id) => [id, shoppingSummary()]));
         for (const row of rows)
-            result.set(row.listId, shoppingSummary(Number(row.count)));
+            result.set(
+                row.listId,
+                shoppingSummary(
+                    Number(row.active),
+                    Number(row.pending),
+                    Number(row.partial),
+                    Number(row.purchased),
+                ),
+            );
         return result;
     }
     async items(
         spaceId: string,
         listId: string,
         status: ShoppingItemFilter,
+        after: ShoppingItemKey | null,
+        limit: number,
+    ) {
+        const [count] = await this.provider
+            .get()
+            .query(
+                `${shoppingProgressSql} SELECT COUNT(*)::integer AS count FROM item_progress WHERE ${shoppingItemFilterSql}`,
+                [spaceId, [listId], status],
+            );
+        const rows: (ShoppingItemOrmEntity & { purchasedQuantity: string })[] =
+            await this.provider.get().query(
+                `${shoppingProgressSql} SELECT ${shoppingItemColumnsSql} FROM item_progress
+            WHERE ${shoppingItemFilterSql} AND ($4::integer IS NULL OR (item_group,created_at,id)>($4,$5::timestamptz,$6::uuid))
+            ORDER BY item_group,created_at,id LIMIT $7`,
+                [
+                    spaceId,
+                    [listId],
+                    status,
+                    after?.group ?? null,
+                    after?.createdAt ?? null,
+                    after?.id ?? null,
+                    limit,
+                ],
+            );
+        return {
+            items: rows.map((row) => ({
+                ...rowToItem(row),
+                purchasedQuantity: Quantity.from(
+                    row.purchasedQuantity,
+                    'purchasedQuantity',
+                    true,
+                ).toString(),
+            })),
+            totalCount: count.count,
+        };
+    }
+    async insertPurchase(space: string, purchase: PurchaseRecord) {
+        await this.provider
+            .get()
+            .insert(PurchaseRecordOrmEntity, purchaseToRow(space, purchase));
+    }
+    async purchases(
+        spaceId: string,
+        listId: string,
+        itemId: string,
         after: ShoppingListKey | null,
         limit: number,
     ) {
         const query = this.provider
             .get()
-            .createQueryBuilder(ShoppingItemOrmEntity, 'i')
-            .where('i.spaceId=:spaceId AND i.listId=:listId', {
-                spaceId,
-                listId,
-            });
-        if (status === 'PURCHASED' || status === 'REMOVED')
-            query.andWhere('FALSE');
+            .createQueryBuilder(PurchaseRecordOrmEntity, 'p')
+            .where(
+                'p.spaceId=:spaceId AND p.listId=:listId AND p.itemId=:itemId',
+                { spaceId, listId, itemId },
+            );
         const totalCount = await query.clone().getCount();
         if (after)
-            query.andWhere('(i.createdAt,i.id)>(:createdAt,:id)', {
+            query.andWhere('(p.registeredAt,p.id)>(:createdAt,:id)', {
                 createdAt: new Date(after.createdAt),
                 id: after.id,
             });
         const rows = await query
-            .orderBy('i.createdAt', 'ASC')
-            .addOrderBy('i.id', 'ASC')
+            .orderBy('p.registeredAt', 'ASC')
+            .addOrderBy('p.id', 'ASC')
             .take(limit)
             .getMany();
-        return { items: rows.map(rowToItem), totalCount };
+        return { items: rows.map(rowToPurchase), totalCount };
     }
     async list(
         spaceId: string,

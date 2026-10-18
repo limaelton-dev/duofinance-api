@@ -125,7 +125,11 @@ export class ShoppingItems {
                     listId,
                     itemId,
                 );
-                const item = changeItemNeed(oldItem, normalized);
+                const item = changeItemNeed(
+                    oldItem,
+                    normalized,
+                    oldItem.purchasedQuantity,
+                );
                 const after = { ...before, version: before.version + 1 };
                 await this.store.update(before, after);
                 await this.store.updateItem(space, item);
@@ -152,7 +156,7 @@ export class ShoppingItems {
                 return {
                     id: listId,
                     version: after.version,
-                    item: itemProgress(item),
+                    item: itemProgress(item, oldItem.purchasedQuantity),
                 };
             },
         );

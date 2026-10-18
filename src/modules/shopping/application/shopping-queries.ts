@@ -11,6 +11,7 @@ import {
     SHOPPING_STORE,
     type ShoppingStore,
     type ShoppingListKey,
+    type ShoppingItemKey,
 } from './shopping-store.js';
 import { cursorScope, decodeCursor, encodeCursor } from './shopping-cursor.js';
 import { ShoppingError } from '../domain/shopping-error.js';
@@ -18,10 +19,11 @@ import type { ShoppingList } from '../domain/shopping-list.js';
 import {
     itemProgress,
     shoppingSummary,
-    type ShoppingItem,
+    type ShoppingItemState,
     type ShoppingItemFilter,
     type ShoppingSummary,
 } from '../domain/shopping-item.js';
+import { purchaseView } from '../domain/purchase-record.js';
 
 export function shoppingListView(
     list: ShoppingList,
@@ -35,10 +37,10 @@ export function shoppingListView(
             canWrite && list.status === 'ACTIVE' ? ['RENAME', 'ADD_ITEM'] : [],
     };
 }
-export function shoppingItemView(item: ShoppingItem, canWrite = true) {
+export function shoppingItemView(item: ShoppingItemState, canWrite = true) {
     return {
-        ...itemProgress(item),
-        allowedActions: canWrite ? ['CHANGE_NEED'] : [],
+        ...itemProgress(item, item.purchasedQuantity),
+        allowedActions: canWrite ? ['CHANGE_NEED', 'RECORD_PURCHASE'] : [],
     };
 }
 function itemScope(
@@ -52,11 +54,11 @@ function itemScope(
         space,
         list,
         status,
-        order: 'PENDING_CREATED_ASC_ID_ASC',
+        order: 'GROUP_CREATED_ASC_ID_ASC',
     });
 }
 function itemPage(
-    page: { items: ShoppingItem[]; totalCount: number },
+    page: { items: ShoppingItemState[]; totalCount: number },
     scope: string,
     limit: number,
     canWrite: boolean,
@@ -71,6 +73,13 @@ function itemPage(
                 ? encodeCursor(scope, {
                       createdAt: page.items[limit - 1].createdAt,
                       id: page.items[limit - 1].id,
+                      group:
+                          itemProgress(
+                              page.items[limit - 1],
+                              page.items[limit - 1].purchasedQuantity,
+                          ).status === 'PURCHASED'
+                              ? 1
+                              : 0,
                   })
                 : null,
     };
@@ -91,6 +100,18 @@ function listKey(value: unknown): ShoppingListKey | null {
     )
         throw new ShoppingError('VALIDATION_ERROR', 'cursor');
     return { createdAt: value.createdAt, id: value.id };
+}
+function itemKey(value: unknown): ShoppingItemKey | null {
+    const key = listKey(value);
+    if (!key) return null;
+    if (
+        typeof value !== 'object' ||
+        value === null ||
+        !('group' in value) ||
+        (value.group !== 0 && value.group !== 1)
+    )
+        throw new ShoppingError('VALIDATION_ERROR', 'cursor');
+    return { ...key, group: value.group };
 }
 @Injectable()
 export class ShoppingQueries {
@@ -201,7 +222,7 @@ export class ShoppingQueries {
         q: { status: ShoppingItemFilter; limit: number; cursor?: string },
     ) {
         const scope = itemScope(actor, space, id, q.status);
-        const after = listKey(decodeCursor(scope, q.cursor));
+        const after = itemKey(decodeCursor(scope, q.cursor));
         return this.read(
             actor,
             space,
@@ -246,6 +267,47 @@ export class ShoppingQueries {
                 ),
             }),
         );
+    }
+    purchases(
+        actor: string,
+        space: string,
+        id: string,
+        itemId: string,
+        q: { limit: number; cursor?: string },
+    ) {
+        const scope = cursorScope({
+            actor,
+            space,
+            id,
+            itemId,
+            order: 'PURCHASE_REGISTERED_ASC_ID_ASC',
+        });
+        const after = listKey(decodeCursor(scope, q.cursor));
+        return this.read(actor, space, async () => {
+            const list = await this.store.find(space, id);
+            await this.store.findItem(space, id, itemId);
+            const page = await this.store.purchases(
+                space,
+                id,
+                itemId,
+                after,
+                q.limit + 1,
+            );
+            return {
+                id,
+                version: list.version,
+                itemId,
+                totalCount: page.totalCount,
+                items: page.items.slice(0, q.limit).map(purchaseView),
+                nextCursor:
+                    page.items.length > q.limit
+                        ? encodeCursor(scope, {
+                              createdAt: page.items[q.limit - 1].registeredAt,
+                              id: page.items[q.limit - 1].id,
+                          })
+                        : null,
+            };
+        });
     }
     history(
         actor: string,

@@ -10,6 +10,7 @@ import {
 import type { ShoppingList, ShoppingAuthor } from '../domain/shopping-list.js';
 import type { ShoppingItem } from '../domain/shopping-item.js';
 import { Quantity } from '../domain/quantity.js';
+import type { PurchaseRecord } from '../domain/purchase-record.js';
 
 @Entity('shopping_lists')
 @Index('IDX_shopping_list_page', ['spaceId', 'status', 'createdAt', 'id'])
@@ -91,6 +92,51 @@ export class ShoppingItemOrmEntity {
     @Column({ name: 'creator_display_name', type: 'varchar', length: 80 })
     creatorDisplayName!: string;
     @Column({ name: 'created_at', type: 'timestamptz' }) createdAt!: Date;
+}
+@Entity('shopping_purchase_records')
+@Index('IDX_shopping_purchase_page', [
+    'spaceId',
+    'listId',
+    'itemId',
+    'registeredAt',
+    'id',
+])
+@Unique('UQ_shopping_purchase_context', ['spaceId', 'listId', 'itemId', 'id'])
+@Check(
+    'CHK_shopping_purchase_values',
+    `quantity > 0 AND (unit IS NULL OR (length(unit) BETWEEN 1 AND 30 AND unit=btrim(unit)))`,
+)
+@ForeignKey(
+    'shopping_items',
+    ['spaceId', 'listId', 'itemId'],
+    ['spaceId', 'listId', 'id'],
+    { name: 'FK_shopping_purchase_item', onDelete: 'RESTRICT' },
+)
+@ForeignKey('persons', ['registeredByPersonId'], ['id'], {
+    name: 'FK_shopping_purchase_author',
+    onDelete: 'RESTRICT',
+})
+@ForeignKey(
+    'space_members',
+    ['spaceId', 'registeredByMemberId'],
+    ['spaceId', 'id'],
+    { name: 'FK_shopping_purchase_member', onDelete: 'RESTRICT' },
+)
+export class PurchaseRecordOrmEntity {
+    @PrimaryColumn('uuid') id!: string;
+    @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
+    @Column({ name: 'list_id', type: 'uuid' }) listId!: string;
+    @Column({ name: 'item_id', type: 'uuid' }) itemId!: string;
+    @Column({ type: 'numeric', precision: 15, scale: 3 }) quantity!: string;
+    @Column({ type: 'varchar', length: 30, nullable: true }) unit!:
+        string | null;
+    @Column({ name: 'registered_by_person_id', type: 'uuid' })
+    registeredByPersonId!: string;
+    @Column({ name: 'registered_by_member_id', type: 'uuid', nullable: true })
+    registeredByMemberId!: string | null;
+    @Column({ name: 'registered_by_display_name', type: 'varchar', length: 80 })
+    registeredByDisplayName!: string;
+    @Column({ name: 'registered_at', type: 'timestamptz' }) registeredAt!: Date;
 }
 @Entity('shopping_history')
 @Index('IDX_shopping_history_page', ['spaceId', 'aggregateId', 'sequence'])
@@ -215,5 +261,34 @@ export function rowToItem(row: ShoppingItemOrmEntity): ShoppingItem {
             displayName: row.creatorDisplayName,
         },
         createdAt: row.createdAt.toISOString(),
+    };
+}
+export function purchaseToRow(
+    spaceId: string,
+    purchase: PurchaseRecord,
+): PurchaseRecordOrmEntity {
+    const { registeredBy, registeredAt, ...rest } = purchase;
+    return {
+        ...rest,
+        spaceId,
+        registeredByPersonId: registeredBy.personId,
+        registeredByMemberId: registeredBy.memberId,
+        registeredByDisplayName: registeredBy.displayName,
+        registeredAt: new Date(registeredAt),
+    };
+}
+export function rowToPurchase(row: PurchaseRecordOrmEntity): PurchaseRecord {
+    return {
+        id: row.id,
+        listId: row.listId,
+        itemId: row.itemId,
+        quantity: Quantity.from(row.quantity).toString(),
+        unit: row.unit,
+        registeredBy: {
+            personId: row.registeredByPersonId,
+            memberId: row.registeredByMemberId,
+            displayName: row.registeredByDisplayName,
+        },
+        registeredAt: row.registeredAt.toISOString(),
     };
 }

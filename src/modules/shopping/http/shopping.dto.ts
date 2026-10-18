@@ -31,6 +31,9 @@ export const positiveQuantity = z.string().transform((value, context) => {
     }
 });
 export const unit = z.string().trim().min(1).max(30).nullable();
+export const recordPurchase = z
+    .object({ expectedVersion: version, quantity: positiveQuantity })
+    .strict();
 export const addItem = z
     .object({
         expectedVersion: version,

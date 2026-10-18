@@ -55,6 +55,30 @@ describe('shopping item needs', () => {
             changeItemNeed(exceeded, { desiredQuantity: '3' }, '5'),
         ).toThrow();
     });
+    it('derives partial, purchased and excess progress without rounding or negative remaining quantities', () => {
+        const needed = { ...item, desiredQuantity: '4' };
+        expect(itemProgress(needed, '2')).toMatchObject({
+            purchasedQuantity: '2',
+            remainingQuantity: '2',
+            status: 'PARTIALLY_PURCHASED',
+        });
+        expect(itemProgress(needed, '4')).toMatchObject({
+            purchasedQuantity: '4',
+            remainingQuantity: '0',
+            status: 'PURCHASED',
+        });
+        expect(itemProgress(needed, '5')).toMatchObject({
+            purchasedQuantity: '5',
+            remainingQuantity: '0',
+            status: 'PURCHASED',
+        });
+        expect(
+            itemProgress({ ...item, desiredQuantity: '0.301' }, '0.3'),
+        ).toMatchObject({
+            remainingQuantity: '0.001',
+            status: 'PARTIALLY_PURCHASED',
+        });
+    });
     it.each([
         { description: '' },
         { description: ' arroz ' },

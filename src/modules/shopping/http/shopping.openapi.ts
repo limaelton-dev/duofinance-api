@@ -93,6 +93,31 @@ export const shoppingSchemas: Record<string, SchemaObject> = {
         version,
         item: ref('ShoppingItem'),
     }),
+    ShoppingRecordPurchase: object({ expectedVersion: version, quantity }),
+    ShoppingPurchase: object({
+        id: uuid,
+        listId: uuid,
+        itemId: uuid,
+        quantity,
+        effectiveQuantity: quantity,
+        unit,
+        registeredBy: ref('ShoppingAuthor'),
+        registeredAt: instant,
+    }),
+    ShoppingPurchaseCommand: object({
+        id: uuid,
+        version,
+        item: ref('ShoppingItem'),
+        purchase: ref('ShoppingPurchase'),
+    }),
+    ShoppingPurchasePage: object({
+        ...pageProperties,
+        id: uuid,
+        version,
+        itemId: uuid,
+        items: { type: 'array', items: ref('ShoppingPurchase') },
+        totalCount: { type: 'integer', minimum: 0 },
+    }),
     ShoppingItemDetail: object({
         id: uuid,
         version,
@@ -154,6 +179,7 @@ export const shoppingSchemas: Record<string, SchemaObject> = {
                         'RENAMED',
                         'ITEM_ADDED',
                         'ITEM_NEED_CHANGED',
+                        'PURCHASE_RECORDED',
                     ],
                 },
                 actor: ref('ShoppingAuthor'),
@@ -239,7 +265,8 @@ export function shoppingOperation(
                 [
                     method === 'post' &&
                     (path.endsWith('/shopping-lists') ||
-                        path.endsWith('/items'))
+                        path.endsWith('/items') ||
+                        path.endsWith('/purchases'))
                         ? '201'
                         : '200',
                     result,
@@ -348,3 +375,13 @@ shoppingOpenApi.paths[itemBase]!.get!.parameters!.push({
         default: 'ACTIVE',
     },
 });
+const purchaseBase = `${itemBase}/{itemId}/purchases`;
+shoppingOpenApi.paths[purchaseBase] = {
+    get: shoppingOperation('get', purchaseBase, 'ShoppingPurchasePage'),
+    post: shoppingOperation(
+        'post',
+        purchaseBase,
+        'ShoppingPurchaseCommand',
+        'ShoppingRecordPurchase',
+    ),
+};

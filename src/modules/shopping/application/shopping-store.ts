@@ -1,9 +1,11 @@
 import type { ShoppingAuthor, ShoppingList } from '../domain/shopping-list.js';
 import type {
     ShoppingItem,
+    ShoppingItemState,
     ShoppingItemFilter,
     ShoppingSummary,
 } from '../domain/shopping-item.js';
+import type { PurchaseRecord } from '../domain/purchase-record.js';
 
 export const SHOPPING_STORE = Symbol('SHOPPING_STORE');
 export interface ShoppingHistoryEvent {
@@ -20,11 +22,18 @@ export interface ShoppingListKey {
     createdAt: string;
     id: string;
 }
+export interface ShoppingItemKey extends ShoppingListKey {
+    group: number;
+}
 export interface ShoppingStore {
     find(space: string, id: string): Promise<ShoppingList>;
     insert(list: ShoppingList): Promise<void>;
     update(before: ShoppingList, after: ShoppingList): Promise<void>;
-    findItem(space: string, list: string, id: string): Promise<ShoppingItem>;
+    findItem(
+        space: string,
+        list: string,
+        id: string,
+    ): Promise<ShoppingItemState>;
     insertItem(space: string, item: ShoppingItem): Promise<void>;
     updateItem(space: string, item: ShoppingItem): Promise<void>;
     summary(
@@ -35,9 +44,17 @@ export interface ShoppingStore {
         space: string,
         list: string,
         status: ShoppingItemFilter,
+        after: ShoppingItemKey | null,
+        limit: number,
+    ): Promise<{ items: ShoppingItemState[]; totalCount: number }>;
+    insertPurchase(space: string, purchase: PurchaseRecord): Promise<void>;
+    purchases(
+        space: string,
+        list: string,
+        item: string,
         after: ShoppingListKey | null,
         limit: number,
-    ): Promise<{ items: ShoppingItem[]; totalCount: number }>;
+    ): Promise<{ items: PurchaseRecord[]; totalCount: number }>;
     list(
         space: string,
         status: 'ACTIVE' | 'ARCHIVED' | 'ALL',

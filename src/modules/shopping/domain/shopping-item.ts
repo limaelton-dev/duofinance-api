@@ -11,6 +11,9 @@ export interface ShoppingItem {
     creator: ShoppingAuthor;
     createdAt: string;
 }
+export interface ShoppingItemState extends ShoppingItem {
+    purchasedQuantity: string;
+}
 export type ShoppingItemFilter =
     'ACTIVE' | 'PENDING' | 'PURCHASED' | 'REMOVED' | 'ALL';
 export interface ShoppingSummary {
@@ -22,15 +25,22 @@ export interface ShoppingSummary {
     isComplete: boolean;
     canSuggestArchival: boolean;
 }
-export function shoppingSummary(activeItemCount = 0): ShoppingSummary {
+export function shoppingSummary(
+    activeItemCount = 0,
+    pendingItemCount = activeItemCount,
+    partiallyPurchasedItemCount = 0,
+    purchasedItemCount = 0,
+): ShoppingSummary {
     return {
         activeItemCount,
-        pendingItemCount: activeItemCount,
-        partiallyPurchasedItemCount: 0,
-        purchasedItemCount: 0,
-        actionableItemCount: activeItemCount,
-        isComplete: activeItemCount === 0,
-        canSuggestArchival: false,
+        pendingItemCount,
+        partiallyPurchasedItemCount,
+        purchasedItemCount,
+        actionableItemCount: pendingItemCount + partiallyPurchasedItemCount,
+        isComplete: pendingItemCount + partiallyPurchasedItemCount === 0,
+        canSuggestArchival:
+            activeItemCount > 0 &&
+            pendingItemCount + partiallyPurchasedItemCount === 0,
     };
 }
 export function validateUnit(unit: string | null) {
