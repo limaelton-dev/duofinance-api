@@ -2092,6 +2092,10 @@ describe('CARD-032 compensating financial reversals preserve original facts', ()
             await f.browser
                 .post(`${f.path}/reversals`, reversal(f.fact.id, 1000))
                 .expect(201);
+            await rewindFinanceMigrationsTo(
+                migrationSource,
+                'FinancialFulfillmentReversals1792252537110',
+            );
             const before = await financeSnapshot(db);
             await expect(migrationSource.undoLastMigration()).rejects.toThrow(
                 /hist[oó]rico|revers|compens/i,

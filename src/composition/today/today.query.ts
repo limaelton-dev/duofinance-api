@@ -1,5 +1,10 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
+    ROUTINE_ATTENTION_QUERY,
+    RoutineAttentionUnavailableError,
+    type RoutineAttentionQueryPort,
+} from '../../modules/routine/application/ports/public/routine-attention-query.port.js';
+import {
     SPACE_ACCESS_PORT,
     type SpaceAccessPort,
 } from '../../modules/spaces/application/ports/public/space-access.port.js';
@@ -38,11 +43,15 @@ export class TodayQuery {
         @Optional()
         @Inject(PLANNED_TODAY_QUERY_PORT)
         private readonly planned?: PlannedTodayQueryPort,
+        @Optional()
+        @Inject(ROUTINE_ATTENTION_QUERY)
+        private readonly routine?: RoutineAttentionQueryPort,
     ) {}
 
     async execute(actor: PersonId, space: SpaceId): Promise<TodayResponse> {
         const authorized = await this.access.assertCanRead(actor, space);
-        const referenceDate = todayReferenceDate(this.clock.now());
+        const instant = this.clock.now();
+        const referenceDate = todayReferenceDate(instant);
         let finance: TodayResponse['finance'] = {
             status: 'AVAILABLE',
             data: {
@@ -113,6 +122,28 @@ export class TodayQuery {
                 },
             };
         }
+        let routine: TodayResponse['routine'];
+        try {
+            if (!this.routine) throw new RoutineAttentionUnavailableError();
+            const data = await this.routine.read(actor, space, instant);
+            if (
+                data.referenceDate !== referenceDate ||
+                data.referenceInstant !== instant.toISOString()
+            )
+                throw new SpacesDomainError('SPACE_NOT_FOUND');
+            routine = { status: 'AVAILABLE', data };
+        } catch (error) {
+            if (!(error instanceof RoutineAttentionUnavailableError))
+                throw error;
+            routine = {
+                status: 'UNAVAILABLE',
+                error: {
+                    code: 'ROUTINE_TODAY_UNAVAILABLE',
+                    message:
+                        'Não foi possível carregar as tarefas. Tente novamente.',
+                },
+            };
+        }
         const confirmed = await this.access.assertCanRead(actor, space);
         if (
             confirmed.spaceId !== authorized.spaceId ||
@@ -126,6 +157,7 @@ export class TodayQuery {
             spaceStatus: confirmed.status,
             referenceDate,
             finance,
+            routine,
         };
     }
 }

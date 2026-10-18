@@ -1,4 +1,6 @@
 import { FinancesModule } from './modules/finances/finances.module.js';
+import { RoutineModule } from './modules/routine/routine.module.js';
+import { mapRoutineError } from './modules/routine/http/routine-error.mapper.js';
 import { TodayModule } from './composition/today/today.module.js';
 import { mapFinancesError } from './modules/finances/http/filters/finances-error.mapper.js';
 import { Module } from '@nestjs/common';
@@ -23,6 +25,7 @@ import { mapSpacesError } from './modules/spaces/http/filters/spaces-error.mappe
         SpacesModule,
         IdentityModule,
         FinancesModule,
+        RoutineModule,
         TodayModule,
     ],
     controllers: [],
@@ -34,6 +37,7 @@ import { mapSpacesError } from './modules/spaces/http/filters/spaces-error.mappe
                     mapIdentityError,
                     mapSpacesError,
                     mapFinancesError,
+                    mapRoutineError,
                 ]),
         },
     ],

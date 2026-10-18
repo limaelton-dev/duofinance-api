@@ -68,6 +68,14 @@ describe('today authorized composition', () => {
                     },
                 },
             },
+            routine: {
+                status: 'UNAVAILABLE',
+                error: {
+                    code: 'ROUTINE_TODAY_UNAVAILABLE',
+                    message:
+                        'Não foi possível carregar as tarefas. Tente novamente.',
+                },
+            },
         });
         expect(f.clock.now).toHaveBeenCalledTimes(1);
         expect(f.finance.read).toHaveBeenCalledExactlyOnceWith(
