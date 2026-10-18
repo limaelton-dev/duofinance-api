@@ -28,6 +28,13 @@ const object = (
     required,
 });
 const name = nullable({ type: 'string', minLength: 1, maxLength: 120 });
+const quantity: SchemaObject = {
+    type: 'string',
+    pattern: '^(0|[1-9]\\d{0,11})(\\.\\d{1,3})?$',
+    description:
+        'Decimal exato com até 3 casas e máximo 999999999999.999. Quantidade desejada é positiva; respostas removem zeros fracionários finais.',
+};
+const unit = nullable({ type: 'string', minLength: 1, maxLength: 30 });
 const listProperties = {
     id: uuid,
     spaceId: uuid,
@@ -50,6 +57,60 @@ export const shoppingSchemas: Record<string, SchemaObject> = {
     ShoppingCreateList: object({ name }, []),
     ShoppingRenameList: object({ expectedVersion: version, name }),
     ShoppingList: object(listProperties),
+    ShoppingAddItem: object(
+        {
+            expectedVersion: version,
+            description: { type: 'string', minLength: 1, maxLength: 500 },
+            desiredQuantity: quantity,
+            unit,
+        },
+        ['expectedVersion', 'description', 'desiredQuantity'],
+    ),
+    ShoppingChangeNeed: {
+        ...object(
+            { expectedVersion: version, desiredQuantity: quantity, unit },
+            ['expectedVersion'],
+        ),
+        anyOf: [{ required: ['desiredQuantity'] }, { required: ['unit'] }],
+    },
+    ShoppingItem: object({
+        id: uuid,
+        listId: uuid,
+        description: { type: 'string', minLength: 1, maxLength: 500 },
+        desiredQuantity: quantity,
+        purchasedQuantity: quantity,
+        remainingQuantity: quantity,
+        unit,
+        creator: ref('ShoppingAuthor'),
+        createdAt: instant,
+        status: {
+            type: 'string',
+            enum: ['PENDING', 'PARTIALLY_PURCHASED', 'PURCHASED'],
+        },
+    }),
+    ShoppingItemCommand: object({
+        id: uuid,
+        version,
+        item: ref('ShoppingItem'),
+    }),
+    ShoppingItemDetail: object({
+        id: uuid,
+        version,
+        item: ref('ShoppingItemView'),
+    }),
+    ShoppingItemsSlice: object({
+        ...pageProperties,
+        items: { type: 'array', items: ref('ShoppingItemView') },
+        totalCount: { type: 'integer', minimum: 0 },
+    }),
+    ShoppingItemPage: object({
+        ...pageProperties,
+        id: uuid,
+        version,
+        summary: ref('ShoppingSummary'),
+        items: { type: 'array', items: ref('ShoppingItemView') },
+        totalCount: { type: 'integer', minimum: 0 },
+    }),
     ShoppingSummary: object({
         ...Object.fromEntries(
             [
@@ -86,7 +147,15 @@ export const shoppingSchemas: Record<string, SchemaObject> = {
                 spaceId: uuid,
                 aggregateId: uuid,
                 sequence: version,
-                type: { type: 'string', enum: ['CREATED', 'RENAMED'] },
+                type: {
+                    type: 'string',
+                    enum: [
+                        'CREATED',
+                        'RENAMED',
+                        'ITEM_ADDED',
+                        'ITEM_NEED_CHANGED',
+                    ],
+                },
                 actor: ref('ShoppingAuthor'),
                 registeredAt: instant,
                 data: { type: 'object', additionalProperties: true },
@@ -94,12 +163,13 @@ export const shoppingSchemas: Record<string, SchemaObject> = {
         },
     }),
 };
+shoppingSchemas.ShoppingItemView = object({
+    ...shoppingSchemas.ShoppingItem.properties,
+    allowedActions: { type: 'array', items: { type: 'string' } },
+});
 shoppingSchemas.ShoppingListDetail = object({
     ...shoppingSchemas.ShoppingListView.properties,
-    items: object({
-        ...pageProperties,
-        items: { type: 'array', maxItems: 0, items: {} },
-    }),
+    items: ref('ShoppingItemsSlice'),
 });
 export function shoppingOperation(
     method: 'get' | 'post',
@@ -167,7 +237,9 @@ export function shoppingOperation(
         responses: Object.fromEntries(
             [
                 [
-                    method === 'post' && path.endsWith('/shopping-lists')
+                    method === 'post' &&
+                    (path.endsWith('/shopping-lists') ||
+                        path.endsWith('/items'))
                         ? '201'
                         : '200',
                     result,
@@ -181,7 +253,7 @@ export function shoppingOperation(
                 {
                     description:
                         status === '409'
-                            ? 'CONCURRENT_MODIFICATION, IDEMPOTENCY_KEY_REUSED ou SHOPPING_LIST_ARCHIVED'
+                            ? 'CONCURRENT_MODIFICATION, IDEMPOTENCY_KEY_REUSED, SHOPPING_LIST_ARCHIVED ou DESIRED_QUANTITY_BELOW_PURCHASED'
                             : status === '400'
                               ? 'VALIDATION_ERROR com campo útil em português'
                               : 'Resultado da operação',
@@ -243,6 +315,36 @@ shoppingOpenApi.paths[base]!.get!.parameters!.push({
     schema: {
         type: 'string',
         enum: ['ACTIVE', 'ARCHIVED', 'ALL'],
+        default: 'ACTIVE',
+    },
+});
+const itemBase = `${base}/{listId}/items`;
+shoppingOpenApi.paths[itemBase] = {
+    get: shoppingOperation('get', itemBase, 'ShoppingItemPage'),
+    post: shoppingOperation(
+        'post',
+        itemBase,
+        'ShoppingItemCommand',
+        'ShoppingAddItem',
+    ),
+};
+shoppingOpenApi.paths[`${itemBase}/{itemId}`] = {
+    get: shoppingOperation('get', `${itemBase}/{itemId}`, 'ShoppingItemDetail'),
+};
+shoppingOpenApi.paths[`${itemBase}/{itemId}/need`] = {
+    post: shoppingOperation(
+        'post',
+        `${itemBase}/{itemId}/need`,
+        'ShoppingItemCommand',
+        'ShoppingChangeNeed',
+    ),
+};
+shoppingOpenApi.paths[itemBase]!.get!.parameters!.push({
+    name: 'status',
+    in: 'query',
+    schema: {
+        type: 'string',
+        enum: ['ACTIVE', 'PENDING', 'PURCHASED', 'REMOVED', 'ALL'],
         default: 'ACTIVE',
     },
 });

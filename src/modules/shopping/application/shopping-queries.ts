@@ -15,20 +15,64 @@ import {
 import { cursorScope, decodeCursor, encodeCursor } from './shopping-cursor.js';
 import { ShoppingError } from '../domain/shopping-error.js';
 import type { ShoppingList } from '../domain/shopping-list.js';
+import {
+    itemProgress,
+    shoppingSummary,
+    type ShoppingItem,
+    type ShoppingItemFilter,
+    type ShoppingSummary,
+} from '../domain/shopping-item.js';
 
-export function shoppingListView(list: ShoppingList, canWrite = true) {
+export function shoppingListView(
+    list: ShoppingList,
+    canWrite = true,
+    summary: ShoppingSummary = shoppingSummary(),
+) {
     return {
         ...list,
-        summary: {
-            activeItemCount: 0,
-            pendingItemCount: 0,
-            partiallyPurchasedItemCount: 0,
-            purchasedItemCount: 0,
-            actionableItemCount: 0,
-            isComplete: true,
-            canSuggestArchival: false,
-        },
-        allowedActions: canWrite && list.status === 'ACTIVE' ? ['RENAME'] : [],
+        summary,
+        allowedActions:
+            canWrite && list.status === 'ACTIVE' ? ['RENAME', 'ADD_ITEM'] : [],
+    };
+}
+export function shoppingItemView(item: ShoppingItem, canWrite = true) {
+    return {
+        ...itemProgress(item),
+        allowedActions: canWrite ? ['CHANGE_NEED'] : [],
+    };
+}
+function itemScope(
+    actor: string,
+    space: string,
+    list: string,
+    status: ShoppingItemFilter,
+) {
+    return cursorScope({
+        actor,
+        space,
+        list,
+        status,
+        order: 'PENDING_CREATED_ASC_ID_ASC',
+    });
+}
+function itemPage(
+    page: { items: ShoppingItem[]; totalCount: number },
+    scope: string,
+    limit: number,
+    canWrite: boolean,
+) {
+    return {
+        items: page.items
+            .slice(0, limit)
+            .map((item) => shoppingItemView(item, canWrite)),
+        totalCount: page.totalCount,
+        nextCursor:
+            page.items.length > limit
+                ? encodeCursor(scope, {
+                      createdAt: page.items[limit - 1].createdAt,
+                      id: page.items[limit - 1].id,
+                  })
+                : null,
     };
 }
 function listKey(value: unknown): ShoppingListKey | null {
@@ -89,10 +133,23 @@ export class ShoppingQueries {
         return this.read(
             actor,
             space,
-            () => this.store.find(space, id),
-            (list, context) => ({
-                ...shoppingListView(list, context.status === 'ACTIVE'),
-                items: { items: [], nextCursor: null },
+            async () => ({
+                list: await this.store.find(space, id),
+                summaries: await this.store.summary(space, [id]),
+                items: await this.store.items(space, id, 'ACTIVE', null, 21),
+            }),
+            ({ list, summaries, items }, context) => ({
+                ...shoppingListView(
+                    list,
+                    context.status === 'ACTIVE',
+                    summaries.get(id),
+                ),
+                items: itemPage(
+                    items,
+                    itemScope(actor, space, id, 'ACTIVE'),
+                    20,
+                    context.status === 'ACTIVE' && list.status === 'ACTIVE',
+                ),
             }),
         );
     }
@@ -120,7 +177,11 @@ export class ShoppingQueries {
                 items: page.items
                     .slice(0, q.limit)
                     .map((list) =>
-                        shoppingListView(list, context.status === 'ACTIVE'),
+                        shoppingListView(
+                            list,
+                            context.status === 'ACTIVE',
+                            page.summaries.get(list.id),
+                        ),
                     ),
                 totalCount: page.totalCount,
                 nextCursor:
@@ -130,6 +191,59 @@ export class ShoppingQueries {
                               id: page.items[q.limit - 1].id,
                           })
                         : null,
+            }),
+        );
+    }
+    items(
+        actor: string,
+        space: string,
+        id: string,
+        q: { status: ShoppingItemFilter; limit: number; cursor?: string },
+    ) {
+        const scope = itemScope(actor, space, id, q.status);
+        const after = listKey(decodeCursor(scope, q.cursor));
+        return this.read(
+            actor,
+            space,
+            async () => ({
+                list: await this.store.find(space, id),
+                summaries: await this.store.summary(space, [id]),
+                page: await this.store.items(
+                    space,
+                    id,
+                    q.status,
+                    after,
+                    q.limit + 1,
+                ),
+            }),
+            ({ list, summaries, page }, context) => ({
+                id: list.id,
+                version: list.version,
+                summary: summaries.get(id) ?? shoppingSummary(),
+                ...itemPage(
+                    page,
+                    scope,
+                    q.limit,
+                    context.status === 'ACTIVE' && list.status === 'ACTIVE',
+                ),
+            }),
+        );
+    }
+    item(actor: string, space: string, id: string, item: string) {
+        return this.read(
+            actor,
+            space,
+            async () => ({
+                list: await this.store.find(space, id),
+                item: await this.store.findItem(space, id, item),
+            }),
+            ({ list, item }, context) => ({
+                id: list.id,
+                version: list.version,
+                item: shoppingItemView(
+                    item,
+                    context.status === 'ACTIVE' && list.status === 'ACTIVE',
+                ),
             }),
         );
     }

@@ -7,14 +7,23 @@ import type {
     ShoppingStore,
 } from '../application/shopping-store.js';
 import type { ShoppingList } from '../domain/shopping-list.js';
+import {
+    shoppingSummary,
+    type ShoppingItem,
+    type ShoppingItemFilter,
+    type ShoppingSummary,
+} from '../domain/shopping-item.js';
 import { ShoppingError } from '../domain/shopping-error.js';
 import {
     ShoppingListOrmEntity,
+    ShoppingItemOrmEntity,
     ShoppingHistoryOrmEntity,
     ShoppingReceiptOrmEntity,
     ShoppingAuditOrmEntity,
     rowToList,
     listToRow,
+    itemToRow,
+    rowToItem,
 } from './shopping.orm-entity.js';
 
 @Injectable()
@@ -48,6 +57,79 @@ export class TypeOrmShoppingStore implements ShoppingStore {
         if (changed.affected !== 1)
             throw new ShoppingError('CONCURRENT_MODIFICATION');
     }
+    async findItem(spaceId: string, listId: string, id: string) {
+        const row = await this.provider
+            .get()
+            .findOneBy(ShoppingItemOrmEntity, { spaceId, listId, id });
+        if (!row) throw new ShoppingError('SHOPPING_ITEM_NOT_FOUND');
+        return rowToItem(row);
+    }
+    async insertItem(space: string, item: ShoppingItem) {
+        await this.provider
+            .get()
+            .insert(ShoppingItemOrmEntity, itemToRow(space, item));
+    }
+    async updateItem(spaceId: string, item: ShoppingItem) {
+        const changed = await this.provider
+            .get()
+            .update(
+                ShoppingItemOrmEntity,
+                { spaceId, listId: item.listId, id: item.id },
+                { desiredQuantity: item.desiredQuantity, unit: item.unit },
+            );
+        if (changed.affected !== 1)
+            throw new ShoppingError('SHOPPING_ITEM_NOT_FOUND');
+    }
+    async summary(
+        spaceId: string,
+        lists: string[],
+    ): Promise<Map<string, ShoppingSummary>> {
+        if (!lists.length) return new Map();
+        const rows: { listId: string; count: string }[] = await this.provider
+            .get()
+            .createQueryBuilder(ShoppingItemOrmEntity, 'i')
+            .select('i.listId', 'listId')
+            .addSelect('COUNT(*)', 'count')
+            .where('i.spaceId=:spaceId AND i.listId IN (:...lists)', {
+                spaceId,
+                lists,
+            })
+            .groupBy('i.listId')
+            .getRawMany();
+        const result = new Map(lists.map((id) => [id, shoppingSummary()]));
+        for (const row of rows)
+            result.set(row.listId, shoppingSummary(Number(row.count)));
+        return result;
+    }
+    async items(
+        spaceId: string,
+        listId: string,
+        status: ShoppingItemFilter,
+        after: ShoppingListKey | null,
+        limit: number,
+    ) {
+        const query = this.provider
+            .get()
+            .createQueryBuilder(ShoppingItemOrmEntity, 'i')
+            .where('i.spaceId=:spaceId AND i.listId=:listId', {
+                spaceId,
+                listId,
+            });
+        if (status === 'PURCHASED' || status === 'REMOVED')
+            query.andWhere('FALSE');
+        const totalCount = await query.clone().getCount();
+        if (after)
+            query.andWhere('(i.createdAt,i.id)>(:createdAt,:id)', {
+                createdAt: new Date(after.createdAt),
+                id: after.id,
+            });
+        const rows = await query
+            .orderBy('i.createdAt', 'ASC')
+            .addOrderBy('i.id', 'ASC')
+            .take(limit)
+            .getMany();
+        return { items: rows.map(rowToItem), totalCount };
+    }
     async list(
         spaceId: string,
         status: 'ACTIVE' | 'ARCHIVED' | 'ALL',
@@ -70,7 +152,14 @@ export class TypeOrmShoppingStore implements ShoppingStore {
             .addOrderBy('l.id', 'ASC')
             .take(limit)
             .getMany();
-        return { items: rows.map(rowToList), totalCount };
+        return {
+            items: rows.map(rowToList),
+            totalCount,
+            summaries: await this.summary(
+                spaceId,
+                rows.map((row) => row.id),
+            ),
+        };
     }
     async event(event: ShoppingHistoryEvent) {
         const { actor, ...rest } = event;

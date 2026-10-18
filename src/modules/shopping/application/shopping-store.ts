@@ -1,4 +1,9 @@
 import type { ShoppingAuthor, ShoppingList } from '../domain/shopping-list.js';
+import type {
+    ShoppingItem,
+    ShoppingItemFilter,
+    ShoppingSummary,
+} from '../domain/shopping-item.js';
 
 export const SHOPPING_STORE = Symbol('SHOPPING_STORE');
 export interface ShoppingHistoryEvent {
@@ -19,12 +24,30 @@ export interface ShoppingStore {
     find(space: string, id: string): Promise<ShoppingList>;
     insert(list: ShoppingList): Promise<void>;
     update(before: ShoppingList, after: ShoppingList): Promise<void>;
+    findItem(space: string, list: string, id: string): Promise<ShoppingItem>;
+    insertItem(space: string, item: ShoppingItem): Promise<void>;
+    updateItem(space: string, item: ShoppingItem): Promise<void>;
+    summary(
+        space: string,
+        lists: string[],
+    ): Promise<Map<string, ShoppingSummary>>;
+    items(
+        space: string,
+        list: string,
+        status: ShoppingItemFilter,
+        after: ShoppingListKey | null,
+        limit: number,
+    ): Promise<{ items: ShoppingItem[]; totalCount: number }>;
     list(
         space: string,
         status: 'ACTIVE' | 'ARCHIVED' | 'ALL',
         after: ShoppingListKey | null,
         limit: number,
-    ): Promise<{ items: ShoppingList[]; totalCount: number }>;
+    ): Promise<{
+        items: ShoppingList[];
+        totalCount: number;
+        summaries: Map<string, ShoppingSummary>;
+    }>;
     event(event: ShoppingHistoryEvent): Promise<void>;
     history(
         space: string,

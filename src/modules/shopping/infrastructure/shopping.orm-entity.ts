@@ -8,6 +8,8 @@ import {
     Unique,
 } from 'typeorm';
 import type { ShoppingList, ShoppingAuthor } from '../domain/shopping-list.js';
+import type { ShoppingItem } from '../domain/shopping-item.js';
+import { Quantity } from '../domain/quantity.js';
 
 @Entity('shopping_lists')
 @Index('IDX_shopping_list_page', ['spaceId', 'status', 'createdAt', 'id'])
@@ -46,6 +48,49 @@ export class ShoppingListOrmEntity {
     @Column({ name: 'created_at', type: 'timestamptz' }) createdAt!: Date;
     @Column({ name: 'archived_at', type: 'timestamptz', nullable: true })
     archivedAt!: Date | null;
+}
+@Entity('shopping_items')
+@Index('IDX_shopping_item_page', ['spaceId', 'listId', 'createdAt', 'id'])
+@Unique('UQ_shopping_item_context', ['spaceId', 'listId', 'id'])
+@Check(
+    'CHK_shopping_item_values',
+    `length(description) BETWEEN 1 AND 500 AND description=btrim(description) AND desired_quantity > 0 AND (unit IS NULL OR (length(unit) BETWEEN 1 AND 30 AND unit=btrim(unit)))`,
+)
+@ForeignKey('shopping_lists', ['spaceId', 'listId'], ['spaceId', 'id'], {
+    name: 'FK_shopping_item_list',
+    onDelete: 'RESTRICT',
+})
+@ForeignKey('persons', ['creatorPersonId'], ['id'], {
+    name: 'FK_shopping_item_creator',
+    onDelete: 'RESTRICT',
+})
+@ForeignKey(
+    'space_members',
+    ['spaceId', 'creatorMemberId'],
+    ['spaceId', 'id'],
+    { name: 'FK_shopping_item_creator_member', onDelete: 'RESTRICT' },
+)
+export class ShoppingItemOrmEntity {
+    @PrimaryColumn('uuid') id!: string;
+    @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
+    @Column({ name: 'list_id', type: 'uuid' }) listId!: string;
+    @Column({ type: 'varchar', length: 500 }) description!: string;
+    @Column({
+        name: 'desired_quantity',
+        type: 'numeric',
+        precision: 15,
+        scale: 3,
+    })
+    desiredQuantity!: string;
+    @Column({ type: 'varchar', length: 30, nullable: true }) unit!:
+        string | null;
+    @Column({ name: 'creator_person_id', type: 'uuid' })
+    creatorPersonId!: string;
+    @Column({ name: 'creator_member_id', type: 'uuid', nullable: true })
+    creatorMemberId!: string | null;
+    @Column({ name: 'creator_display_name', type: 'varchar', length: 80 })
+    creatorDisplayName!: string;
+    @Column({ name: 'created_at', type: 'timestamptz' }) createdAt!: Date;
 }
 @Entity('shopping_history')
 @Index('IDX_shopping_history_page', ['spaceId', 'aggregateId', 'sequence'])
@@ -138,5 +183,37 @@ export function rowToList(row: ShoppingListOrmEntity): ShoppingList {
         creator,
         createdAt: createdAt.toISOString(),
         archivedAt: archivedAt?.toISOString() ?? null,
+    };
+}
+export function itemToRow(
+    spaceId: string,
+    item: ShoppingItem,
+): ShoppingItemOrmEntity {
+    const { creator, createdAt, ...rest } = item;
+    return {
+        ...rest,
+        spaceId,
+        creatorPersonId: creator.personId,
+        creatorMemberId: creator.memberId,
+        creatorDisplayName: creator.displayName,
+        createdAt: new Date(createdAt),
+    };
+}
+export function rowToItem(row: ShoppingItemOrmEntity): ShoppingItem {
+    return {
+        id: row.id,
+        listId: row.listId,
+        description: row.description,
+        desiredQuantity: Quantity.from(
+            row.desiredQuantity,
+            'desiredQuantity',
+        ).toString(),
+        unit: row.unit,
+        creator: {
+            personId: row.creatorPersonId,
+            memberId: row.creatorMemberId,
+            displayName: row.creatorDisplayName,
+        },
+        createdAt: row.createdAt.toISOString(),
     };
 }
