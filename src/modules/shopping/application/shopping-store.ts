@@ -5,7 +5,11 @@ import type {
     ShoppingItemFilter,
     ShoppingSummary,
 } from '../domain/shopping-item.js';
-import type { PurchaseRecord } from '../domain/purchase-record.js';
+import type {
+    PurchaseRecord,
+    PurchaseRecordState,
+} from '../domain/purchase-record.js';
+import type { PurchaseCorrection } from '../domain/purchase-correction.js';
 
 export const SHOPPING_STORE = Symbol('SHOPPING_STORE');
 export interface ShoppingHistoryEvent {
@@ -48,13 +52,31 @@ export interface ShoppingStore {
         limit: number,
     ): Promise<{ items: ShoppingItemState[]; totalCount: number }>;
     insertPurchase(space: string, purchase: PurchaseRecord): Promise<void>;
+    findPurchase(
+        space: string,
+        list: string,
+        item: string,
+        id: string,
+    ): Promise<PurchaseRecordState>;
+    insertCorrection(
+        space: string,
+        correction: PurchaseCorrection,
+    ): Promise<void>;
+    corrections(
+        space: string,
+        list: string,
+        item: string,
+        purchase: string,
+        after: number,
+        limit: number,
+    ): Promise<{ items: PurchaseCorrection[]; totalCount: number }>;
     purchases(
         space: string,
         list: string,
         item: string,
         after: ShoppingListKey | null,
         limit: number,
-    ): Promise<{ items: PurchaseRecord[]; totalCount: number }>;
+    ): Promise<{ items: PurchaseRecordState[]; totalCount: number }>;
     list(
         space: string,
         status: 'ACTIVE' | 'ARCHIVED' | 'ALL',

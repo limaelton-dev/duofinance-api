@@ -17,6 +17,11 @@ import {
 import { ShoppingError } from '../domain/shopping-error.js';
 import { Quantity } from '../domain/quantity.js';
 import type { PurchaseRecord } from '../domain/purchase-record.js';
+import type { PurchaseCorrection } from '../domain/purchase-correction.js';
+import {
+    effectivePurchaseJoinSql,
+    effectivePurchaseQuantitySql,
+} from './shopping-purchases.sql.js';
 import {
     shoppingProgressSql,
     shoppingItemFilterSql,
@@ -26,6 +31,7 @@ import {
     ShoppingListOrmEntity,
     ShoppingItemOrmEntity,
     PurchaseRecordOrmEntity,
+    PurchaseCorrectionOrmEntity,
     ShoppingHistoryOrmEntity,
     ShoppingReceiptOrmEntity,
     ShoppingAuditOrmEntity,
@@ -35,6 +41,8 @@ import {
     rowToItem,
     purchaseToRow,
     rowToPurchase,
+    correctionToRow,
+    rowToCorrection,
 } from './shopping.orm-entity.js';
 
 @Injectable()
@@ -76,7 +84,7 @@ export class TypeOrmShoppingStore implements ShoppingStore {
         const [total] = await this.provider
             .get()
             .query(
-                `SELECT COALESCE(SUM(quantity),0)::text AS quantity FROM shopping_purchase_records WHERE space_id=$1 AND list_id=$2 AND item_id=$3`,
+                `SELECT COALESCE(SUM(${effectivePurchaseQuantitySql}),0)::text AS quantity FROM shopping_purchase_records p ${effectivePurchaseJoinSql} WHERE p.space_id=$1 AND p.list_id=$2 AND p.item_id=$3`,
                 [spaceId, listId, id],
             );
         return {
@@ -181,6 +189,68 @@ export class TypeOrmShoppingStore implements ShoppingStore {
             .get()
             .insert(PurchaseRecordOrmEntity, purchaseToRow(space, purchase));
     }
+    async findPurchase(
+        spaceId: string,
+        listId: string,
+        itemId: string,
+        id: string,
+    ) {
+        const row = await this.provider
+            .get()
+            .findOneBy(PurchaseRecordOrmEntity, {
+                spaceId,
+                listId,
+                itemId,
+                id,
+            });
+        if (!row) throw new ShoppingError('SHOPPING_PURCHASE_NOT_FOUND');
+        const correction = await this.provider
+            .get()
+            .findOne(PurchaseCorrectionOrmEntity, {
+                where: { spaceId, listId, itemId, purchaseId: id },
+                order: { sequence: 'DESC' },
+            });
+        return {
+            ...rowToPurchase(row),
+            effectiveQuantity: Quantity.from(
+                correction?.quantity ?? row.quantity,
+                'quantity',
+                true,
+            ).toString(),
+        };
+    }
+    async insertCorrection(space: string, correction: PurchaseCorrection) {
+        await this.provider
+            .get()
+            .insert(
+                PurchaseCorrectionOrmEntity,
+                correctionToRow(space, correction),
+            );
+    }
+    async corrections(
+        spaceId: string,
+        listId: string,
+        itemId: string,
+        purchaseId: string,
+        after: number,
+        limit: number,
+    ) {
+        const query = this.provider
+            .get()
+            .createQueryBuilder(PurchaseCorrectionOrmEntity, 'c')
+            .where(
+                'c.spaceId=:spaceId AND c.listId=:listId AND c.itemId=:itemId AND c.purchaseId=:purchaseId',
+                { spaceId, listId, itemId, purchaseId },
+            );
+        const totalCount = await query.clone().getCount();
+        const rows = await query
+            .andWhere('c.sequence>:after', { after })
+            .orderBy('c.sequence', 'ASC')
+            .addOrderBy('c.id', 'ASC')
+            .take(limit)
+            .getMany();
+        return { items: rows.map(rowToCorrection), totalCount };
+    }
     async purchases(
         spaceId: string,
         listId: string,
@@ -206,7 +276,29 @@ export class TypeOrmShoppingStore implements ShoppingStore {
             .addOrderBy('p.id', 'ASC')
             .take(limit)
             .getMany();
-        return { items: rows.map(rowToPurchase), totalCount };
+        const corrections: { purchaseId: string; quantity: string }[] =
+            rows.length
+                ? await this.provider
+                      .get()
+                      .query(
+                          `SELECT DISTINCT ON (purchase_id) purchase_id AS "purchaseId",quantity FROM shopping_purchase_corrections WHERE space_id=$1 AND list_id=$2 AND item_id=$3 AND purchase_id=ANY($4::uuid[]) ORDER BY purchase_id,sequence DESC`,
+                          [spaceId, listId, itemId, rows.map((row) => row.id)],
+                      )
+                : [];
+        const effective = new Map(
+            corrections.map((c) => [c.purchaseId, c.quantity]),
+        );
+        return {
+            items: rows.map((row) => ({
+                ...rowToPurchase(row),
+                effectiveQuantity: Quantity.from(
+                    effective.get(row.id) ?? row.quantity,
+                    'quantity',
+                    true,
+                ).toString(),
+            })),
+            totalCount,
+        };
     }
     async list(
         spaceId: string,

@@ -94,6 +94,34 @@ export const shoppingSchemas: Record<string, SchemaObject> = {
         item: ref('ShoppingItem'),
     }),
     ShoppingRecordPurchase: object({ expectedVersion: version, quantity }),
+    ShoppingCorrectPurchase: object({ expectedVersion: version, quantity }),
+    ShoppingCorrection: object({
+        id: uuid,
+        listId: uuid,
+        itemId: uuid,
+        purchaseId: uuid,
+        sequence: version,
+        previousQuantity: quantity,
+        quantity,
+        unit,
+        correctedBy: ref('ShoppingAuthor'),
+        correctedAt: instant,
+    }),
+    ShoppingCorrectionCommand: object({
+        id: uuid,
+        version,
+        item: ref('ShoppingItem'),
+        purchase: ref('ShoppingPurchase'),
+        correction: ref('ShoppingCorrection'),
+    }),
+    ShoppingCorrectionPage: object({
+        ...pageProperties,
+        id: uuid,
+        version,
+        purchaseId: uuid,
+        items: { type: 'array', items: ref('ShoppingCorrection') },
+        totalCount: { type: 'integer', minimum: 0 },
+    }),
     ShoppingPurchase: object({
         id: uuid,
         listId: uuid,
@@ -180,6 +208,7 @@ export const shoppingSchemas: Record<string, SchemaObject> = {
                         'ITEM_ADDED',
                         'ITEM_NEED_CHANGED',
                         'PURCHASE_RECORDED',
+                        'PURCHASE_CORRECTED',
                     ],
                 },
                 actor: ref('ShoppingAuthor'),
@@ -383,5 +412,15 @@ shoppingOpenApi.paths[purchaseBase] = {
         purchaseBase,
         'ShoppingPurchaseCommand',
         'ShoppingRecordPurchase',
+    ),
+};
+const correctionBase = `${purchaseBase}/{purchaseId}/corrections`;
+shoppingOpenApi.paths[correctionBase] = {
+    get: shoppingOperation('get', correctionBase, 'ShoppingCorrectionPage'),
+    post: shoppingOperation(
+        'post',
+        correctionBase,
+        'ShoppingCorrectionCommand',
+        'ShoppingCorrectPurchase',
     ),
 };

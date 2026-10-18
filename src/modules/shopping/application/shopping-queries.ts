@@ -309,6 +309,50 @@ export class ShoppingQueries {
             };
         });
     }
+    corrections(
+        actor: string,
+        space: string,
+        id: string,
+        itemId: string,
+        purchaseId: string,
+        q: { limit: number; cursor?: string },
+    ) {
+        const scope = cursorScope({
+            actor,
+            space,
+            id,
+            itemId,
+            purchaseId,
+            order: 'CORRECTION_SEQUENCE_ASC',
+        });
+        const key = decodeCursor(scope, q.cursor);
+        if (key !== null && (!Number.isSafeInteger(key) || Number(key) < 1))
+            throw new ShoppingError('VALIDATION_ERROR', 'cursor');
+        return this.read(actor, space, async () => {
+            const list = await this.store.find(space, id);
+            await this.store.findItem(space, id, itemId);
+            await this.store.findPurchase(space, id, itemId, purchaseId);
+            const page = await this.store.corrections(
+                space,
+                id,
+                itemId,
+                purchaseId,
+                Number(key ?? 0),
+                q.limit + 1,
+            );
+            return {
+                id,
+                version: list.version,
+                purchaseId,
+                totalCount: page.totalCount,
+                items: page.items.slice(0, q.limit),
+                nextCursor:
+                    page.items.length > q.limit
+                        ? encodeCursor(scope, page.items[q.limit - 1].sequence)
+                        : null,
+            };
+        });
+    }
     history(
         actor: string,
         space: string,

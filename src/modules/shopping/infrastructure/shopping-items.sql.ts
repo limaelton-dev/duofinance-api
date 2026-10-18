@@ -1,8 +1,14 @@
+import {
+    effectivePurchaseJoinSql,
+    effectivePurchaseQuantitySql,
+} from './shopping-purchases.sql.js';
+
 export const shoppingProgressSql = `WITH scoped_items AS (
     SELECT * FROM shopping_items WHERE space_id=$1 AND list_id=ANY($2::uuid[])
 ), purchase_totals AS (
-    SELECT p.item_id,SUM(p.quantity) AS purchased_quantity FROM shopping_purchase_records p
+    SELECT p.item_id,SUM(${effectivePurchaseQuantitySql}) AS purchased_quantity FROM shopping_purchase_records p
     JOIN scoped_items i ON i.space_id=p.space_id AND i.list_id=p.list_id AND i.id=p.item_id
+    ${effectivePurchaseJoinSql}
     GROUP BY p.item_id
 ), item_progress AS (
     SELECT i.*,COALESCE(p.purchased_quantity,0) AS purchased_quantity,

@@ -10,8 +10,16 @@ export interface PurchaseRecord {
     registeredBy: ShoppingAuthor;
     registeredAt: string;
 }
-export function purchaseView(purchase: PurchaseRecord) {
-    return { ...purchase, effectiveQuantity: purchase.quantity };
+export interface PurchaseRecordState extends PurchaseRecord {
+    effectiveQuantity: string;
+}
+export function purchaseView(
+    purchase: PurchaseRecord & { effectiveQuantity?: string },
+) {
+    return {
+        ...purchase,
+        effectiveQuantity: purchase.effectiveQuantity ?? purchase.quantity,
+    };
 }
 export function purchasedAfter(current: string, quantity: string): string {
     return Quantity.from(current, 'purchasedQuantity', true)

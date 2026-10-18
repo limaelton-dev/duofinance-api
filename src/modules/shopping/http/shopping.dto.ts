@@ -31,6 +31,21 @@ export const positiveQuantity = z.string().transform((value, context) => {
     }
 });
 export const unit = z.string().trim().min(1).max(30).nullable();
+export const nonNegativeQuantity = z.string().transform((value, context) => {
+    try {
+        return Quantity.from(value, 'quantity', true).toString();
+    } catch {
+        context.addIssue({
+            code: 'custom',
+            message:
+                'Informe uma quantidade igual ou maior que zero com até 3 casas decimais e máximo 999999999999.999.',
+        });
+        return z.NEVER;
+    }
+});
+export const correctPurchase = z
+    .object({ expectedVersion: version, quantity: nonNegativeQuantity })
+    .strict();
 export const recordPurchase = z
     .object({ expectedVersion: version, quantity: positiveQuantity })
     .strict();
@@ -66,6 +81,7 @@ export function params(input: unknown) {
                 spaceId: uuid,
                 listId: uuid.optional(),
                 itemId: uuid.optional(),
+                purchaseId: uuid.optional(),
             })
             .strict(),
         input,

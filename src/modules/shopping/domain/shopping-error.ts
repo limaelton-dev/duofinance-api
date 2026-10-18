@@ -3,6 +3,7 @@ export class ShoppingError extends Error {
         public readonly code:
             | 'SHOPPING_LIST_NOT_FOUND'
             | 'SHOPPING_ITEM_NOT_FOUND'
+            | 'SHOPPING_PURCHASE_NOT_FOUND'
             | 'CONCURRENT_MODIFICATION'
             | 'IDEMPOTENCY_KEY_REUSED'
             | 'SHOPPING_LIST_ARCHIVED'
@@ -15,6 +16,8 @@ export class ShoppingError extends Error {
                 SHOPPING_LIST_NOT_FOUND: 'Lista de compras não encontrada.',
                 SHOPPING_ITEM_NOT_FOUND:
                     'Item não encontrado nesta lista de compras.',
+                SHOPPING_PURCHASE_NOT_FOUND:
+                    'Registro de compra não encontrado neste item.',
                 CONCURRENT_MODIFICATION:
                     'Os dados foram alterados. Atualize e tente novamente.',
                 IDEMPOTENCY_KEY_REUSED:

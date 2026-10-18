@@ -6,6 +6,7 @@ import {
     ShoppingListOrmEntity,
     ShoppingItemOrmEntity,
     PurchaseRecordOrmEntity,
+    PurchaseCorrectionOrmEntity,
     ShoppingHistoryOrmEntity,
     ShoppingReceiptOrmEntity,
     ShoppingAuditOrmEntity,
@@ -17,6 +18,7 @@ import { ShoppingCommands } from './application/shopping-commands.js';
 import { ShoppingLists } from './application/shopping-lists.js';
 import { ShoppingItems } from './application/shopping-items.js';
 import { ShoppingPurchases } from './application/shopping-purchases.js';
+import { ShoppingCorrections } from './application/shopping-corrections.js';
 import { ShoppingQueries } from './application/shopping-queries.js';
 import { ShoppingListController } from './http/shopping-list.controller.js';
 import { ShoppingItemController } from './http/shopping-item.controller.js';
@@ -30,6 +32,7 @@ import { ShoppingPurchaseController } from './http/shopping-purchase.controller.
             ShoppingListOrmEntity,
             ShoppingItemOrmEntity,
             PurchaseRecordOrmEntity,
+            PurchaseCorrectionOrmEntity,
             ShoppingHistoryOrmEntity,
             ShoppingReceiptOrmEntity,
             ShoppingAuditOrmEntity,
@@ -42,6 +45,7 @@ import { ShoppingPurchaseController } from './http/shopping-purchase.controller.
         ShoppingLists,
         ShoppingItems,
         ShoppingPurchases,
+        ShoppingCorrections,
         ShoppingQueries,
     ],
     controllers: [

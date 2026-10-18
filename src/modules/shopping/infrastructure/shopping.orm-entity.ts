@@ -11,6 +11,7 @@ import type { ShoppingList, ShoppingAuthor } from '../domain/shopping-list.js';
 import type { ShoppingItem } from '../domain/shopping-item.js';
 import { Quantity } from '../domain/quantity.js';
 import type { PurchaseRecord } from '../domain/purchase-record.js';
+import type { PurchaseCorrection } from '../domain/purchase-correction.js';
 
 @Entity('shopping_lists')
 @Index('IDX_shopping_list_page', ['spaceId', 'status', 'createdAt', 'id'])
@@ -137,6 +138,60 @@ export class PurchaseRecordOrmEntity {
     @Column({ name: 'registered_by_display_name', type: 'varchar', length: 80 })
     registeredByDisplayName!: string;
     @Column({ name: 'registered_at', type: 'timestamptz' }) registeredAt!: Date;
+}
+@Entity('shopping_purchase_corrections')
+@Index('IDX_shopping_correction_page', [
+    'spaceId',
+    'listId',
+    'itemId',
+    'purchaseId',
+    'sequence',
+])
+@Unique('UQ_shopping_correction_version', ['listId', 'sequence'])
+@Check(
+    'CHK_shopping_correction_values',
+    `quantity >= 0 AND previous_quantity >= 0 AND sequence > 0 AND (unit IS NULL OR (length(unit) BETWEEN 1 AND 30 AND unit=btrim(unit)))`,
+)
+@ForeignKey(
+    'shopping_purchase_records',
+    ['spaceId', 'listId', 'itemId', 'purchaseId'],
+    ['spaceId', 'listId', 'itemId', 'id'],
+    { name: 'FK_shopping_correction_purchase', onDelete: 'RESTRICT' },
+)
+@ForeignKey('persons', ['correctedByPersonId'], ['id'], {
+    name: 'FK_shopping_correction_author',
+    onDelete: 'RESTRICT',
+})
+@ForeignKey(
+    'space_members',
+    ['spaceId', 'correctedByMemberId'],
+    ['spaceId', 'id'],
+    { name: 'FK_shopping_correction_member', onDelete: 'RESTRICT' },
+)
+export class PurchaseCorrectionOrmEntity {
+    @PrimaryColumn('uuid') id!: string;
+    @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
+    @Column({ name: 'list_id', type: 'uuid' }) listId!: string;
+    @Column({ name: 'item_id', type: 'uuid' }) itemId!: string;
+    @Column({ name: 'purchase_id', type: 'uuid' }) purchaseId!: string;
+    @Column({
+        name: 'previous_quantity',
+        type: 'numeric',
+        precision: 15,
+        scale: 3,
+    })
+    previousQuantity!: string;
+    @Column({ type: 'numeric', precision: 15, scale: 3 }) quantity!: string;
+    @Column({ type: 'varchar', length: 30, nullable: true }) unit!:
+        string | null;
+    @Column({ type: 'integer' }) sequence!: number;
+    @Column({ name: 'corrected_by_person_id', type: 'uuid' })
+    correctedByPersonId!: string;
+    @Column({ name: 'corrected_by_member_id', type: 'uuid', nullable: true })
+    correctedByMemberId!: string | null;
+    @Column({ name: 'corrected_by_display_name', type: 'varchar', length: 80 })
+    correctedByDisplayName!: string;
+    @Column({ name: 'corrected_at', type: 'timestamptz' }) correctedAt!: Date;
 }
 @Entity('shopping_history')
 @Index('IDX_shopping_history_page', ['spaceId', 'aggregateId', 'sequence'])
@@ -290,5 +345,43 @@ export function rowToPurchase(row: PurchaseRecordOrmEntity): PurchaseRecord {
             displayName: row.registeredByDisplayName,
         },
         registeredAt: row.registeredAt.toISOString(),
+    };
+}
+export function correctionToRow(
+    spaceId: string,
+    correction: PurchaseCorrection,
+): PurchaseCorrectionOrmEntity {
+    const { correctedBy, correctedAt, ...rest } = correction;
+    return {
+        ...rest,
+        spaceId,
+        correctedByPersonId: correctedBy.personId,
+        correctedByMemberId: correctedBy.memberId,
+        correctedByDisplayName: correctedBy.displayName,
+        correctedAt: new Date(correctedAt),
+    };
+}
+export function rowToCorrection(
+    row: PurchaseCorrectionOrmEntity,
+): PurchaseCorrection {
+    return {
+        id: row.id,
+        listId: row.listId,
+        itemId: row.itemId,
+        purchaseId: row.purchaseId,
+        previousQuantity: Quantity.from(
+            row.previousQuantity,
+            'quantity',
+            true,
+        ).toString(),
+        quantity: Quantity.from(row.quantity, 'quantity', true).toString(),
+        unit: row.unit,
+        sequence: row.sequence,
+        correctedBy: {
+            personId: row.correctedByPersonId,
+            memberId: row.correctedByMemberId,
+            displayName: row.correctedByDisplayName,
+        },
+        correctedAt: row.correctedAt.toISOString(),
     };
 }
