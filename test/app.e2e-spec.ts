@@ -835,7 +835,7 @@ describe('CARD-001 — PostgreSQL e HTTP', () => {
             .expect(200);
 
         expect(response.body.openapi).toBe('3.1.0');
-        expect(Object.keys(response.body.paths)).toHaveLength(104);
+        expect(Object.keys(response.body.paths)).toHaveLength(106);
 
         const paths = response.body.paths as Record<
             string,
@@ -860,7 +860,7 @@ describe('CARD-001 — PostgreSQL e HTTP', () => {
             0,
         );
 
-        expect(operations).toBe(118);
+        expect(operations).toBe(120);
         expect(
             paths[
                 '/v2/spaces/{spaceId}/financial-commitments/{commitmentId}/reversal-preview'

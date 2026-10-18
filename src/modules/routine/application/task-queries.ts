@@ -21,7 +21,13 @@ export function taskView(task: Task, canWrite = true) {
     return {
         ...task,
         kind: 'ONE_OFF' as const,
-        allowedActions: canWrite && task.status === 'PENDING' ? ['ASSIGN'] : [],
+        allowedActions: !canWrite
+            ? []
+            : task.status === 'PENDING'
+              ? ['ASSIGN', 'COMPLETE']
+              : task.status === 'COMPLETED'
+                ? ['REOPEN']
+                : [],
     };
 }
 @Injectable()

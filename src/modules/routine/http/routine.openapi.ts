@@ -260,12 +260,29 @@ export function routineOperation(
     };
 }
 const base = '/v2/spaces/{spaceId}';
+routineSchemas.RoutineTaskVersion = object({ expectedVersion: integer });
 export const routineOpenApi: Pick<
     OpenAPIObject,
     'tags' | 'paths' | 'components'
 > = {
     tags: [{ name: 'Routine', description: 'Tarefas e histórico por espaço.' }],
     paths: {
+        ...Object.fromEntries(
+            ['complete', 'reopen'].map((action) => {
+                const path = `${base}/tasks/{taskId}/${action}`;
+                return [
+                    path,
+                    {
+                        post: routineOperation(
+                            'post',
+                            path,
+                            'RoutineTask',
+                            'RoutineTaskVersion',
+                        ),
+                    },
+                ];
+            }),
+        ),
         [`${base}/routine-context`]: {
             get: routineOperation(
                 'get',

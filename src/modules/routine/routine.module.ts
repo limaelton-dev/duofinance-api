@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { TaskCompletion } from './application/task-completion.js';
+import { TaskCompletionController } from './http/task-completion.controller.js';
 import { TASK_ATTENTION_READER } from './application/task-attention-reader.js';
 import { TypeOrmTaskAttentionReader } from './infrastructure/typeorm-task-attention-reader.js';
 import { TaskAttentionQuery } from './application/task-attention-query.js';
@@ -32,6 +34,7 @@ import { TaskController } from './http/task.controller.js';
         ]),
     ],
     providers: [
+        TaskCompletion,
         {
             provide: TASK_ATTENTION_READER,
             useClass: TypeOrmTaskAttentionReader,
@@ -44,7 +47,7 @@ import { TaskController } from './http/task.controller.js';
         TaskCreation,
         TaskQueries,
     ],
-    controllers: [TaskController],
+    controllers: [TaskController, TaskCompletionController],
     exports: [ROUTINE_ATTENTION_QUERY],
 })
 export class RoutineModule {}
