@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { SPACE_PARTICIPANTS_PORT } from './application/ports/public/space-participants.port.js';
+import { TypeOrmSpaceParticipants } from './infrastructure/typeorm/queries/typeorm-space-participants.js';
 import { DatabaseModule } from '../../shared/technical/database/database.module.js';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PersonOrmEntity } from './infrastructure/typeorm/entities/person.orm-entity.js';
@@ -56,6 +58,10 @@ import { FinancialEntryContextController } from './http/controllers/financial-en
     ],
 
     providers: [
+        {
+            provide: SPACE_PARTICIPANTS_PORT,
+            useClass: TypeOrmSpaceParticipants,
+        },
         {
             provide: SPACE_FINANCIAL_CONTEXT_PORT,
             useClass: TypeOrmSpaceFinancialContext,
@@ -117,6 +123,7 @@ import { FinancialEntryContextController } from './http/controllers/financial-en
     ],
 
     exports: [
+        SPACE_PARTICIPANTS_PORT,
         SPACE_FINANCIAL_CONTEXT_PORT,
         PROVISION_PERSONAL_CONTEXT,
         GET_PERSONAL_CONTEXT,
