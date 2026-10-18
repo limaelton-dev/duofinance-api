@@ -145,6 +145,7 @@ describe('CARD-002 — persistência PostgreSQL', () => {
             'FinancialCorrections1792251398684',
             'FinancialFulfillmentReversals1792252537110',
             'RoutineTasks1792336229574',
+            'RoutineRecurrences1792337903897',
         ]);
 
         const context = new TransactionContext();

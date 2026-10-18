@@ -38,7 +38,7 @@ export const pageQuery = z
 export const attentionQuery = pageQuery
     .extend({
         status: z
-            .enum(['PENDING', 'COMPLETED', 'CANCELLED', 'ALL'])
+            .enum(['PENDING', 'COMPLETED', 'CANCELLED', 'SKIPPED', 'ALL'])
             .default('PENDING'),
         scope: z.enum(['MINE', 'ALL']).default('ALL'),
         attention: z
@@ -50,7 +50,15 @@ export const attentionQuery = pageQuery
     .refine((q) => !q.from || !q.to || q.from <= q.to, {
         path: ['to'],
         message: 'O fim deve ser igual ou posterior ao início.',
-    });
+    })
+    .refine(
+        (q) =>
+            !q.from ||
+            !q.to ||
+            new Date(q.to).getTime() - new Date(q.from).getTime() <=
+                365 * 86400000,
+        { path: ['to'], message: 'Consulte no máximo 366 dias por período.' },
+    );
 export function params(input: unknown) {
     return parseZodInput(
         z.object({ spaceId: uuid, taskId: uuid.optional() }).strict(),

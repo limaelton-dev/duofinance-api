@@ -10,21 +10,23 @@ import { SpacesDomainError } from '../../spaces/domain/errors/spaces-domain.erro
 import { ROUTINE_STORE, type RoutineStore } from './routine-store.js';
 import { cursorScope, decodeCursor, encodeCursor } from './routine-cursor.js';
 import { RoutineError } from '../domain/routine-error.js';
-import type { Task } from '../domain/task.js';
+import type { TaskItem } from '../domain/task-item.js';
 import {
     ROUTINE_CLOCK,
     type RoutineClock,
     routineReference,
 } from './routine-clock.js';
 import { taskAttention } from '../domain/task-attention.js';
-export function taskView(task: Task, canWrite = true) {
+export function taskView(task: TaskItem, canWrite = true) {
     return {
         ...task,
-        kind: 'ONE_OFF' as const,
+        kind: task.kind ?? ('ONE_OFF' as const),
         allowedActions: !canWrite
             ? []
             : task.status === 'PENDING'
-              ? ['ASSIGN', 'COMPLETE', 'DEADLINE', 'URGENCY', 'CANCEL']
+              ? task.kind === 'OCCURRENCE'
+                  ? ['COMPLETE', 'SKIP']
+                  : ['ASSIGN', 'COMPLETE', 'DEADLINE', 'URGENCY', 'CANCEL']
               : task.status === 'COMPLETED'
                 ? ['REOPEN']
                 : [],
@@ -84,42 +86,6 @@ export class TaskQueries {
             (task, context) => ({
                 ...task,
                 ...taskView(task, context.status === 'ACTIVE'),
-            }),
-        );
-    }
-    list(actor: string, space: string, q: { limit: number; cursor?: string }) {
-        const scope = cursorScope({ actor, space, type: 'TASKS' });
-        const after = decodeCursor(scope, q.cursor);
-        if (
-            after !== null &&
-            (typeof after !== 'string' || !/^[0-9a-f-]{36}$/.test(after))
-        )
-            throw new RoutineError('VALIDATION_ERROR', 'cursor');
-        return this.read(
-            actor,
-            space,
-            async () => {
-                const rows = await this.store.page(
-                    space,
-                    after as string | null,
-                    q.limit + 1,
-                );
-                const items = rows
-                    .slice(0, q.limit)
-                    .map((task) => taskView(task));
-                return {
-                    items,
-                    nextCursor:
-                        rows.length > q.limit
-                            ? encodeCursor(scope, items.at(-1)!.id)
-                            : null,
-                };
-            },
-            (page, context) => ({
-                ...page,
-                items: page.items.map((task) =>
-                    taskView(task, context.status === 'ACTIVE'),
-                ),
             }),
         );
     }

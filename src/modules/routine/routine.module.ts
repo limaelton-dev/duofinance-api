@@ -1,4 +1,14 @@
 import { Module } from '@nestjs/common';
+import {
+    TaskRecurrenceOrmEntity,
+    TaskOccurrenceOrmEntity,
+} from './infrastructure/task-recurrence.orm-entity.js';
+import { TASK_RECURRENCE_STORE } from './application/task-recurrence-store.js';
+import { TypeOrmTaskRecurrenceStore } from './infrastructure/typeorm-task-recurrence-store.js';
+import { TaskRecurrenceCommands } from './application/task-recurrence-commands.js';
+import { TaskOccurrenceCommands } from './application/task-occurrence-commands.js';
+import { TaskRecurrenceQueries } from './application/task-recurrence-queries.js';
+import { TaskRecurrenceController } from './http/task-recurrence.controller.js';
 import { TaskMaintenance } from './application/task-maintenance.js';
 import { TaskMaintenanceController } from './http/task-maintenance.controller.js';
 import { TaskCompletion } from './application/task-completion.js';
@@ -29,6 +39,8 @@ import { TaskController } from './http/task.controller.js';
         DatabaseModule,
         SpacesModule,
         TypeOrmModule.forFeature([
+            TaskRecurrenceOrmEntity,
+            TaskOccurrenceOrmEntity,
             TaskOrmEntity,
             RoutineHistoryOrmEntity,
             RoutineReceiptOrmEntity,
@@ -36,6 +48,13 @@ import { TaskController } from './http/task.controller.js';
         ]),
     ],
     providers: [
+        {
+            provide: TASK_RECURRENCE_STORE,
+            useClass: TypeOrmTaskRecurrenceStore,
+        },
+        TaskRecurrenceCommands,
+        TaskOccurrenceCommands,
+        TaskRecurrenceQueries,
         TaskMaintenance,
         TaskCompletion,
         {
@@ -51,6 +70,7 @@ import { TaskController } from './http/task.controller.js';
         TaskQueries,
     ],
     controllers: [
+        TaskRecurrenceController,
         TaskController,
         TaskCompletionController,
         TaskMaintenanceController,

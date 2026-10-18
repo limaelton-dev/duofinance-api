@@ -1,10 +1,10 @@
-import type { Task } from '../domain/task.js';
+import type { TaskItem } from '../domain/task-item.js';
 import type {
     AttentionReference,
     TaskAttention,
 } from '../domain/task-attention.js';
 export interface TaskListFilters {
-    status: 'PENDING' | 'COMPLETED' | 'CANCELLED' | 'ALL';
+    status: 'PENDING' | 'COMPLETED' | 'CANCELLED' | 'SKIPPED' | 'ALL';
     scope: 'MINE' | 'ALL';
     attention?: TaskAttention | 'ATTENTION';
     from?: string;
@@ -28,7 +28,7 @@ export interface TaskAttentionReader {
         after: string | null,
         limit: number,
     ): Promise<{
-        rows: { task: Task; sortKey: string }[];
+        rows: { task: TaskItem; sortKey: string }[];
         counts: TaskAttentionCounts;
     }>;
 }

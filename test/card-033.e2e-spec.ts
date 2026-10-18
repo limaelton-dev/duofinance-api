@@ -11,7 +11,11 @@ import {
     it,
     vi,
 } from 'vitest';
-import { financeBrowser, sharedFinance } from './settlement-fixture.js';
+import {
+    financeBrowser,
+    sharedFinance,
+    rewindFinanceMigrationsTo,
+} from './settlement-fixture.js';
 import {
     prepareRoutineDatabase,
     routineApp,
@@ -294,6 +298,10 @@ describe('CARD-033 tasks HTTP/PostgreSQL', () => {
     it('supports empty migration down/up and protects produced history', async () => {
         await migrationSource.initialize();
         try {
+            await rewindFinanceMigrationsTo(
+                migrationSource,
+                'RoutineTasks1792336229574',
+            );
             await migrationSource.undoLastMigration();
             expect(
                 (
@@ -309,6 +317,10 @@ describe('CARD-033 tasks HTTP/PostgreSQL', () => {
                     description: 'Histórico',
                 })
                 .expect(201);
+            await rewindFinanceMigrationsTo(
+                migrationSource,
+                'RoutineTasks1792336229574',
+            );
             await expect(migrationSource.undoLastMigration()).rejects.toThrow(
                 /histórico/i,
             );

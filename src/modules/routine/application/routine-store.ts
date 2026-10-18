@@ -15,7 +15,6 @@ export interface RoutineStore {
     insert(task: Task): Promise<void>;
     update(before: Task, after: Task): Promise<void>;
     event(event: HistoryEvent): Promise<void>;
-    page(space: string, after: string | null, limit: number): Promise<Task[]>;
     history(
         space: string,
         id: string,

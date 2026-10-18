@@ -174,7 +174,15 @@ export function routineOperation(
 ): OperationObject {
     const parameters: NonNullable<OperationObject['parameters']> = [
         ...path.matchAll(/\{(\w+)\}/g),
-    ].map(([, name]) => ({ name, in: 'path', required: true, schema: uuid }));
+    ].map(([, name]) => ({
+        name,
+        in: 'path',
+        required: true,
+        schema:
+            name === 'scheduledDate'
+                ? { type: 'string', format: 'date' }
+                : uuid,
+    }));
     if (method === 'post')
         parameters.push(
             {
@@ -228,7 +236,9 @@ export function routineOperation(
         responses: Object.fromEntries(
             [
                 [
-                    method === 'post' && path.endsWith('/tasks')
+                    method === 'post' &&
+                    (path.endsWith('/tasks') ||
+                        path.endsWith('/task-recurrences'))
                         ? '201'
                         : '200',
                     result,
@@ -355,7 +365,7 @@ export const routineOpenApi: Pick<
 const taskListOperation = routineOpenApi.paths[`${base}/tasks`]!.get!;
 taskListOperation.parameters!.push(
     ...Object.entries({
-        status: ['PENDING', 'COMPLETED', 'CANCELLED', 'ALL'],
+        status: ['PENDING', 'COMPLETED', 'CANCELLED', 'SKIPPED', 'ALL'],
         scope: ['MINE', 'ALL'],
         attention: ['TODAY', 'URGENT', 'OVERDUE', 'UPCOMING', 'NO_DEADLINE'],
     }).map(([name, values]) => ({
@@ -371,3 +381,195 @@ taskListOperation.parameters!.push(
 );
 taskListOperation.description +=
     ' Ordenação: atrasadas, hoje, próximas, sem prazo; urgência, prazo e identidade dentro de cada grupo. Cursor conserva referência temporal e filtros; Minhas considera responsável atual. Contagens usam os mesmos filtros. Horário local America/Sao_Paulo; prazo sem horário vale até o fim do dia.';
+const recurrenceBase = `${base}/task-recurrences`;
+const recurrenceRule: SchemaObject = {
+    oneOf: [
+        object({ frequency: { type: 'string', enum: ['DAILY'] } }),
+        object({
+            frequency: { type: 'string', enum: ['WEEKLY'] },
+            weekday: {
+                type: 'integer',
+                minimum: 1,
+                maximum: 7,
+                description: 'Dia ISO: segunda=1, domingo=7.',
+            },
+        }),
+        object({
+            frequency: { type: 'string', enum: ['WEEKDAYS'] },
+            weekdays: {
+                type: 'array',
+                minItems: 1,
+                maxItems: 7,
+                uniqueItems: true,
+                items: { type: 'integer', minimum: 1, maximum: 7 },
+            },
+        }),
+        object({
+            frequency: { type: 'string', enum: ['MONTHLY'] },
+            day: { type: 'integer', minimum: 1, maximum: 31 },
+        }),
+        object({
+            frequency: { type: 'string', enum: ['ANNUAL'] },
+            month: { type: 'integer', minimum: 1, maximum: 12 },
+            day: { type: 'integer', minimum: 1, maximum: 31 },
+        }),
+    ],
+};
+const recurrenceDeadline = nullable(
+    object({
+        time: nullable({
+            type: 'string',
+            pattern: '^([01]\\d|2[0-3]):[0-5]\\d$',
+        }),
+    }),
+);
+const recurrenceFields = {
+    description: { type: 'string' as const, minLength: 1, maxLength: 500 },
+    urgency: ref('RoutineUrgency'),
+    deadline: recurrenceDeadline,
+    rule: recurrenceRule,
+    startsOn: { type: 'string' as const, format: 'date' },
+    endsOn: nullable({ type: 'string', format: 'date' }),
+};
+routineSchemas.RoutineCreateRecurrence = object(
+    { ...recurrenceFields, assigneeMemberId: nullable(uuid) },
+    ['description', 'rule', 'startsOn'],
+);
+routineSchemas.RoutineRecurrence = object({
+    ...recurrenceFields,
+    id: uuid,
+    spaceId: uuid,
+    creator: ref('RoutineParticipant'),
+    assignee: nullable(ref('RoutineParticipant')),
+    status: { type: 'string', enum: ['ACTIVE', 'CANCELLED'] },
+    version: integer,
+    createdAt: { type: 'string', format: 'date-time' },
+    cancelledAt: nullable({ type: 'string', format: 'date-time' }),
+    cancelledOn: nullable({ type: 'string', format: 'date' }),
+});
+routineSchemas.RoutineRecurrencePage = object({
+    items: { type: 'array', items: ref('RoutineRecurrence') },
+    nextCursor: nullable({ type: 'string' }),
+});
+const occurrenceFields = {
+    ...routineSchemas.RoutineTask.properties,
+    id: {
+        type: 'string' as const,
+        description:
+            'UUID quando materializada; recurrenceId/scheduledDate quando virtual.',
+    },
+    version: nullable(integer),
+    status: {
+        type: 'string' as const,
+        enum: ['PENDING', 'COMPLETED', 'SKIPPED', 'CANCELLED'],
+    },
+    kind: { type: 'string' as const, enum: ['OCCURRENCE'] },
+    recurrenceId: uuid,
+    scheduledDate: { type: 'string' as const, format: 'date' },
+    recurrenceVersion: integer,
+    materialized: { type: 'boolean' as const },
+};
+routineSchemas.RoutineOccurrenceResult = object(occurrenceFields);
+routineSchemas.RoutineOccurrenceView = object({
+    ...occurrenceFields,
+    allowedActions: { type: 'array', items: { type: 'string' } },
+    conditions: ref('RoutineConditions'),
+});
+routineSchemas.RoutineOccurrenceDetail = object({
+    ...routineSchemas.RoutineOccurrenceView.properties,
+    referenceDate: { type: 'string', format: 'date' },
+    referenceTime: { type: 'string' },
+    referenceInstant: { type: 'string', format: 'date-time' },
+});
+routineSchemas.RoutineOccurrencePage = object(
+    {
+        ...routineSchemas.RoutineTaskPage.properties,
+        items: { type: 'array', items: ref('RoutineOccurrenceView') },
+        window: object({
+            from: { type: 'string', format: 'date' },
+            to: { type: 'string', format: 'date' },
+        }),
+    },
+    [
+        'items',
+        'nextCursor',
+        'window',
+        'referenceDate',
+        'referenceTime',
+        'referenceInstant',
+    ],
+);
+routineSchemas.RoutineOccurrenceCommand = object({
+    expectedRecurrenceVersion: integer,
+    expectedOccurrenceVersion: nullable(integer),
+});
+const taskItems: SchemaObject = {
+    type: 'array',
+    items: { oneOf: [ref('RoutineTaskView'), ref('RoutineOccurrenceView')] },
+};
+routineSchemas.RoutineTaskPage.properties!.items = taskItems;
+routineSchemas.RoutineAttentionSummary.properties!.items = {
+    ...taskItems,
+    maxItems: 4,
+};
+routineOpenApi.paths[recurrenceBase] = {
+    get: routineOperation('get', recurrenceBase, 'RoutineRecurrencePage'),
+    post: routineOperation(
+        'post',
+        recurrenceBase,
+        'RoutineRecurrence',
+        'RoutineCreateRecurrence',
+    ),
+};
+for (const [suffix, schema] of Object.entries({
+    '/{recurrenceId}': 'RoutineRecurrence',
+    '/{recurrenceId}/history': 'RoutineHistoryPage',
+    '/{recurrenceId}/occurrences': 'RoutineOccurrencePage',
+    '/{recurrenceId}/occurrences/{scheduledDate}': 'RoutineOccurrenceDetail',
+    '/{recurrenceId}/occurrences/{scheduledDate}/history': 'RoutineHistoryPage',
+})) {
+    const path = recurrenceBase + suffix;
+    routineOpenApi.paths[path] = { get: routineOperation('get', path, schema) };
+}
+for (const action of ['complete', 'reopen', 'skip']) {
+    const path = `${recurrenceBase}/{recurrenceId}/occurrences/{scheduledDate}/${action}`;
+    routineOpenApi.paths[path] = {
+        post: routineOperation(
+            'post',
+            path,
+            'RoutineOccurrenceResult',
+            'RoutineOccurrenceCommand',
+        ),
+    };
+}
+const cancelPath = `${recurrenceBase}/{recurrenceId}/cancel`;
+routineOpenApi.paths[cancelPath] = {
+    post: routineOperation(
+        'post',
+        cancelPath,
+        'RoutineRecurrence',
+        'RoutineTaskVersion',
+    ),
+};
+routineOpenApi.paths[
+    `${recurrenceBase}/{recurrenceId}/occurrences`
+]!.get!.parameters!.push(
+    ...['from', 'to'].map((name) => ({
+        name,
+        in: 'query' as const,
+        schema: { type: 'string' as const, format: 'date' },
+    })),
+);
+for (const [path, operations] of Object.entries(routineOpenApi.paths))
+    for (const method of ['get', 'post'] as const) {
+        const operation = operations?.[method];
+        if (operation) {
+            operation.operationId =
+                method +
+                path.replace(/[^a-zA-Z0-9]+(.)/g, (_, next: string) =>
+                    next.toUpperCase(),
+                );
+            operation.description +=
+                ' Recorrências: datas inclusivas; mensal preserva dia-base e usa último dia válido; anual 29/02 usa 28/02 em ano comum. Projeção por período: até 366 dias. Sem prazo, datas futuras virtuais exigem período explícito. Consulta operacional conta o histórico por calendário e busca lacunas limitadas à página, sem corte de pendências antigas. Cancelar regra corta novas datas após o dia local, preservando antigas/de hoje e toda materializada futura. expectedOccurrenceVersion null apenas para virtual; manutenção avulsa não edita ocorrências.';
+        }
+    }

@@ -156,6 +156,7 @@ describe('CARD-003 — persistência e migration', () => {
                 'FinancialCorrections1792251398684',
                 'FinancialFulfillmentReversals1792252537110',
                 'RoutineTasks1792336229574',
+                'RoutineRecurrences1792337903897',
             ]);
             expect(await receipts.find(command)).not.toBeNull();
             expect((await repository.findById(legacy.space.id))?.version).toBe(

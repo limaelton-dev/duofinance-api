@@ -55,7 +55,7 @@ export class TaskAttentionQuery {
                 ) ||
                 !validDate(key.instant.slice(0, 10)) ||
                 typeof key.sortKey !== 'string' ||
-                !/^\d:\d:\d{4}-\d{2}-\d{2}:\d{2}:\d{2}:[0-9a-f-]{36}$/.test(
+                !/^[0-3]:[0-3]:\d{4}-\d{2}-\d{2}:([01]\d|2[0-3]):[0-5]\d:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\/\d{4}-\d{2}-\d{2})?$/.test(
                     key.sortKey,
                 ) ||
                 !Number.isFinite(Date.parse(key.instant)) ||
@@ -66,6 +66,11 @@ export class TaskAttentionQuery {
             if (!validDate(reference.referenceDate))
                 throw new RoutineError('VALIDATION_ERROR', 'cursor');
             after = key.sortKey;
+            if (
+                !validDate(after.split(':')[2]) ||
+                (after.includes('/') && !validDate(after.split('/')[1]))
+            )
+                throw new RoutineError('VALIDATION_ERROR', 'cursor');
         }
         return this.queries.read(
             actor,

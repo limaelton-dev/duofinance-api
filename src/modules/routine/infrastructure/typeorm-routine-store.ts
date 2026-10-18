@@ -47,16 +47,6 @@ export class TypeOrmRoutineStore implements RoutineStore {
     async event(event: HistoryEvent) {
         await this.provider.get().insert(RoutineHistoryOrmEntity, event);
     }
-    async page(spaceId: string, after: string | null, limit: number) {
-        const q = this.provider
-            .get()
-            .createQueryBuilder(TaskOrmEntity, 't')
-            .where('t.spaceId=:spaceId', { spaceId })
-            .orderBy('t.id', 'ASC')
-            .take(limit);
-        if (after) q.andWhere('t.id>:after', { after });
-        return (await q.getMany()).map(rowToTask);
-    }
     history(
         spaceId: string,
         aggregateId: string,

@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto';
 import { RoutineError } from '../domain/routine-error.js';
+export function isRoutineId(value: unknown): value is string {
+    return (
+        typeof value === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+            value,
+        )
+    );
+}
 export function cursorScope(value: object): string {
     return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }

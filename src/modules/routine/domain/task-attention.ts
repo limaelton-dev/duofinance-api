@@ -1,4 +1,4 @@
-import type { Task } from './task.js';
+import type { TaskItem } from './task-item.js';
 export interface AttentionReference {
     referenceDate: string;
     referenceTime: string;
@@ -7,7 +7,7 @@ export interface AttentionReference {
 export type TaskAttention =
     'TODAY' | 'URGENT' | 'OVERDUE' | 'UPCOMING' | 'NO_DEADLINE';
 export function taskAttention(
-    task: Pick<Task, 'status' | 'deadline' | 'urgency'>,
+    task: Pick<TaskItem, 'status' | 'deadline' | 'urgency'>,
     reference: AttentionReference,
 ) {
     const pending = task.status === 'PENDING';
