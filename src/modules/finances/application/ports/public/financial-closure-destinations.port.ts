@@ -85,6 +85,7 @@ export type FinancialClosurePlanReview = {
     fingerprint: string;
     diagnostic: FinancialClosureDiagnostic;
     missingDestinationOriginIds: string[];
+    appliedDestinations: FinancialClosureApplication[];
 };
 
 export type FinancialClosureResolution = {

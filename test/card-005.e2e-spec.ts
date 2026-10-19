@@ -29,9 +29,9 @@ import {
 import { ConfigureDefaultSettlementRuleHandler } from '../dist/modules/finances/application/handlers/configure-default-settlement-rule.handler.js';
 import { GetDefaultSettlementRuleQuery } from '../dist/modules/finances/application/queries/get-default-settlement-rule.query.js';
 import {
-    SPACE_ACCESS_PORT,
-    type SpaceAccessPort,
-} from '../dist/modules/spaces/application/ports/public/space-access.port.js';
+    SPACE_FINANCIAL_CONTEXT_PORT,
+    type SpaceFinancialContextPort,
+} from '../dist/modules/spaces/application/ports/public/space-financial-context.port.js';
 import { PersonId } from '../dist/modules/spaces/domain/person/person-id.js';
 import { SpaceId } from '../dist/modules/spaces/domain/space/space-id.js';
 import type { AuthenticatedContext } from '../dist/modules/identity/application/models/authenticated-context.js';
@@ -545,24 +545,23 @@ describe('CARD-005 — contrato HTTP e persistência PostgreSQL', () => {
         async (reason) => {
             const a = await browser('Criador');
             const id = await shared(a);
-            const access = app.get<SpaceAccessPort>(SPACE_ACCESS_PORT);
-            const original = access.assertCanWrite.bind(access);
-            let count = 0;
+            const contexts = app.get<SpaceFinancialContextPort>(
+                SPACE_FINANCIAL_CONTEXT_PORT,
+            );
+            const original = contexts.lockForWrite.bind(contexts);
             const manager = app.get(DataSource);
-            vi.spyOn(access, 'assertCanWrite').mockImplementation(
+            vi.spyOn(contexts, 'lockForWrite').mockImplementation(
                 async (...args) => {
-                    if (++count === 2) {
-                        if (reason === 'state')
-                            await manager.query(
-                                'UPDATE spaces SET status=$2 WHERE id=$1',
-                                [id, 'CLOSED'],
-                            );
-                        else
-                            await manager.query(
-                                'DELETE FROM space_members WHERE space_id=$1 AND person_id=$2',
-                                [id, a.context.person.id],
-                            );
-                    }
+                    if (reason === 'state')
+                        await manager.query(
+                            'UPDATE spaces SET status=$2 WHERE id=$1',
+                            [id, 'CLOSED'],
+                        );
+                    else
+                        await manager.query(
+                            'DELETE FROM space_members WHERE space_id=$1 AND person_id=$2',
+                            [id, a.context.person.id],
+                        );
                     return original(...args);
                 },
             );
@@ -687,10 +686,15 @@ describe('CARD-005 — contrato HTTP e persistência PostgreSQL', () => {
             expect(
                 (
                     await source.query(
-                        'SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 32',
+                        'SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 37',
                     )
                 ).map((m: { name: string }) => m.name),
             ).toEqual([
+                'ClosureConclusion1792412755234',
+                'ClosureFinancialResolution1792411805913',
+                'ClosurePlanConsensus1792410948212',
+                'ClosureFutureDestinations1792410123163',
+                'SharedSpaceClosure1792408818846',
                 'TaskShoppingLinks1792346372566',
                 'ShoppingItemRemoval1792346026336',
                 'ShoppingPurchaseCorrections1792345722826',
@@ -782,6 +786,11 @@ describe('CARD-005 — contrato HTTP e persistência PostgreSQL', () => {
                 'ShoppingPurchaseCorrections1792345722826',
                 'ShoppingItemRemoval1792346026336',
                 'TaskShoppingLinks1792346372566',
+                'SharedSpaceClosure1792408818846',
+                'ClosureFutureDestinations1792410123163',
+                'ClosurePlanConsensus1792410948212',
+                'ClosureFinancialResolution1792411805913',
+                'ClosureConclusion1792412755234',
             ]);
         } finally {
             await source.destroy();

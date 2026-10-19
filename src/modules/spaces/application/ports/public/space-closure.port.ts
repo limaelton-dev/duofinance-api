@@ -6,6 +6,7 @@ import type {
     ClosureRecurringImpact,
     ClosureProposalSnapshot,
     ClosurePlanAction,
+    ClosureCancellationConsent,
 } from '../../../domain/space/closure-plan.js';
 
 export type {
@@ -16,6 +17,7 @@ export type {
     ClosureRecurringImpact,
     ClosureProposalSnapshot,
     ClosurePlanAction,
+    ClosureCancellationConsent,
 };
 
 export type SpaceClosureNextAction =
@@ -23,6 +25,9 @@ export type SpaceClosureNextAction =
     | 'REVIEW_PLAN'
     | 'WAIT_APPROVAL'
     | 'RESOLVE_FINANCES'
+    | 'REVIEW_CLOSURE'
+    | 'WAIT_CANCELLATION'
+    | 'APPROVE_CANCELLATION'
     | 'READ_ONLY';
 
 export type SpaceClosureView = {
@@ -43,6 +48,7 @@ export type SpaceClosureView = {
     futureDestinations: ClosureFutureDestination[];
     proposalSnapshot?: ClosureProposalSnapshot | null;
     hasBilateralApproval?: boolean;
+    cancellationConsents?: ClosureCancellationConsent[];
     actorNextAction?: SpaceClosureNextAction;
     startedAt: string;
     completedAt: string | null;
@@ -79,6 +85,22 @@ export type ClosurePlanDecisionInput = SpaceClosureCommandBase & {
     proposalSnapshot?: ClosureProposalSnapshot;
 };
 
+export type ConfirmClosureInput = SpaceClosureCommandBase & {
+    action: 'CONFIRM';
+    expectedPlanRevision: number;
+    expectedFinancialFingerprint: string;
+    financialFingerprint: string;
+    financiallyReady: boolean;
+    completionPrepared: boolean;
+};
+
+export type CancelClosureInput = SpaceClosureCommandBase & {
+    action: 'CANCEL';
+    expectedPlanRevision: number;
+};
+
+export type ClosureConclusionInput = ConfirmClosureInput | CancelClosureInput;
+
 export type SpaceClosureCommandResult = {
     view: SpaceClosureView;
     replayed: boolean;
@@ -114,6 +136,11 @@ export interface SpaceClosurePort {
     decidePlan(
         input: ClosurePlanDecisionInput,
     ): Promise<SpaceClosureCommandResult>;
+    replayConclusion(
+        input: ClosureConclusionInput,
+    ): Promise<SpaceClosureCommandResult | null>;
+    confirm(input: ConfirmClosureInput): Promise<SpaceClosureCommandResult>;
+    cancel(input: CancelClosureInput): Promise<SpaceClosureCommandResult>;
     read(actorId: string, spaceId: string): Promise<SpaceClosureView | null>;
     lockForProcess(
         actorId: string,

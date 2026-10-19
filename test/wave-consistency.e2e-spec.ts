@@ -7,6 +7,7 @@ import { INCOME_REPOSITORY } from '../dist/modules/finances/application/ports/pr
 import { PERSONAL_EXPENSE_READER } from '../dist/modules/finances/application/ports/private/personal-expense.ports.js';
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
@@ -100,7 +101,8 @@ describe('Wave 0–2 financial read consistency and technical audit', () => {
 
     function afterRootRead(write: () => Promise<unknown>) {
         const provider = app.get(EntityManagerProvider),
-            original = provider.get.bind(provider);
+            original = provider.get.bind(provider),
+            runWriter = AsyncLocalStorage.snapshot();
         let armed = true;
         vi.spyOn(provider, 'get').mockImplementation(() => {
             const manager = original();
@@ -110,7 +112,7 @@ describe('Wave 0–2 financial read consistency and technical audit', () => {
                 vi.spyOn(manager, 'findOneByOrFail').mockImplementationOnce(
                     async (target, where) => {
                         // Writer commits on a separate connection between root/version reads.
-                        await write();
+                        await runWriter(write);
                         return find(target, where);
                     },
                 );
@@ -161,19 +163,22 @@ describe('Wave 0–2 financial read consistency and technical audit', () => {
         const obligations = app.get<InterMemberObligationRepository>(
                 INTER_MEMBER_OBLIGATION_REPOSITORY,
             ),
-            history = obligations.history.bind(obligations);
+            history = obligations.history.bind(obligations),
+            runWriter = AsyncLocalStorage.snapshot();
         vi.spyOn(obligations, 'history').mockImplementationOnce(
             async (space, origin) => {
-                await handler.recordReceipt({
-                    ...context(),
-                    commitmentId: created.commitment.id,
-                    expectedCommitmentVersion: 1,
-                    factDate: date,
-                    amountInCents: 100,
-                    expectedSpaceVersion: 2,
-                    recipientMemberId: member,
-                    settlement: { mode: 'NONE' },
-                });
+                await runWriter(() =>
+                    handler.recordReceipt({
+                        ...context(),
+                        commitmentId: created.commitment.id,
+                        expectedCommitmentVersion: 1,
+                        factDate: date,
+                        amountInCents: 100,
+                        expectedSpaceVersion: 2,
+                        recipientMemberId: member,
+                        settlement: { mode: 'NONE' },
+                    }),
+                );
                 return history(space, origin);
             },
         );

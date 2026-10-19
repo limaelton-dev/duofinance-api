@@ -5,7 +5,10 @@ import { InvitationStatus } from '../invitation/invitation.js';
 import { MemberId } from '../member/member-id.js';
 import { Member } from '../member/member.js';
 import { PersonId } from '../person/person-id.js';
-import type { ClosureParticipant } from './closure-plan.js';
+import type {
+    ClosureParticipant,
+    ClosureProposalSnapshot,
+} from './closure-plan.js';
 import { SpaceId } from './space-id.js';
 import { Space, SpaceStatus, SpaceType } from './space.js';
 
@@ -193,5 +196,137 @@ describe('Space closure request', () => {
             ),
         ).toThrow(new SpacesDomainError('SHARED_SPACE_REQUIRED'));
         expect(space.version).toBe(1);
+    });
+});
+
+describe('Space closure conclusion', () => {
+    const fingerprint = 'a'.repeat(64);
+    const snapshot: ClosureProposalSnapshot = {
+        financialFingerprint: fingerprint,
+        financialBlockerCount: 0,
+        outstandingAmounts: [],
+        routine: { pendingTaskCount: 0, activeRecurrenceCount: 0 },
+        shopping: { activeListCount: 0 },
+    };
+    const confirmation = {
+        now: requestedAt,
+        expectedFinancialFingerprint: fingerprint,
+        financialFingerprint: fingerprint,
+        financiallyReady: true,
+        completionPrepared: true,
+    };
+
+    it('fecha espaço individual após confirmação explícita e preserva membros e convite invalidado', () => {
+        const space = fixture();
+        const draft = start(space);
+        const plan = space.decideClosurePlan(
+            creator,
+            draft,
+            'PROPOSE',
+            snapshot,
+            requestedAt,
+        );
+        const version = space.version;
+        expect(() =>
+            space.confirmClosure(creator, plan, {
+                ...confirmation,
+                completionPrepared: false,
+            }),
+        ).toThrow(new SpacesDomainError('CLOSURE_COMPLETION_NOT_PREPARED'));
+        expect(space.version).toBe(version);
+        expect(
+            space.confirmClosure(creator, plan, confirmation).completed,
+        ).toBe(true);
+        expect(space.status).toBe(SpaceStatus.CLOSED);
+        expect(space.type).toBe(SpaceType.SHARED);
+        expect(space.members).toHaveLength(1);
+        expect(space.invitations[0]).toMatchObject({
+            status: 'CANCELLED',
+            cancellationReason: 'SPACE_CLOSURE',
+            closureProcessId: 'process-1',
+        });
+        expect(() => space.cancelClosure(creator, plan, requestedAt)).toThrow(
+            new SpacesDomainError('CLOSURE_PROCESS_NOT_OPEN'),
+        );
+        expect(() =>
+            space.issueInvitation(
+                creator,
+                InvitationId.from('invitation-2'),
+                requestedAt,
+            ),
+        ).toThrow(new SpacesDomainError('SPACE_NOT_ACTIVE'));
+    });
+
+    it('cancelar preserva link inválido e novo encerramento usa outra identidade e participação histórica atual', () => {
+        const space = fixture();
+        const originalPlan = start(space);
+        expect(
+            space.cancelClosure(creator, originalPlan, requestedAt).completed,
+        ).toBe(true);
+        expect(space.status).toBe(SpaceStatus.ACTIVE);
+        const oldInvitation = space.invitations[0];
+        expect(() =>
+            space.acceptInvitation(
+                PersonId.from(second.personId),
+                oldInvitation.id,
+                MemberId.from(second.memberId),
+                requestedAt,
+            ),
+        ).toThrow(new SpacesDomainError('INVITATION_UNAVAILABLE'));
+        const newInvitation = space.issueInvitation(
+            creator,
+            InvitationId.from('invitation-2'),
+            requestedAt,
+        );
+        space.acceptInvitation(
+            PersonId.from(second.personId),
+            newInvitation.id,
+            MemberId.from(second.memberId),
+            requestedAt,
+        );
+        const newPlan = space
+            .startClosure({
+                actorPersonId: creator,
+                processId: 'process-2',
+                participants: [first, second],
+                cutoffDate: '2026-10-19',
+                now: requestedAt,
+            })
+            .snapshot();
+        expect(newPlan.processId).not.toBe(originalPlan.snapshot().processId);
+        expect(newPlan.participants).toEqual([first, second]);
+        expect(newPlan.approvals).toEqual([]);
+        expect(newPlan.confirmations).toEqual([]);
+        expect(space.invitations[0]).toBe(oldInvitation);
+        expect(oldInvitation.closureProcessId).toBe('process-1');
+    });
+
+    it('não conclui formação individual se houver segunda participação histórica na raiz atual', () => {
+        const space = fixture();
+        const plan = space.decideClosurePlan(
+            creator,
+            start(space),
+            'PROPOSE',
+            snapshot,
+            requestedAt,
+        );
+        const props = space.snapshot();
+        if (props.type !== SpaceType.SHARED)
+            throw new Error('Expected shared fixture');
+        const changed = Space.restore({
+            ...props,
+            members: [
+                ...props.members,
+                Member.create(
+                    MemberId.from(second.memberId),
+                    PersonId.from(second.personId),
+                    requestedAt,
+                ),
+            ],
+        });
+        expect(() =>
+            changed.confirmClosure(creator, plan, confirmation),
+        ).toThrow(new SpacesDomainError('CLOSURE_PARTICIPANTS_CHANGED'));
+        expect(changed.status).toBe(SpaceStatus.CLOSING);
     });
 });

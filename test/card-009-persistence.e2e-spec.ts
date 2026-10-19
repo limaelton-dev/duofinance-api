@@ -638,6 +638,7 @@ describe('CARD-009 PostgreSQL settlement transfer', () => {
             await expect(migrationSource.undoLastMigration()).rejects.toThrow(
                 'Cannot downgrade settlement transfers with recorded facts',
             );
+            await migrationSource.runMigrations();
             expect((await record.execute(input)).replayed).toBe(true);
         } finally {
             await migrationSource.runMigrations();

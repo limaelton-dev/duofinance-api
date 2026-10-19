@@ -17,6 +17,23 @@ type Cycle = NonNullable<
     FinanceTodayCompositionRead['legacy']['settlements']
 >['overdueCycles']['items'][number];
 
+function closureLabel(action?: string): string {
+    switch (action) {
+        case 'REVIEW_PLAN':
+            return 'Revisar proposta de encerramento';
+        case 'WAIT_APPROVAL':
+            return 'Aguardando aprovação do plano de encerramento';
+        case 'REVIEW_CLOSURE':
+        case 'RESOLVE_FINANCES':
+            return 'Revisar resumo final do encerramento';
+        case 'WAIT_CANCELLATION':
+            return 'Aguardando concordância para cancelar o encerramento';
+        case 'APPROVE_CANCELLATION':
+            return 'Revisar pedido de cancelamento do encerramento';
+        default:
+            return 'Revisar plano de encerramento';
+    }
+}
 function financialItem(item: FinancialTodayItem): TodayPreviewItem {
     return {
         type: 'FINANCIAL_COMMITMENT',
@@ -146,20 +163,10 @@ export function todayBlocks(
                                                           closure.data
                                                               .processId,
                                                   },
-                                                  label:
+                                                  label: closureLabel(
                                                       closure.data
-                                                          .actorNextAction ===
-                                                      'REVIEW_PLAN'
-                                                          ? 'Revisar proposta de encerramento'
-                                                          : closure.data
-                                                                  .actorNextAction ===
-                                                              'WAIT_APPROVAL'
-                                                            ? 'Aguardando aprovação do plano de encerramento'
-                                                            : closure.data
-                                                                    .actorNextAction ===
-                                                                'RESOLVE_FINANCES'
-                                                              ? 'Plano aprovado: resolver finanças antes de confirmar o encerramento'
-                                                              : 'Revisar plano de encerramento',
+                                                          .actorNextAction,
+                                                  ),
                                                   date: closure.data.cutoffDate,
                                                   details: closure.data,
                                               },

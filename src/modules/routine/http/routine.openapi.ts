@@ -489,6 +489,11 @@ routineSchemas.RoutineRecurrence = object({
     cancelledAt: nullable({ type: 'string', format: 'date-time' }),
     cancelledOn: nullable({ type: 'string', format: 'date' }),
 });
+routineSchemas.RoutineRecurrence.properties!.closure = object({
+    processId: uuid,
+    planRevision: integer,
+    recordedAt: { type: 'string', format: 'date-time' },
+});
 routineSchemas.RoutineRecurrencePage = object({
     items: { type: 'array', items: ref('RoutineRecurrence') },
     nextCursor: nullable({ type: 'string' }),

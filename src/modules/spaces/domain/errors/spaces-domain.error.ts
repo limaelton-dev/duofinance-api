@@ -1,4 +1,20 @@
 const messages = {
+    CLOSURE_CONFIRMATION_NOT_READY:
+        'A confirmação exige plano aprovado por todos e todas as pendências financeiras resolvidas.',
+    CLOSURE_FINANCIAL_STATE_CHANGED:
+        'O estado financeiro mudou. Consulte o resumo final antes de confirmar.',
+    CLOSURE_ALREADY_CONFIRMED:
+        'Você já confirmou o encerramento para este estado financeiro.',
+    CLOSURE_COMPLETION_NOT_PREPARED:
+        'A conclusão precisa finalizar os contextos do espaço na mesma operação.',
+    CLOSURE_CANCELLATION_PENDING:
+        'Há um pedido de cancelamento pendente. Decida o cancelamento ou proponha novamente o plano.',
+    CLOSURE_ALREADY_REQUESTED_CANCELLATION:
+        'Você já concordou com este pedido de cancelamento.',
+    CLOSURE_CANCELLATION_NOT_ALLOWED:
+        'Somente o solicitante pode cancelar antes da aprovação do outro participante.',
+    CLOSURE_PARTICIPANTS_CHANGED:
+        'A participação histórica do espaço mudou. Consulte o estado atual do encerramento.',
     CLOSURE_PLAN_INCOMPLETE:
         'Defina o destino de todos os compromissos futuros antes de propor ou aprovar.',
     CLOSURE_PLAN_OBSOLETE:

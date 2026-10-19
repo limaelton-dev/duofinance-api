@@ -256,6 +256,13 @@ export class TypeOrmFinancialClosureDestinations implements FinancialClosureDest
                 fingerprint: digest({ cutoffDate, diagnostic, signatures }),
                 diagnostic,
                 missingDestinationOriginIds,
+                appliedDestinations: [...effects]
+                    .sort(
+                        (left, right) =>
+                            left.originId.localeCompare(right.originId) ||
+                            left.id.localeCompare(right.id),
+                    )
+                    .map((effect) => structuredClone(effect.result)),
             };
         });
     }

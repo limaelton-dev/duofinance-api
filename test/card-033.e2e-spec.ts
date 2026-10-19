@@ -213,12 +213,16 @@ describe('CARD-033 tasks HTTP/PostgreSQL', () => {
         }
     });
     it.each(['CLOSING', 'CLOSED'])(
-        'keeps authorized reads but blocks writes in %s',
+        'keeps authorized reads and replay but blocks new writes in %s',
         async (status) => {
             const f = await sharedFinance(app),
                 base = `/v2/spaces/${f.space}/tasks`,
                 key = randomUUID();
-            await f.a.post(base, { description: 'Anterior' }, key).expect(201);
+            const created = (
+                await f.a
+                    .post(base, { description: 'Anterior' }, key)
+                    .expect(201)
+            ).body;
             await db.query('UPDATE spaces SET status=$1 WHERE id=$2', [
                 status,
                 f.space,
@@ -226,7 +230,13 @@ describe('CARD-033 tasks HTTP/PostgreSQL', () => {
             const before = await routineSnapshot(db);
             await f.a.agent.get(base).expect(200);
             await f.a.post(base, { description: 'Nova' }).expect(409);
-            await f.a.post(base, { description: 'Anterior' }, key).expect(409);
+            expect(
+                (
+                    await f.a
+                        .post(base, { description: 'Anterior' }, key)
+                        .expect(201)
+                ).body,
+            ).toEqual(created);
             expect(await routineSnapshot(db)).toEqual(before);
         },
     );

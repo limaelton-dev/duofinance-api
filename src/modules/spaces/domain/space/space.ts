@@ -11,6 +11,7 @@ import {
     type ClosureFutureDestination,
     type ClosurePlanAction,
     type ClosureProposalSnapshot,
+    type ClosureConfirmation,
 } from './closure-plan.js';
 
 export enum SpaceType {
@@ -288,6 +289,77 @@ export class Space {
             updatedAt: now,
         }).props;
         return next;
+    }
+
+    confirmClosure(
+        actorPersonId: PersonId,
+        plan: ClosurePlan,
+        input: Omit<ClosureConfirmation, 'actorMemberId'>,
+    ): { plan: ClosurePlan; completed: boolean } {
+        const { props, actorMemberId } = this.requireClosureConclusion(
+            actorPersonId,
+            plan,
+        );
+        const result = plan.confirm({ ...input, actorMemberId });
+        this.props = new Space({
+            ...props,
+            status: result.completed ? SpaceStatus.CLOSED : SpaceStatus.CLOSING,
+            version: props.version + 1,
+            updatedAt: input.now,
+        }).props;
+        return result;
+    }
+
+    cancelClosure(
+        actorPersonId: PersonId,
+        plan: ClosurePlan,
+        now: Date,
+    ): { plan: ClosurePlan; completed: boolean } {
+        const { props, actorMemberId } = this.requireClosureConclusion(
+            actorPersonId,
+            plan,
+        );
+        const result = plan.cancel({
+            actorMemberId,
+            now,
+            spaceVersion: props.version,
+        });
+        this.props = new Space({
+            ...props,
+            status: result.completed ? SpaceStatus.ACTIVE : SpaceStatus.CLOSING,
+            version: props.version + 1,
+            updatedAt: now,
+        }).props;
+        return result;
+    }
+
+    private requireClosureConclusion(
+        actorPersonId: PersonId,
+        plan: ClosurePlan,
+    ): { props: SharedSpaceProps; actorMemberId: string } {
+        const props = this.requireClosureMember(actorPersonId);
+        if (props.status !== SpaceStatus.CLOSING)
+            throw new SpacesDomainError('CLOSURE_PROCESS_NOT_OPEN');
+        const participants = plan.snapshot().participants;
+        if (
+            props.members.some(
+                (member) =>
+                    !participants.some(
+                        (participant) =>
+                            participant.memberId === member.id.value &&
+                            participant.personId === member.personId.value,
+                    ),
+            ) ||
+            (participants.length === 1 &&
+                !props.createdByPersonId.equals(actorPersonId))
+        ) {
+            throw new SpacesDomainError('CLOSURE_PARTICIPANTS_CHANGED');
+        }
+        const actor = participants.find(
+            (participant) => participant.personId === actorPersonId.value,
+        );
+        if (!actor) throw new SpacesDomainError('SPACE_NOT_FOUND');
+        return { props, actorMemberId: actor.memberId };
     }
 
     issueInvitation(

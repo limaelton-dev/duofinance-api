@@ -29,6 +29,46 @@ import {
 @Controller('spaces/:spaceId/closure')
 export class ClosureController {
     constructor(private readonly service: ClosureService) {}
+    @Get('final-summary')
+    @Header('Cache-Control', 'no-store')
+    finalSummary(@CurrentActor() actor: RequestActor, @Param() p: unknown) {
+        return this.service.finalSummary(
+            actor.personId.value,
+            parseZodInput(closureParams, p).spaceId,
+        );
+    }
+    @Post('confirmation')
+    @HttpCode(200)
+    @Header('Cache-Control', 'no-store')
+    confirm(
+        @CurrentActor() actor: RequestActor,
+        @Param() p: unknown,
+        @IdempotencyKey() key: string,
+        @Body() b: unknown,
+    ) {
+        return this.service.confirm(
+            actor.personId.value,
+            parseZodInput(closureParams, p).spaceId,
+            key,
+            parseZodInput(planConsent, b),
+        );
+    }
+    @Post('cancellation')
+    @HttpCode(200)
+    @Header('Cache-Control', 'no-store')
+    cancel(
+        @CurrentActor() actor: RequestActor,
+        @Param() p: unknown,
+        @IdempotencyKey() key: string,
+        @Body() b: unknown,
+    ) {
+        return this.service.cancel(
+            actor.personId.value,
+            parseZodInput(closureParams, p).spaceId,
+            key,
+            parseZodInput(planVersion, b),
+        );
+    }
     @Get('financial-validation')
     @Header('Cache-Control', 'no-store')
     financialValidation(

@@ -10,6 +10,20 @@ export type ClosureConsent = {
     memberId: string;
     planRevision: number;
     recordedAt: string;
+    financialFingerprint?: string;
+};
+
+export type ClosureCancellationConsent = ClosureConsent & {
+    spaceVersion: number;
+};
+
+export type ClosureConfirmation = {
+    actorMemberId: string;
+    now: Date;
+    expectedFinancialFingerprint: string;
+    financialFingerprint: string;
+    financiallyReady: boolean;
+    completionPrepared: boolean;
 };
 
 export type ClosureProposalSnapshot = {
@@ -104,6 +118,7 @@ export type ClosurePlanProps = {
     futureDestinations: ClosureFutureDestination[];
     proposalSnapshot: ClosureProposalSnapshot | null;
     hasBilateralApproval: boolean;
+    cancellationConsents: ClosureCancellationConsent[];
 };
 
 function destinationIdentity(destination: ClosureFutureDestination): string {
@@ -219,7 +234,9 @@ export class ClosurePlan {
                     !props.participants.some(
                         (member) => member.memberId === consent.memberId,
                     ) ||
-                    !Number.isFinite(Date.parse(consent.recordedAt)),
+                    !Number.isFinite(Date.parse(consent.recordedAt)) ||
+                    (consent.financialFingerprint !== undefined &&
+                        !/^[a-f0-9]{64}$/.test(consent.financialFingerprint)),
             ) ||
             new Set(
                 props.futureDestinations.map(
@@ -233,6 +250,19 @@ export class ClosurePlan {
                 (consents) =>
                     new Set(consents.map((consent) => consent.memberId))
                         .size !== consents.length,
+            ) ||
+            new Set(
+                props.cancellationConsents.map((consent) => consent.memberId),
+            ).size !== props.cancellationConsents.length ||
+            props.cancellationConsents.some(
+                (consent) =>
+                    consent.planRevision !== props.planRevision ||
+                    !Number.isSafeInteger(consent.spaceVersion) ||
+                    consent.spaceVersion < 1 ||
+                    !Number.isFinite(Date.parse(consent.recordedAt)) ||
+                    !props.participants.some(
+                        (member) => member.memberId === consent.memberId,
+                    ),
             )
         )
             throw new Error('Invalid closure plan');
@@ -249,6 +279,7 @@ export class ClosurePlan {
             | 'futureDestinations'
             | 'proposalSnapshot'
             | 'hasBilateralApproval'
+            | 'cancellationConsents'
         >,
     ): ClosurePlan {
         return new ClosurePlan({
@@ -261,6 +292,7 @@ export class ClosurePlan {
             futureDestinations: [],
             proposalSnapshot: null,
             hasBilateralApproval: false,
+            cancellationConsents: [],
         });
     }
 
@@ -287,6 +319,7 @@ export class ClosurePlan {
             approvals: [],
             confirmations: [],
             proposalSnapshot: null,
+            cancellationConsents: [],
         });
     }
 
@@ -373,6 +406,7 @@ export class ClosurePlan {
             approvals: [],
             confirmations: [],
             proposalSnapshot: null,
+            cancellationConsents: [],
         });
     }
 
@@ -403,7 +437,8 @@ export class ClosurePlan {
                 (this.props.planStatus === 'PROPOSED' ||
                     this.props.planStatus === 'APPROVED') &&
                 this.props.proposalSnapshot?.financialFingerprint ===
-                    input.proposalSnapshot.financialFingerprint
+                    input.proposalSnapshot.financialFingerprint &&
+                this.props.cancellationConsents.length === 0
             ) {
                 throw new SpacesDomainError('CLOSURE_PLAN_UNCHANGED');
             }
@@ -424,6 +459,7 @@ export class ClosurePlan {
                     },
                 ],
                 confirmations: [],
+                cancellationConsents: [],
                 cutoffDate: approved
                     ? (this.props.proposedCutoffDate ?? this.props.cutoffDate)
                     : this.props.cutoffDate,
@@ -432,6 +468,8 @@ export class ClosurePlan {
                     : this.props.proposedCutoffDate,
             });
         }
+        if (this.props.cancellationConsents.length > 0)
+            throw new SpacesDomainError('CLOSURE_CANCELLATION_PENDING');
         if (
             this.props.participants.length !== 2 ||
             this.props.approvals[0]?.memberId === input.actorMemberId
@@ -476,6 +514,142 @@ export class ClosurePlan {
             proposedCutoffDate: null,
             confirmations: [],
         });
+    }
+
+    confirm(input: ClosureConfirmation): {
+        plan: ClosurePlan;
+        completed: boolean;
+    } {
+        this.assertConclusionActor(input.actorMemberId, input.now);
+        if (this.props.cancellationConsents.length > 0)
+            throw new SpacesDomainError('CLOSURE_CANCELLATION_PENDING');
+        if (
+            this.props.planStatus !== 'APPROVED' ||
+            !this.props.participants.every((member) =>
+                this.props.approvals.some(
+                    (approval) =>
+                        approval.memberId === member.memberId &&
+                        approval.planRevision === this.props.planRevision,
+                ),
+            ) ||
+            !input.financiallyReady
+        ) {
+            throw new SpacesDomainError('CLOSURE_CONFIRMATION_NOT_READY');
+        }
+        if (
+            !/^[a-f0-9]{64}$/.test(input.financialFingerprint) ||
+            !/^[a-f0-9]{64}$/.test(input.expectedFinancialFingerprint) ||
+            input.financialFingerprint !== input.expectedFinancialFingerprint
+        ) {
+            throw new SpacesDomainError('CLOSURE_FINANCIAL_STATE_CHANGED');
+        }
+        const valid = this.props.confirmations.filter(
+            (consent) =>
+                consent.planRevision === this.props.planRevision &&
+                consent.financialFingerprint === input.financialFingerprint,
+        );
+        if (valid.some((consent) => consent.memberId === input.actorMemberId))
+            throw new SpacesDomainError('CLOSURE_ALREADY_CONFIRMED');
+        const confirmations = [
+            ...valid,
+            {
+                memberId: input.actorMemberId,
+                planRevision: this.props.planRevision,
+                recordedAt: input.now.toISOString(),
+                financialFingerprint: input.financialFingerprint,
+            },
+        ];
+        const completed = this.props.participants.every((member) =>
+            confirmations.some(
+                (consent) => consent.memberId === member.memberId,
+            ),
+        );
+        if (completed && !input.completionPrepared)
+            throw new SpacesDomainError('CLOSURE_COMPLETION_NOT_PREPARED');
+        return {
+            plan: new ClosurePlan({ ...this.snapshot(), confirmations }),
+            completed,
+        };
+    }
+
+    cancel(input: { actorMemberId: string; now: Date; spaceVersion: number }): {
+        plan: ClosurePlan;
+        completed: boolean;
+    } {
+        this.assertConclusionActor(input.actorMemberId, input.now);
+        if (!Number.isSafeInteger(input.spaceVersion) || input.spaceVersion < 1)
+            throw new Error('Invalid closure cancellation version');
+        const bilateral =
+            this.props.participants.length === 2 &&
+            (this.props.hasBilateralApproval ||
+                this.props.approvals.some(
+                    (approval) =>
+                        approval.memberId !== this.props.requestedByMemberId,
+                ));
+        if (
+            !bilateral &&
+            input.actorMemberId !== this.props.requestedByMemberId
+        ) {
+            throw new SpacesDomainError('CLOSURE_CANCELLATION_NOT_ALLOWED');
+        }
+        const valid = this.props.cancellationConsents.filter(
+            (consent) =>
+                consent.planRevision === this.props.planRevision &&
+                consent.spaceVersion === input.spaceVersion,
+        );
+        if (valid.some((consent) => consent.memberId === input.actorMemberId))
+            throw new SpacesDomainError(
+                'CLOSURE_ALREADY_REQUESTED_CANCELLATION',
+            );
+        const cancellationConsents = [
+            ...valid,
+            {
+                memberId: input.actorMemberId,
+                planRevision: this.props.planRevision,
+                recordedAt: input.now.toISOString(),
+                spaceVersion:
+                    valid.length > 0
+                        ? input.spaceVersion
+                        : input.spaceVersion + 1,
+            },
+        ];
+        const completed =
+            !bilateral ||
+            this.props.participants.every((member) =>
+                cancellationConsents.some(
+                    (consent) => consent.memberId === member.memberId,
+                ),
+            );
+        return {
+            plan: new ClosurePlan({
+                ...this.snapshot(),
+                cancellationConsents,
+                confirmations: [],
+                ...(completed
+                    ? {
+                          planStatus: 'DRAFT' as const,
+                          approvals: [],
+                          proposalSnapshot: null,
+                          proposedCutoffDate: null,
+                      }
+                    : {}),
+            }),
+            completed,
+        };
+    }
+
+    private assertConclusionActor(actorMemberId: string, now: Date): void {
+        if (
+            !this.props.participants.some(
+                (member) => member.memberId === actorMemberId,
+            )
+        )
+            throw new SpacesDomainError('SPACE_NOT_FOUND');
+        if (
+            !Number.isFinite(now.getTime()) ||
+            now.toISOString() < this.props.startedAt
+        )
+            throw new Error('Invalid closure conclusion time');
     }
 
     private assertProposalSnapshot(snapshot: ClosureProposalSnapshot): void {

@@ -12,6 +12,7 @@ import type {
     ClosureFutureDestination,
     ClosureParticipant,
     ClosureProposalSnapshot,
+    ClosureCancellationConsent,
 } from '../../../domain/space/closure-plan.js';
 
 @Entity({ name: 'space_closure_processes' })
@@ -53,6 +54,10 @@ import type {
 @Check(
     'CHK_space_closure_processes_proposal_snapshot',
     `"proposal_snapshot" IS NULL OR jsonb_typeof("proposal_snapshot") = 'object'`,
+)
+@Check(
+    'CHK_space_closure_processes_cancellation_consents',
+    `jsonb_typeof("cancellation_consents") = 'array' AND jsonb_array_length("cancellation_consents") <= 2`,
 )
 @Check(
     'CHK_space_closure_processes_resolution',
@@ -125,4 +130,11 @@ export class SpaceClosureProcessOrmEntity {
 
     @Column({ name: 'has_bilateral_approval', type: 'boolean', default: false })
     hasBilateralApproval!: boolean;
+
+    @Column({
+        name: 'cancellation_consents',
+        type: 'jsonb',
+        default: () => "'[]'::jsonb",
+    })
+    cancellationConsents!: ClosureCancellationConsent[];
 }

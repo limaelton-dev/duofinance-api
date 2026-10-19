@@ -28,11 +28,15 @@ const uuid: SchemaObject = { type: 'string', format: 'uuid' },
 const nullable = (schema: SchemaObject | ReferenceObject): SchemaObject => ({
     oneOf: [schema, { type: 'null' }],
 });
-const consent = object({
-    memberId: uuid,
-    planRevision: version,
-    recordedAt: instant,
-});
+const consent = object(
+    {
+        memberId: uuid,
+        planRevision: version,
+        recordedAt: instant,
+        financialFingerprint: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+    },
+    ['financialFingerprint'],
+);
 const count: SchemaObject = { type: 'integer', minimum: 0 };
 const routineSummary = object({
     pendingTaskCount: count,
@@ -53,6 +57,54 @@ const financialDiagnostic = object({
     counts: { type: 'object', additionalProperties: count },
     outstandingAmounts,
     financiallyReady: { type: 'boolean' },
+});
+const appliedDestinations: SchemaObject = {
+    type: 'array',
+    items: object({
+        effectId: uuid,
+        originId: uuid,
+        successorCommitmentId: nullable(uuid),
+        agreementObligationId: nullable(uuid),
+    }),
+};
+const financialValidation = object({
+    spaceId: uuid,
+    processId: uuid,
+    planRevision: version,
+    spaceVersion: version,
+    planApproved: { type: 'boolean' },
+    ...financialDiagnostic.properties,
+    canConfirm: { type: 'boolean' },
+    financialFingerprint: {
+        type: 'string',
+        pattern: '^[a-f0-9]{64}$',
+    },
+    appliedDestinations,
+    resolutions: {
+        type: 'array',
+        items: object({
+            kind: {
+                type: 'string',
+                enum: [
+                    'TRANSFER',
+                    'OFFSET',
+                    'WAIVER',
+                    'REVERSAL',
+                    'ASSIGNMENT',
+                    'CYCLE_FINALIZATION',
+                ],
+            },
+            id: uuid,
+            planRevision: version,
+            obligationIds: { type: 'array', items: uuid },
+        }),
+    },
+    missingDestinationOriginIds: { type: 'array', items: uuid },
+    informational: object({
+        routine: routineSummary,
+        shopping: shoppingSummary,
+        blocksFinancialClosure: { type: 'boolean', enum: [false] },
+    }),
 });
 const response = (schema: SchemaObject | ReferenceObject) => ({
     description: 'Resultado autorizado; sem cache.',
@@ -121,6 +173,15 @@ export const closureOpenApi: Pick<
         },
     ],
     paths: {
+        '/v2/spaces/{spaceId}/closure/final-summary': {
+            get: query('getClosureFinalSummary', ref('ClosureFinalSummary')),
+        },
+        '/v2/spaces/{spaceId}/closure/confirmation': {
+            post: command('confirmSpaceClosure', 'ClosurePlanConsent'),
+        },
+        '/v2/spaces/{spaceId}/closure/cancellation': {
+            post: command('cancelSpaceClosure', 'ClosurePlanDecision'),
+        },
         '/v2/spaces/{spaceId}/closure/financial-validation': {
             get: query(
                 'validateClosureFinances',
@@ -422,43 +483,22 @@ export const closureOpenApi: Pick<
                 expectedSpaceVersion: version,
                 expectedPlanRevision: version,
             }),
-            ClosureFinancialValidation: object({
-                spaceId: uuid,
-                processId: uuid,
-                planRevision: version,
-                spaceVersion: version,
-                planApproved: { type: 'boolean' },
-                ...financialDiagnostic.properties,
-                canConfirm: { type: 'boolean' },
-                financialFingerprint: {
-                    type: 'string',
-                    pattern: '^[a-f0-9]{64}$',
-                },
-                resolutions: {
+            ClosureFinancialValidation: financialValidation,
+            ClosureFinalSummary: object({
+                ...financialValidation.properties,
+                closure: ref('SpaceClosureView'),
+                validConfirmations: {
                     type: 'array',
-                    items: object({
-                        kind: {
-                            type: 'string',
-                            enum: [
-                                'TRANSFER',
-                                'OFFSET',
-                                'WAIVER',
-                                'REVERSAL',
-                                'ASSIGNMENT',
-                                'CYCLE_FINALIZATION',
-                            ],
-                        },
-                        id: uuid,
-                        planRevision: version,
-                        obligationIds: { type: 'array', items: uuid },
-                    }),
+                    maxItems: 2,
+                    items: consent,
                 },
-                missingDestinationOriginIds: { type: 'array', items: uuid },
-                informational: object({
-                    routine: routineSummary,
-                    shopping: shoppingSummary,
-                    blocksFinancialClosure: { type: 'boolean', enum: [false] },
-                }),
+                actorConfirmed: { type: 'boolean' },
+                requiredConfirmations: {
+                    type: 'integer',
+                    minimum: 1,
+                    maximum: 2,
+                },
+                confirmedCount: { type: 'integer', minimum: 0, maximum: 2 },
             }),
             ClosurePlanConsent: object({
                 expectedSpaceVersion: version,
@@ -482,6 +522,7 @@ export const closureOpenApi: Pick<
                     fingerprint: { type: 'string' },
                     diagnostic: financialDiagnostic,
                     missingDestinationOriginIds: { type: 'array', items: uuid },
+                    appliedDestinations,
                 }),
                 informational: object({
                     routine: routineSummary,
@@ -492,6 +533,16 @@ export const closureOpenApi: Pick<
                 {
                     proposalSnapshot: nullable(ref('ClosureProposalSnapshot')),
                     hasBilateralApproval: { type: 'boolean' },
+                    cancellationConsents: {
+                        type: 'array',
+                        maxItems: 2,
+                        items: object({
+                            memberId: uuid,
+                            planRevision: version,
+                            recordedAt: instant,
+                            spaceVersion: version,
+                        }),
+                    },
                     actorNextAction: {
                         type: 'string',
                         enum: [
@@ -499,6 +550,9 @@ export const closureOpenApi: Pick<
                             'REVIEW_PLAN',
                             'WAIT_APPROVAL',
                             'RESOLVE_FINANCES',
+                            'REVIEW_CLOSURE',
+                            'WAIT_CANCELLATION',
+                            'APPROVE_CANCELLATION',
                             'READ_ONLY',
                         ],
                     },
@@ -551,6 +605,7 @@ export const closureOpenApi: Pick<
                     'proposalSnapshot',
                     'hasBilateralApproval',
                     'actorNextAction',
+                    'cancellationConsents',
                 ],
             ),
             ClosureHistoryEntry: object({

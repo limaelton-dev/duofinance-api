@@ -156,6 +156,16 @@ export class ClosureService {
                 const financiallyReady =
                     finance.diagnostic.financiallyReady &&
                     finance.missingDestinationOriginIds.length === 0;
+                const actorMemberId = closure.participants.find(
+                    (member) => member.personId === actorId,
+                )?.memberId;
+                const actorConfirmed = closure.confirmations.some(
+                    (confirmation) =>
+                        confirmation.memberId === actorMemberId &&
+                        confirmation.planRevision === closure.planRevision &&
+                        confirmation.financialFingerprint ===
+                            finance.fingerprint,
+                );
                 return {
                     ...finance.diagnostic,
                     spaceId,
@@ -168,8 +178,11 @@ export class ClosureService {
                         closure.spaceStatus === 'CLOSING' &&
                         closure.processStatus === 'OPEN' &&
                         planApproved &&
-                        financiallyReady,
+                        financiallyReady &&
+                        !actorConfirmed &&
+                        !closure.cancellationConsents?.length,
                     financialFingerprint: finance.fingerprint,
+                    appliedDestinations: finance.appliedDestinations,
                     resolutions: await this.destinations.resolutions(
                         actorId,
                         spaceId,
@@ -191,6 +204,145 @@ export class ClosureService {
                 throw new ServiceUnavailableException();
             throw error;
         }
+    }
+    async finalSummary(actorId: string, spaceId: string) {
+        return this.manager.readSnapshot(async () => {
+            const validation = await this.financialValidation(actorId, spaceId),
+                closure = await this.spaces.read(actorId, spaceId);
+            if (!closure)
+                throw new SpacesDomainError('CLOSURE_PROCESS_NOT_FOUND');
+            const validConfirmations =
+                validation.planApproved && !closure.cancellationConsents?.length
+                    ? closure.confirmations.filter(
+                          (confirmation) =>
+                              confirmation.planRevision ===
+                                  closure.planRevision &&
+                              confirmation.financialFingerprint ===
+                                  validation.financialFingerprint,
+                      )
+                    : [];
+            const memberId = closure.participants.find(
+                (member) => member.personId === actorId,
+            )?.memberId;
+            const actorConfirmed = validConfirmations.some(
+                (confirmation) => confirmation.memberId === memberId,
+            );
+            return {
+                ...validation,
+                closure,
+                validConfirmations,
+                actorConfirmed,
+                requiredConfirmations: closure.requiredMemberIds.length,
+                confirmedCount: validConfirmations.length,
+                canConfirm: validation.canConfirm && !actorConfirmed,
+            };
+        });
+    }
+    async confirm(
+        actorId: string,
+        spaceId: string,
+        key: string,
+        input: {
+            expectedSpaceVersion: number;
+            expectedPlanRevision: number;
+            expectedFinancialFingerprint: string;
+        },
+    ) {
+        const command = {
+            actorId,
+            spaceId,
+            idempotencyKey: key,
+            ...input,
+            now: this.clock.now(),
+            action: 'CONFIRM' as const,
+            financialFingerprint: input.expectedFinancialFingerprint,
+            financiallyReady: false,
+            completionPrepared: false,
+        };
+        return this.uow.execute(async () => {
+            const closure = await this.spaces.lockForProcess(actorId, spaceId),
+                replay = await this.spaces.replayConclusion(command);
+            if (replay) return replay.view;
+            if (
+                !closure ||
+                closure.spaceStatus !== 'CLOSING' ||
+                closure.processStatus !== 'OPEN'
+            )
+                throw new SpacesDomainError('CLOSURE_PROCESS_NOT_OPEN');
+            if (
+                closure.spaceVersion !== input.expectedSpaceVersion ||
+                closure.planRevision !== input.expectedPlanRevision
+            )
+                throw new ConcurrentModificationError();
+            if (closure.cancellationConsents?.length)
+                throw new SpacesDomainError('CLOSURE_CANCELLATION_PENDING');
+            const validation = await this.financialValidation(actorId, spaceId);
+            if (
+                input.expectedFinancialFingerprint !==
+                validation.financialFingerprint
+            )
+                throw new SpacesDomainError('CLOSURE_FINANCIAL_STATE_CHANGED');
+            if (!validation.planApproved || !validation.financiallyReady)
+                throw new SpacesDomainError('CLOSURE_CONFIRMATION_NOT_READY');
+            const memberId = closure.participants.find(
+                (member) => member.personId === actorId,
+            )?.memberId;
+            const validConfirmations = closure.confirmations.filter(
+                (confirmation) =>
+                    confirmation.planRevision === closure.planRevision &&
+                    confirmation.financialFingerprint ===
+                        validation.financialFingerprint,
+            );
+            const completionPrepared = closure.requiredMemberIds.every(
+                (id) =>
+                    id === memberId ||
+                    validConfirmations.some(
+                        (confirmation) => confirmation.memberId === id,
+                    ),
+            );
+            if (completionPrepared) {
+                await this.routine.complete(
+                    actorId,
+                    spaceId,
+                    closure.processId,
+                    command.now,
+                );
+                await this.shopping.complete(
+                    actorId,
+                    spaceId,
+                    closure.processId,
+                    command.now,
+                );
+            }
+            return (
+                await this.spaces.confirm({
+                    ...command,
+                    financialFingerprint: validation.financialFingerprint,
+                    financiallyReady: true,
+                    completionPrepared,
+                })
+            ).view;
+        });
+    }
+    async cancel(
+        actorId: string,
+        spaceId: string,
+        key: string,
+        input: { expectedSpaceVersion: number; expectedPlanRevision: number },
+    ) {
+        return this.uow.execute(
+            async () =>
+                (
+                    await this.spaces.cancel({
+                        actorId,
+                        spaceId,
+                        idempotencyKey: key,
+                        ...input,
+                        action: 'CANCEL',
+                        now: this.clock.now(),
+                    })
+                ).view,
+        );
     }
     async decidePlan(
         actorId: string,
