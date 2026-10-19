@@ -5,6 +5,7 @@ import { GetDefaultSettlementRuleQuery } from '../queries/get-default-settlement
 import { PersonId } from '../../../spaces/domain/person/person-id.js';
 import { SpaceId } from '../../../spaces/domain/space/space-id.js';
 import type { SpaceAccessPort } from '../../../spaces/application/ports/public/space-access.port.js';
+import type { SpaceFinancialContextPort } from '../../../spaces/application/ports/public/space-financial-context.port.js';
 import type { DefaultSettlementRuleRepository } from '../ports/private/default-settlement-rule.repository.js';
 import type { FinancesCommandReceipts } from '../ports/private/finances-command-receipts.js';
 import { FinancesReceiptRaceError } from '../ports/private/finances-command-receipts.js';
@@ -47,6 +48,25 @@ function fixture() {
         save: vi.fn<FinancesCommandReceipts['save']>().mockResolvedValue(),
     };
     const uow = { execute: vi.fn(async <T>(work: () => Promise<T>) => work()) };
+    const readFinancialContext = vi
+        .fn<SpaceFinancialContextPort['read']>()
+        .mockResolvedValue({
+            ...context,
+            version: 1,
+            members: [
+                {
+                    memberId: 'member',
+                    personId: command.actorId.value,
+                    displayName: 'Pessoa',
+                },
+            ],
+        });
+    const financialContexts: SpaceFinancialContextPort = {
+        read: readFinancialContext,
+        lockForWrite: readFinancialContext,
+        lockForSettlement: readFinancialContext,
+        lockForFulfillment: readFinancialContext,
+    };
     return {
         command,
         context,
@@ -59,6 +79,7 @@ function fixture() {
             access,
             repository,
             receipts,
+            financialContexts,
         ),
         query: new GetDefaultSettlementRuleQuery(access, repository),
     };

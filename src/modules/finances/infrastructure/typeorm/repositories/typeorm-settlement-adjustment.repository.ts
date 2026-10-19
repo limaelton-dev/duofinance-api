@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
+import { ClosureResolutionAudit } from './closure-resolution-audit.js';
 import { SettlementAdjustmentReceiptRaceError } from '../../../application/ports/private/settlement-adjustment.repository.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
@@ -68,7 +69,10 @@ function hash(command: AdjustmentCommand) {
 }
 @Injectable()
 export class TypeOrmSettlementAdjustmentRepository implements SettlementAdjustmentRepository {
-    constructor(private readonly provider: EntityManagerProvider) {}
+    constructor(
+        private readonly provider: EntityManagerProvider,
+        private readonly closureAudit: ClosureResolutionAudit,
+    ) {}
     readSnapshot<T>(work: () => Promise<T>): Promise<T> {
         return this.provider.readSnapshot(work);
     }
@@ -123,6 +127,10 @@ export class TypeOrmSettlementAdjustmentRepository implements SettlementAdjustme
                 throw new SettlementAdjustmentReceiptRaceError();
             throw error;
         }
+        const closureAudit = await this.closureAudit.context(
+            c.actorId.value,
+            c.spaceId.value,
+        );
         await this.provider
             .get()
             .insert(FinancialSettlementAdjustmentAuditOrmEntity, {
@@ -139,8 +147,8 @@ export class TypeOrmSettlementAdjustmentRepository implements SettlementAdjustme
                           : 'obligation' in result
                             ? result.obligation.id
                             : result.cycle.id,
-                payload:
-                    'reversal' in result
+                payload: {
+                    ...('reversal' in result
                         ? {
                               originalKind: result.reversal.originalKind,
                               originalId: result.reversal.originalId,
@@ -162,7 +170,19 @@ export class TypeOrmSettlementAdjustmentRepository implements SettlementAdjustme
                             : {
                                   cycleVersion: result.cycle.version,
                                   finalizedAt: result.cycle.finalizedAt,
-                              },
+                              }),
+                    ...closureAudit,
+                    ...(closureAudit.closure && 'obligation' in result
+                        ? { obligationIds: [result.obligation.id] }
+                        : {}),
+                    ...(closureAudit.closure && 'applications' in result
+                        ? {
+                              obligationIds: result.applications.map(
+                                  (application) => application.obligationId,
+                              ),
+                          }
+                        : {}),
+                },
                 registeredAt: new Date(now),
             });
     }

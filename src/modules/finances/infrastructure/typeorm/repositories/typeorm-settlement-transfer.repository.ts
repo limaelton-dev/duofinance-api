@@ -9,6 +9,7 @@ import type { SettlementTransferResult } from '../../../application/models/settl
 import type { SettlementTransferRepository } from '../../../application/ports/private/settlement-transfer.repository.js';
 import { FinancesError } from '../../../domain/errors/finances.error.js';
 import { InterMemberObligation } from '../../../domain/shared-expense/inter-member-obligation.js';
+import { ClosureResolutionAudit } from './closure-resolution-audit.js';
 import type { SettlementTransfer } from '../../../domain/settlement-transfer/settlement-transfer.js';
 
 function amount(value: string): number {
@@ -71,7 +72,10 @@ interface OptionRow {
 }
 @Injectable()
 export class TypeOrmSettlementTransferRepository implements SettlementTransferRepository {
-    constructor(private readonly provider: EntityManagerProvider) {}
+    constructor(
+        private readonly provider: EntityManagerProvider,
+        private readonly closureAudit: ClosureResolutionAudit,
+    ) {}
     async discover(spaceId: string, ids: string[]) {
         if (!ids.length) return [];
         const rows: {
@@ -221,6 +225,10 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
                 ],
             );
         }
+        const closureAudit = await this.closureAudit.context(
+            transfer.createdByPersonId,
+            transfer.spaceId,
+        );
         await m.query(
             `INSERT INTO financial_settlement_audit(id,space_id,transfer_id,actor_id,action,payload,registered_at) VALUES ($1,$2,$3,$4,'RECORD_MANUAL_SETTLEMENT_TRANSFER',$5,$6)`,
             [
@@ -234,6 +242,14 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
                     amountInCents: transfer.amountInCents,
                     factDate: transfer.factDate,
                     allocations: transfer.allocations,
+                    ...closureAudit,
+                    ...(closureAudit.closure
+                        ? {
+                              obligationIds: transfer.allocations.map(
+                                  (allocation) => allocation.obligationId,
+                              ),
+                          }
+                        : {}),
                 }),
                 transfer.registeredAt,
             ],

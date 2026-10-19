@@ -38,6 +38,19 @@ const obligation = {
     cycleId: nullable(uuid),
     remainingAmountInCents: { ...amount, minimum: 0 },
 };
+const waiverObligation = object({ ...obligation, closureAgreementId: uuid });
+waiverObligation.required = waiverObligation.required?.filter(
+    (name) => name !== 'closureAgreementId',
+);
+const waiverOptionsObligation = object({
+    ...obligation,
+    closureAgreementId: uuid,
+    debtorMemberId: uuid,
+    creditorMemberId: uuid,
+});
+waiverOptionsObligation.required = waiverOptionsObligation.required?.filter(
+    (name) => name !== 'closureAgreementId',
+);
 const fact = {
     spaceId: uuid,
     waiver: object({
@@ -50,7 +63,7 @@ const fact = {
         createdByPersonId: uuid,
         reason: nullable({ type: 'string', maxLength: 500 }),
     }),
-    obligation: object(obligation),
+    obligation: waiverObligation,
     affectedCycleIds: {
         type: 'array' as const,
         uniqueItems: true,
@@ -209,11 +222,7 @@ export const obligationWaiverOpenApi: Pick<
                     }),
                 },
                 referenceDate: date,
-                obligation: object({
-                    ...obligation,
-                    debtorMemberId: uuid,
-                    creditorMemberId: uuid,
-                }),
+                obligation: waiverOptionsObligation,
                 settlementCycle: nullable(
                     object({
                         id: uuid,

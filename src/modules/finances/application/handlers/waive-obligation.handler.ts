@@ -121,6 +121,12 @@ export class WaiveObligationHandler {
                         status: after.status,
                         cycleId: after.cycleId,
                         remainingAmountInCents: after.remainingAmountInCents,
+                        ...(after.originClosureAgreementId
+                            ? {
+                                  closureAgreementId:
+                                      after.originClosureAgreementId,
+                              }
+                            : {}),
                     },
                     affectedCycleIds: after.cycleId ? [after.cycleId] : [],
                     replayed: false,

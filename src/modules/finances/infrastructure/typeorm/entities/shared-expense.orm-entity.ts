@@ -319,6 +319,7 @@ export class SettlementCycleOrmEntity {
 @Index('IDX_obligations_space_origin', ['spaceId', 'commitmentId'])
 @Index('UQ_obligations_closure_agreement', ['closureAgreementId'], {
     unique: true,
+    where: 'remaining_amount_in_cents > 0',
 })
 @Index('IDX_obligations_space_cycle', ['spaceId', 'cycleId'])
 @Check(

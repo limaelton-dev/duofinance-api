@@ -266,17 +266,22 @@ export class ReverseSettlementHandler {
                 const after: InterMemberObligation[] = [],
                     created: InterMemberObligation[] = [],
                     effectIds = new Map<string, string | null>();
-                for (const originId of originIds) {
+                const sourceKey = (obligation: InterMemberObligation) =>
+                    JSON.stringify([
+                        obligation.originCommitmentId,
+                        obligation.originClosureAgreementId,
+                    ]);
+                for (const group of new Set(before.map(sourceKey))) {
                     const originObligations = before.filter(
-                        (o) => o.originCommitmentId === originId,
+                        (o) => sourceKey(o) === group,
                     );
+                    const originId = originObligations[0].originCommitmentId;
                     const apps = allocations.filter((a) =>
-                        state.allocations.some(
-                            (source) =>
-                                source.id === a.originalAllocationId &&
-                                source.originCommitmentId === originId,
+                        originObligations.some(
+                            (obligation) => obligation.id === a.obligationId,
                         ),
                     );
+                    if (apps.length === 0) continue;
                     const plan = planSettlementReversal(
                         originObligations,
                         apps,
@@ -330,6 +335,8 @@ export class ReverseSettlementHandler {
                             source.originExternalLiabilityId,
                             false,
                             source.occurrenceId,
+                            source.correctionCauseId,
+                            source.originClosureAgreementId,
                         );
                         created.push(next);
                         effectId = next.id;

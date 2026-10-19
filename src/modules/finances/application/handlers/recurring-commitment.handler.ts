@@ -1308,7 +1308,10 @@ export class RecurringCommitmentHandler {
             );
             const context =
                 access.type === 'SHARED'
-                    ? await this.context.lockForWrite(c.actorId, c.spaceId)
+                    ? await this.context.lockForFulfillment(
+                          c.actorId,
+                          c.spaceId,
+                      )
                     : null;
             if (!context)
                 await this.access.assertCanWrite(c.actorId, c.spaceId);
@@ -1330,6 +1333,11 @@ export class RecurringCommitmentHandler {
             const existing = await this.repository.occurrence(
                 root,
                 c.referenceDate,
+            );
+            assertRecurringClosureCutoff(
+                context,
+                c.referenceDate,
+                existing?.facts.length ?? 0,
             );
             if (
                 !existing &&

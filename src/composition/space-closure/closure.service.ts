@@ -1,5 +1,10 @@
 import { ConcurrentModificationError } from '../../modules/spaces/application/errors/concurrent-modification.error.js';
-import { Inject, Injectable } from '@nestjs/common';
+import {
+    Inject,
+    Injectable,
+    ServiceUnavailableException,
+} from '@nestjs/common';
+import { isPostgresqlUnavailable } from '../../shared/technical/database/postgresql-unavailable.js';
 import {
     FINANCIAL_CLOSURE_DESTINATIONS_PORT,
     type FinancialClosureDestinationsPort,
@@ -123,6 +128,69 @@ export class ClosureService {
         });
         await this.access.assertCanRead(actor, space);
         return result;
+    }
+    async financialValidation(actorId: string, spaceId: string) {
+        const actor = PersonId.from(actorId),
+            space = SpaceId.from(spaceId);
+        await this.access.assertCanRead(actor, space);
+        try {
+            const result = await this.manager.readSnapshot(async () => {
+                const closure = await this.spaces.read(actorId, spaceId);
+                if (!closure)
+                    throw new SpacesDomainError('CLOSURE_PROCESS_NOT_FOUND');
+                const planApproved =
+                    closure.planStatus === 'APPROVED' &&
+                    closure.requiredMemberIds.every((id) =>
+                        closure.approvals.some(
+                            (approval) =>
+                                approval.memberId === id &&
+                                approval.planRevision === closure.planRevision,
+                        ),
+                    );
+                const finance = await this.destinations.reviewPlan(
+                    actorId,
+                    spaceId,
+                    closure.cutoffDate,
+                    planApproved ? closure.futureDestinations : [],
+                );
+                const financiallyReady =
+                    finance.diagnostic.financiallyReady &&
+                    finance.missingDestinationOriginIds.length === 0;
+                return {
+                    ...finance.diagnostic,
+                    spaceId,
+                    processId: closure.processId,
+                    planRevision: closure.planRevision,
+                    spaceVersion: closure.spaceVersion,
+                    planApproved,
+                    financiallyReady,
+                    canConfirm:
+                        closure.spaceStatus === 'CLOSING' &&
+                        closure.processStatus === 'OPEN' &&
+                        planApproved &&
+                        financiallyReady,
+                    financialFingerprint: finance.fingerprint,
+                    resolutions: await this.destinations.resolutions(
+                        actorId,
+                        spaceId,
+                        closure.processId,
+                    ),
+                    missingDestinationOriginIds:
+                        finance.missingDestinationOriginIds,
+                    informational: {
+                        routine: await this.routine.summary(actorId, spaceId),
+                        shopping: await this.shopping.summary(actorId, spaceId),
+                        blocksFinancialClosure: false as const,
+                    },
+                };
+            });
+            await this.access.assertCanRead(actor, space);
+            return result;
+        } catch (error) {
+            if (isPostgresqlUnavailable(error))
+                throw new ServiceUnavailableException();
+            throw error;
+        }
     }
     async decidePlan(
         actorId: string,

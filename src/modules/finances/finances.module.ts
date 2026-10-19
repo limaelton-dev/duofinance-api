@@ -3,6 +3,7 @@ import { FINANCIAL_CLOSURE_DIAGNOSTICS_PORT } from './application/ports/public/f
 import { FINANCIAL_CLOSURE_DESTINATIONS_PORT } from './application/ports/public/financial-closure-destinations.port.js';
 import { FinancialClosureEffectOrmEntity } from './infrastructure/typeorm/entities/financial-closure-effect.orm-entity.js';
 import { TypeOrmFinancialClosureDestinations } from './infrastructure/typeorm/repositories/typeorm-financial-closure-destinations.js';
+import { ClosureResolutionAudit } from './infrastructure/typeorm/repositories/closure-resolution-audit.js';
 import { TypeOrmFinancialClosureDiagnostics } from './infrastructure/typeorm/queries/typeorm-financial-closure-diagnostics.js';
 import {
     FinancialCommitmentAdjustmentOrmEntity,
@@ -303,6 +304,7 @@ import {
         SettlementTransferController,
     ],
     providers: [
+        ClosureResolutionAudit,
         {
             provide: FINANCIAL_CLOSURE_DESTINATIONS_PORT,
             useClass: TypeOrmFinancialClosureDestinations,

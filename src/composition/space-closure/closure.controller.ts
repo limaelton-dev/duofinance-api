@@ -29,6 +29,17 @@ import {
 @Controller('spaces/:spaceId/closure')
 export class ClosureController {
     constructor(private readonly service: ClosureService) {}
+    @Get('financial-validation')
+    @Header('Cache-Control', 'no-store')
+    financialValidation(
+        @CurrentActor() actor: RequestActor,
+        @Param() p: unknown,
+    ) {
+        return this.service.financialValidation(
+            actor.personId.value,
+            parseZodInput(closureParams, p).spaceId,
+        );
+    }
     @Get('plan-review')
     @Header('Cache-Control', 'no-store')
     reviewPlan(@CurrentActor() actor: RequestActor, @Param() p: unknown) {

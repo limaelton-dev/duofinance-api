@@ -87,7 +87,25 @@ export type FinancialClosurePlanReview = {
     missingDestinationOriginIds: string[];
 };
 
+export type FinancialClosureResolution = {
+    kind:
+        | 'TRANSFER'
+        | 'OFFSET'
+        | 'WAIVER'
+        | 'REVERSAL'
+        | 'ASSIGNMENT'
+        | 'CYCLE_FINALIZATION';
+    id: string;
+    planRevision: number;
+    obligationIds: string[];
+};
+
 export interface FinancialClosureDestinationsPort {
+    resolutions(
+        actorId: string,
+        spaceId: string,
+        processId: string,
+    ): Promise<FinancialClosureResolution[]>;
     reviewPlan(
         actorId: string,
         spaceId: string,

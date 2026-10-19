@@ -28,6 +28,7 @@ import type {
     FinancialClosureFutureItem,
     FinancialClosureRecurringImpact,
     FinancialClosurePlanReview,
+    FinancialClosureResolution,
 } from '../../../application/ports/public/financial-closure-destinations.port.js';
 import {
     FINANCIAL_CLOSURE_DIAGNOSTICS_PORT,
@@ -113,6 +114,34 @@ export class TypeOrmFinancialClosureDestinations implements FinancialClosureDest
         @Inject(FINANCIAL_CLOSURE_DIAGNOSTICS_PORT)
         private readonly diagnostics: FinancialClosureDiagnosticsPort,
     ) {}
+
+    async resolutions(
+        actorId: string,
+        spaceId: string,
+        processId: string,
+    ): Promise<FinancialClosureResolution[]> {
+        const actor = PersonId.from(actorId),
+            space = SpaceId.from(spaceId);
+        const result = await this.managers.readSnapshot(async () => {
+            await this.contexts.read(actor, space);
+            return this.managers.get().query(
+                `SELECT kind,id,(payload->'closure'->>'planRevision')::int AS "planRevision",
+                COALESCE(payload->'obligationIds','[]'::jsonb) AS "obligationIds" FROM (
+                SELECT 'TRANSFER'::text AS kind,transfer_id AS id,payload,registered_at FROM financial_settlement_audit WHERE space_id=$1
+                UNION ALL SELECT 'OFFSET',offset_id,payload,registered_at FROM settlement_offset_audit WHERE space_id=$1
+                UNION ALL SELECT CASE WHEN action='WAIVE_INTER_MEMBER_OBLIGATION' THEN 'WAIVER'
+                    WHEN action LIKE 'REVERSE_SETTLEMENT_%' THEN 'REVERSAL' WHEN action='MOVE_OBLIGATION' THEN 'ASSIGNMENT'
+                    ELSE 'CYCLE_FINALIZATION' END,
+                    CASE WHEN action='WAIVE_INTER_MEMBER_OBLIGATION' THEN (payload->>'waiverId')::uuid ELSE target_id END,
+                    payload,registered_at FROM financial_settlement_adjustment_audit WHERE space_id=$1
+                    AND action IN ('WAIVE_INTER_MEMBER_OBLIGATION','MOVE_OBLIGATION','FINALIZE_SETTLEMENT_CYCLE','REVERSE_SETTLEMENT_TRANSFER','REVERSE_SETTLEMENT_OFFSET')
+                ) resolutions WHERE payload->'closure'->>'processId'=$2 ORDER BY registered_at,id`,
+                [spaceId, processId],
+            ) as Promise<FinancialClosureResolution[]>;
+        });
+        await this.contexts.read(actor, space);
+        return result;
+    }
 
     async reviewPlan(
         actorId: string,

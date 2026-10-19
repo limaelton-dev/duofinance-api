@@ -121,6 +121,12 @@ export const closureOpenApi: Pick<
         },
     ],
     paths: {
+        '/v2/spaces/{spaceId}/closure/financial-validation': {
+            get: query(
+                'validateClosureFinances',
+                ref('ClosureFinancialValidation'),
+            ),
+        },
         '/v2/spaces/{spaceId}/closure/plan-review': {
             get: query('reviewClosurePlan', ref('ClosurePlanReview')),
         },
@@ -415,6 +421,44 @@ export const closureOpenApi: Pick<
             ClosurePlanDecision: object({
                 expectedSpaceVersion: version,
                 expectedPlanRevision: version,
+            }),
+            ClosureFinancialValidation: object({
+                spaceId: uuid,
+                processId: uuid,
+                planRevision: version,
+                spaceVersion: version,
+                planApproved: { type: 'boolean' },
+                ...financialDiagnostic.properties,
+                canConfirm: { type: 'boolean' },
+                financialFingerprint: {
+                    type: 'string',
+                    pattern: '^[a-f0-9]{64}$',
+                },
+                resolutions: {
+                    type: 'array',
+                    items: object({
+                        kind: {
+                            type: 'string',
+                            enum: [
+                                'TRANSFER',
+                                'OFFSET',
+                                'WAIVER',
+                                'REVERSAL',
+                                'ASSIGNMENT',
+                                'CYCLE_FINALIZATION',
+                            ],
+                        },
+                        id: uuid,
+                        planRevision: version,
+                        obligationIds: { type: 'array', items: uuid },
+                    }),
+                },
+                missingDestinationOriginIds: { type: 'array', items: uuid },
+                informational: object({
+                    routine: routineSummary,
+                    shopping: shoppingSummary,
+                    blocksFinancialClosure: { type: 'boolean', enum: [false] },
+                }),
             }),
             ClosurePlanConsent: object({
                 expectedSpaceVersion: version,
