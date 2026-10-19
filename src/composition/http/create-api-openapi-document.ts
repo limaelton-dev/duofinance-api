@@ -1,4 +1,5 @@
 import { financesOpenApi } from '../../modules/finances/http/openapi/finances.openapi.js';
+import { closureOpenApi } from '../space-closure/closure.openapi.js';
 import { routineOpenApi } from '../../modules/routine/http/routine.openapi.js';
 import { shoppingOpenApi } from '../../modules/shopping/http/shopping.openapi.js';
 import { financialReviewOpenApi } from '../../modules/finances/http/openapi/financial-review.openapi.js';
@@ -21,6 +22,7 @@ export function createApiOpenApiDocument(isProduction: boolean): OpenAPIObject {
             version: '0.5.0',
         },
         tags: [
+            ...(closureOpenApi.tags ?? []),
             ...(auth.tags ?? []),
             ...(spacesOpenApi.tags ?? []),
             ...(financesOpenApi.tags ?? []),
@@ -29,6 +31,7 @@ export function createApiOpenApiDocument(isProduction: boolean): OpenAPIObject {
             ...(shoppingOpenApi.tags ?? []),
         ],
         paths: {
+            ...closureOpenApi.paths,
             ...auth.paths,
             ...spacesOpenApi.paths,
             ...invitationsOpenApi.paths,
@@ -42,6 +45,7 @@ export function createApiOpenApiDocument(isProduction: boolean): OpenAPIObject {
         components: {
             ...auth.components,
             schemas: {
+                ...closureOpenApi.components?.schemas,
                 ...auth.components?.schemas,
                 ...spacesOpenApi.components?.schemas,
                 ...invitationsOpenApi.components?.schemas,

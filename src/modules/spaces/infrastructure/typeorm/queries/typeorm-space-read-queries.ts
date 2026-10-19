@@ -113,6 +113,7 @@ export class TypeOrmSpaceReadQueries implements SpaceReadQueries {
                       canIssue:
                           available &&
                           (invitation.status === 'EXPIRED' ||
+                              invitation.status === 'CANCELLED' ||
                               invitation.status === 'REJECTED'),
                       canReplace: available && invitation.status === 'PENDING',
                   }

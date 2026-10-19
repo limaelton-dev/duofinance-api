@@ -29,6 +29,7 @@ import {
     FinancialRecurrenceVersionOrmEntity,
 } from '../entities/recurrence.orm-entity.js';
 import { recordFinancialCommandAudit } from './record-financial-command-audit.js';
+import { recurringClosureCutoffSql } from '../queries/recurring-closure-cutoff.sql.js';
 
 @Injectable()
 export class TypeOrmRecurringCommitmentRepository implements RecurringCommitmentRepository {
@@ -339,9 +340,14 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
         );
     }
 
-    async list(spaceId: string, month: string, after: string | null) {
+    async list(
+        spaceId: string,
+        month: string,
+        after: string | null,
+        closureCutoffDate: string | null = null,
+    ) {
         return this.provider.readSnapshot(() =>
-            this.listInSnapshot(spaceId, month, after),
+            this.listInSnapshot(spaceId, month, after, closureCutoffDate),
         );
     }
 
@@ -349,6 +355,7 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
         spaceId: string,
         month: string,
         after: string | null,
+        closureCutoffDate: string | null,
     ) {
         const m = this.manager();
         const start = `${month}-01`;
@@ -366,6 +373,7 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
                 AND ${candidate}>=v.starts_on AND (v.ends_on IS NULL OR ${candidate}<=v.ends_on)
                 AND ${candidate}>=v.effective_from AND (v.next_from IS NULL OR ${candidate}<v.next_from)
                 AND (t.ends_on IS NULL OR ${candidate}<=t.ends_on) AND (o.status IS NULL OR o.status<>'CANCELLED')
+                AND ${recurringClosureCutoffSql(candidate, 'o.id', '$3')}
                 AND NOT EXISTS (SELECT 1 FROM financial_occurrences existing WHERE existing.space_id=c.space_id AND existing.commitment_id=c.id AND existing.reference_date>=($2::date) AND existing.reference_date<($2::date+interval '1 month') AND existing.reference_date<>${candidate})
         ), projected AS (
             SELECT id,reference_date,amount FROM (
@@ -377,16 +385,17 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
             JOIN financial_commitments c ON c.space_id=o.space_id AND c.id=o.commitment_id
             WHERE o.space_id=$1 AND c.modality='RECURRING' AND o.reference_date>=($2::date)
                 AND o.reference_date<($2::date+interval '1 month') AND o.status<>'CANCELLED'
+                AND ${recurringClosureCutoffSql('o.reference_date', 'o.id', '$3')}
                 AND NOT EXISTS (SELECT 1 FROM projected p WHERE p.id=c.id AND p.reference_date=o.reference_date)
         ), rows AS (SELECT * FROM projected UNION ALL SELECT * FROM actual)`;
         const counts: { count: string; amount: string; unknown: string }[] =
             await m.query(
                 `${rows} SELECT COUNT(DISTINCT id)::text AS count,COALESCE(SUM(amount),0)::text AS amount,COUNT(*) FILTER (WHERE amount IS NULL)::text AS unknown FROM rows`,
-                [spaceId, start],
+                [spaceId, start, closureCutoffDate],
             );
         const ids: { id: string; reference_date: string }[] = await m.query(
-            `${rows} SELECT id,MIN(reference_date)::text AS reference_date FROM rows WHERE ($3::uuid IS NULL OR id>$3::uuid) GROUP BY id ORDER BY id LIMIT 21`,
-            [spaceId, start, after],
+            `${rows} SELECT id,MIN(reference_date)::text AS reference_date FROM rows WHERE ($4::uuid IS NULL OR id>$4::uuid) GROUP BY id ORDER BY id LIMIT 21`,
+            [spaceId, start, closureCutoffDate, after],
         );
         if (ids.length === 0)
             return {

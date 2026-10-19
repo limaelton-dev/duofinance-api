@@ -59,6 +59,7 @@ import {
 } from '../ports/private/shared-expense.repositories.js';
 import { SettlementRule } from '../../domain/settlement-rule/settlement-rule.js';
 import { ReconcileFinancialOrigin } from './reconcile-financial-origin.js';
+import { assertRecurringClosureCutoff } from './assert-recurring-closure-cutoff.js';
 
 type Base = { actorId: PersonId; spaceId: SpaceId; idempotencyKey: string };
 type Create = Base & CreateRecurringCommitmentDto;
@@ -149,7 +150,11 @@ function view(
     };
 }
 
-function rootView(root: RecurringCommitment, today: string) {
+function rootView(
+    root: RecurringCommitment,
+    today: string,
+    closureCutoffDate: string | null = null,
+) {
     const displayed =
         root.effectiveVersionAt(today) ??
         root.versions[0]?.configuration ??
@@ -161,7 +166,12 @@ function rootView(root: RecurringCommitment, today: string) {
         return root.projections(d.toISOString().slice(0, 7));
     })
         .flat()
-        .find((projected) => projected.referenceDate >= today);
+        .find(
+            (projected) =>
+                projected.referenceDate >= today &&
+                (!closureCutoffDate ||
+                    projected.referenceDate < closureCutoffDate),
+        );
     const nextConfiguration = next
         ? root.configurationAt(next.referenceDate)
         : null;
@@ -203,6 +213,7 @@ function rootView(root: RecurringCommitment, today: string) {
         })),
         version: root.version,
         scope: p.type,
+        ...(closureCutoffDate ? { closureCutoffDate } : {}),
         ...(p.type === 'PERSONAL'
             ? { ownerPersonId: p.ownerPersonId }
             : {
@@ -392,11 +403,21 @@ export class RecurringCommitmentHandler {
     }
 
     async detail(actor: PersonId, space: SpaceId, id: string) {
-        await this.access.assertCanRead(actor, space);
+        const access = await this.access.assertCanRead(actor, space);
         const root = await this.repository.find(space.value, id);
         if (!root) throw new FinancesError('FINANCIAL_COMMITMENT_NOT_FOUND');
+        const context =
+            access.type === 'SHARED'
+                ? await this.context.read(actor, space)
+                : null;
         await this.access.assertCanRead(actor, space);
-        return { commitment: rootView(root, this.clock.today()) };
+        return {
+            commitment: rootView(
+                root,
+                this.clock.today(),
+                context?.closureCutoffDate,
+            ),
+        };
     }
 
     async list(
@@ -405,7 +426,11 @@ export class RecurringCommitmentHandler {
         month: string,
         cursor?: string,
     ) {
-        await this.access.assertCanRead(actor, space);
+        const access = await this.access.assertCanRead(actor, space);
+        const context =
+            access.type === 'SHARED'
+                ? await this.context.read(actor, space)
+                : null;
         if (!/^(?!0000)\d{4}-(0[1-9]|1[0-2])$/.test(month))
             throw new FinancesError('VALIDATION_ERROR', ['month']);
         let after: string | null = null;
@@ -429,10 +454,24 @@ export class RecurringCommitmentHandler {
             } catch {
                 throw new FinancesError('VALIDATION_ERROR', ['cursor']);
             }
-        const result = await this.repository.list(space.value, month, after);
+        const result = await this.repository.list(
+            space.value,
+            month,
+            after,
+            context?.closureCutoffDate,
+        );
+        if (context) {
+            const current = await this.context.read(actor, space);
+            if (current.closureCutoffDate !== context.closureCutoffDate)
+                throw new FinancesError('EXPENSE_OPTIONS_CHANGED');
+        }
         await this.access.assertCanRead(actor, space);
         const items = result.items.slice(0, 20).map((row) => ({
-            ...rootView(row.commitment, this.clock.today()),
+            ...rootView(
+                row.commitment,
+                this.clock.today(),
+                context?.closureCutoffDate,
+            ),
             referenceDate: row.referenceDate,
         }));
         const last = result.items.length > 20 ? items.at(-1) : null;
@@ -462,20 +501,36 @@ export class RecurringCommitmentHandler {
         id: string,
         month: string,
     ) {
-        await this.access.assertCanRead(actor, space);
+        const access = await this.access.assertCanRead(actor, space);
         const root = await this.repository.find(space.value, id);
         if (!root) throw new FinancesError('FINANCIAL_COMMITMENT_NOT_FOUND');
         const materialized = await this.repository.occurrencesInMonth(
             root,
             month,
         );
+        const context =
+            access.type === 'SHARED'
+                ? await this.context.read(actor, space)
+                : null;
         const projections = materialized.length ? [] : root.projections(month);
         const dates = [
             ...new Set([
                 ...projections.map((p) => p.referenceDate),
                 ...materialized.map((o) => o.referenceDate),
             ]),
-        ].sort();
+        ]
+            .filter((date) => {
+                const occurrence = materialized.find(
+                    (item) => item.referenceDate === date,
+                );
+                return (
+                    !context?.closureCutoffDate ||
+                    date < context.closureCutoffDate ||
+                    occurrence?.status === 'CANCELLED' ||
+                    (occurrence?.facts.length ?? 0) > 0
+                );
+            })
+            .sort();
         const items = dates.map((date) => {
             const occurrence =
                 materialized.find((o) => o.referenceDate === date) ?? null;
@@ -533,6 +588,11 @@ export class RecurringCommitmentHandler {
             access.type === 'SHARED'
                 ? await this.context.read(actor, space)
                 : null;
+        assertRecurringClosureCutoff(
+            context,
+            referenceDate,
+            occurrence?.facts.length ?? 0,
+        );
         let after: { targetDate: string; id: string } | null = null;
         if (cursor)
             try {
@@ -579,7 +639,11 @@ export class RecurringCommitmentHandler {
             last = page.at(-1);
         await this.access.assertCanRead(actor, space);
         return {
-            commitment: rootView(root, this.clock.today()),
+            commitment: rootView(
+                root,
+                this.clock.today(),
+                context?.closureCutoffDate,
+            ),
             occurrence: view(configuration, occurrence, referenceDate),
             ...(context
                 ? {
@@ -1387,6 +1451,11 @@ export class RecurringCommitmentHandler {
                     root,
                     c.referenceDate,
                 );
+                assertRecurringClosureCutoff(
+                    context,
+                    c.referenceDate,
+                    existing?.facts.length ?? 0,
+                );
                 if (
                     !existing &&
                     (
@@ -1438,7 +1507,11 @@ export class RecurringCommitmentHandler {
                     existing === null,
                 );
                 const result = {
-                    commitment: rootView(root, this.clock.today()),
+                    commitment: rootView(
+                        root,
+                        this.clock.today(),
+                        context?.closureCutoffDate,
+                    ),
                     occurrence: view(configuration, next, c.referenceDate),
                     replayed: false,
                 };
@@ -1552,6 +1625,11 @@ export class RecurringCommitmentHandler {
                     root,
                     c.referenceDate,
                 );
+                assertRecurringClosureCutoff(
+                    context,
+                    c.referenceDate,
+                    existing?.facts.length ?? 0,
+                );
                 if (
                     !existing &&
                     (
@@ -1615,7 +1693,11 @@ export class RecurringCommitmentHandler {
                         c.referenceDate,
                     );
                     const result = {
-                        commitment: rootView(root, today),
+                        commitment: rootView(
+                            root,
+                            today,
+                            context?.closureCutoffDate,
+                        ),
                         occurrence: view(
                             configuration,
                             updated,
@@ -1739,7 +1821,11 @@ export class RecurringCommitmentHandler {
                     );
                 }
                 const result = {
-                    commitment: rootView(root, today),
+                    commitment: rootView(
+                        root,
+                        today,
+                        context?.closureCutoffDate,
+                    ),
                     occurrence: view(configuration, next, c.referenceDate),
                     replayed: false,
                 };

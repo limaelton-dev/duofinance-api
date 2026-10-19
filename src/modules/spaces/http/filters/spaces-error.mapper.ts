@@ -8,6 +8,11 @@ import {
 } from '../../domain/errors/spaces-domain.error.js';
 
 const domainStatuses: Record<SpacesDomainErrorCode, number> = {
+    CLOSURE_PROCESS_NOT_FOUND: 404,
+    CLOSURE_PROCESS_NOT_OPEN: 409,
+    CLOSURE_CUTOFF_INVALID: 400,
+    CLOSURE_PLAN_UNCHANGED: 409,
+    CLOSURE_HISTORY_CURSOR_INVALID: 400,
     SHARED_SPACE_REQUIRED: 409,
     VALIDATION_ERROR: 400,
     SPACE_NOT_FOUND: 404,

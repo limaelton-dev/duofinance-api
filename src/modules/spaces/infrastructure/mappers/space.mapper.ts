@@ -93,6 +93,7 @@ export class SpaceMapper {
                     expiresAt: invitation.expiresAt,
                     resolvedAt: invitation.resolvedAt,
                     cancellationReason: invitation.cancellationReason,
+                    closureProcessId: invitation.closureProcessId,
                     replacedByInvitationId:
                         invitation.replacedByInvitationId === null
                             ? null
@@ -138,6 +139,7 @@ export class SpaceMapper {
             expiresAt: invitation.expiresAt,
             resolvedAt: invitation.resolvedAt,
             cancellationReason: invitation.cancellationReason,
+            closureProcessId: invitation.closureProcessId,
             replacedByInvitationId:
                 invitation.replacedByInvitationId?.value ?? null,
         };

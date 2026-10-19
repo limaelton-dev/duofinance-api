@@ -180,6 +180,10 @@ export class FinanceTodayCompositionQuery implements FinanceTodayCompositionQuer
                 !sameMembers(current.members, financialContext.members)
             )
                 throw new SpacesDomainError('SPACE_NOT_FOUND');
+            if (
+                current.closureCutoffDate !== financialContext.closureCutoffDate
+            )
+                throw new FinanceTodayUnavailableError();
             if (outcome.ok) {
                 const settlements = outcome.result.legacy.settlements;
                 if (
@@ -203,6 +207,10 @@ export class FinanceTodayCompositionQuery implements FinanceTodayCompositionQuer
         referenceDate: string,
         authorized: SpaceAccessContext,
     ): Promise<FinanceTodayCompositionRead> {
+        const context =
+            authorized.type === 'SHARED'
+                ? await this.financialContexts.read(actor, space)
+                : null;
         const income = await this.incomes.readUpcoming(
             actor,
             space,
@@ -274,7 +282,7 @@ export class FinanceTodayCompositionQuery implements FinanceTodayCompositionQuer
         const rows = await nonRecurringReadQuery<BucketRow[]>(
             this.managers.get(),
             financeTodayBucketsSql,
-            [space.value, referenceDate],
+            [space.value, referenceDate, context?.closureCutoffDate ?? null],
             referenceDate,
         );
         return {

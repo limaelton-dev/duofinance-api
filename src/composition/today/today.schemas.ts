@@ -164,6 +164,11 @@ export const todayCompositionSchemas: Record<string, SchemaObject> = {
         { cycleId: uuid },
         ref('SettlementCycleSummary'),
     ),
+    TodayClosurePreview: item(
+        'SPACE_CLOSURE',
+        { processId: uuid },
+        ref('SpaceClosureView'),
+    ),
     TodayPreviewItem: {
         oneOf: [
             'TodayFinancialPreview',
@@ -171,6 +176,7 @@ export const todayCompositionSchemas: Record<string, SchemaObject> = {
             'TodayShoppingPreview',
             'TodayProposalPreview',
             'TodayCyclePreview',
+            'TodayClosurePreview',
         ].map(ref),
         discriminator: {
             propertyName: 'type',
@@ -181,6 +187,7 @@ export const todayCompositionSchemas: Record<string, SchemaObject> = {
                 SHOPPING_LIST: '#/components/schemas/TodayShoppingPreview',
                 CHANGE_PROPOSAL: '#/components/schemas/TodayProposalPreview',
                 SETTLEMENT_CYCLE: '#/components/schemas/TodayCyclePreview',
+                SPACE_CLOSURE: '#/components/schemas/TodayClosurePreview',
             },
         },
     },

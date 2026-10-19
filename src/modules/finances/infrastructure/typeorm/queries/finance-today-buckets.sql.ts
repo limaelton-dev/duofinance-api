@@ -1,3 +1,5 @@
+import { recurringClosureCutoffSql } from './recurring-closure-cutoff.sql.js';
+
 const fulfillmentSql = (target: string) => `CASE WHEN c.kind='INCOME'
     THEN COALESCE((SELECT SUM(f.amount_in_cents) FROM financial_receipts f WHERE f.space_id=c.space_id AND ${target}),0)
     ELSE COALESCE((SELECT SUM(f.amount_in_cents) FROM financial_disbursements f WHERE f.space_id=c.space_id AND ${target}),0)
@@ -22,7 +24,7 @@ export const financeTodayBucketsSql = `WITH one_time AS (
     SELECT c.id AS commitment_id,c.modality,c.kind,v.description,v.amount_in_cents,v.value_mode,
         v.frequency,v.day_of_month,v.month_of_year,
         GREATEST(v.starts_on,v.effective_from) AS starts_on,
-        LEAST(COALESCE(v.ends_on,'9999-12-31'::date),COALESCE(t.ends_on,'9999-12-31'::date),
+        LEAST(COALESCE(v.ends_on,'9999-12-31'::date),COALESCE(t.ends_on,'9999-12-31'::date),COALESCE($3::date-1,'9999-12-31'::date),
             COALESCE((SELECT MIN(later.effective_from)-1 FROM financial_recurrence_versions later
                 WHERE later.space_id=c.space_id AND later.commitment_id=c.id AND later.effective_from>v.effective_from),'9999-12-31'::date),
             (GREATEST($2::date,v.starts_on,v.effective_from,COALESCE((SELECT MAX(o.reference_date)
@@ -61,6 +63,7 @@ export const financeTodayBucketsSql = `WITH one_time AS (
     JOIN financial_commitments c ON c.space_id=o.space_id AND c.id=o.commitment_id
     JOIN financial_recurrence_versions v ON v.space_id=o.space_id AND v.commitment_id=o.commitment_id AND v.version=o.economic_version
     WHERE o.space_id=$1 AND c.modality='RECURRING' AND o.status<>'CANCELLED'
+        AND ${recurringClosureCutoffSql('o.reference_date', 'o.id', '$3')}
 ), installments AS (
     SELECT c.id AS commitment_id,i.id AS occurrence_id,c.modality,c.kind,c.description,
         i.due_date AS expected_date,i.amount_in_cents,i.amount_in_cents AS expected_amount_in_cents,

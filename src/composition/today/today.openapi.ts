@@ -56,7 +56,7 @@ export const todayOpenApi: Pick<
                 tags: ['Today'],
                 summary: 'Consultar Hoje no espaço atual',
                 description:
-                    'Compõe portas públicas de Finanças, Rotina e Compras com uma referência temporal em America/Sao_Paulo e snapshot por fonte. Preserva finance/routine e acrescenta shopping e blocos ordenados ATTENTION → TODAY → NEXT_SETTLEMENT → UPCOMING → TASKS → SHOPPING, com limites, totais reais e referências navegáveis. Datas de acerto não se tornam vencimentos. Falha técnica isolada preserva as fontes saudáveis; blocos mistos ficam PARTIAL com total desconhecido. Autoriza antes e depois; perda de acesso bloqueia toda resposta. GET não escreve. Atenção de encerramento ainda não é suportada.',
+                    'Compõe portas públicas de Finanças, Rotina e Compras com uma referência temporal em America/Sao_Paulo e snapshot por fonte. Preserva finance/routine e acrescenta shopping e blocos ordenados ATTENTION → TODAY → NEXT_SETTLEMENT → UPCOMING → TASKS → SHOPPING, com limites, totais reais e referências navegáveis. Datas de acerto não se tornam vencimentos. Falha técnica isolada preserva as fontes saudáveis; blocos mistos ficam PARTIAL com total desconhecido. Autoriza antes e depois; perda de acesso bloqueia toda resposta. GET não escreve. Atenção de encerramento usa o processo real de Espaços, com indisponibilidade isolada da fonte e referência ao plano.',
                 security: [{ sessionCookie: [] }],
                 parameters: [
                     {
@@ -227,6 +227,29 @@ export const todayOpenApi: Pick<
                 }),
             }),
             TodayResponse: object({
+                closure: {
+                    oneOf: [
+                        object({
+                            status: { type: 'string', enum: ['AVAILABLE'] },
+                            data: {
+                                oneOf: [
+                                    ref('SpaceClosureView'),
+                                    { type: 'null' },
+                                ],
+                            },
+                        }),
+                        object({
+                            status: { type: 'string', enum: ['UNAVAILABLE'] },
+                            error: object({
+                                code: {
+                                    type: 'string',
+                                    enum: ['SPACE_CLOSURE_UNAVAILABLE'],
+                                },
+                                message: { type: 'string' },
+                            }),
+                        }),
+                    ],
+                },
                 shopping: ref('TodayShoppingSource'),
                 blocks: {
                     type: 'array',
@@ -237,7 +260,7 @@ export const todayOpenApi: Pick<
                 capabilities: object({
                     spaceClosureAttention: {
                         type: 'string',
-                        enum: ['NOT_SUPPORTED'],
+                        enum: ['SUPPORTED'],
                     },
                 }),
                 routine: {

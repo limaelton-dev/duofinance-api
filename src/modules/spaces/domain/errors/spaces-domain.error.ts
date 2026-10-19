@@ -1,4 +1,13 @@
 const messages = {
+    CLOSURE_PROCESS_NOT_FOUND: 'Não há processo de encerramento neste espaço.',
+    CLOSURE_PROCESS_NOT_OPEN:
+        'O encerramento não está aberto. Consulte o estado atual do espaço.',
+    CLOSURE_CUTOFF_INVALID:
+        'Informe uma data de corte válida, igual ou posterior ao corte vigente.',
+    CLOSURE_PLAN_UNCHANGED:
+        'A data de corte já está definida nesta revisão do plano.',
+    CLOSURE_HISTORY_CURSOR_INVALID:
+        'O cursor do histórico de encerramento é inválido.',
     SHARED_SPACE_REQUIRED:
         'Esta ação se aplica somente a espaços compartilhados.',
     VALIDATION_ERROR: 'Informe um nome válido para o espaço.',

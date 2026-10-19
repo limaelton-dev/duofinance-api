@@ -6,6 +6,7 @@ export interface SpaceFinancialContext {
     status: 'ACTIVE' | 'CLOSING' | 'CLOSED';
     version: number;
     actorMemberId: string;
+    closureCutoffDate?: string | null;
     members: { memberId: string; personId: string; displayName: string }[];
 }
 export const SPACE_FINANCIAL_CONTEXT_PORT = Symbol(

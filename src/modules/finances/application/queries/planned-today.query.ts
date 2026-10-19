@@ -1,4 +1,5 @@
 import { nonRecurringReadQuery } from '../../infrastructure/typeorm/queries/non-recurring-version-selection.js';
+import { recurringClosureCutoffSql } from '../../infrastructure/typeorm/queries/recurring-closure-cutoff.sql.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
 import { EntityManagerProvider } from '../../../../shared/technical/database/typeorm/entity-manager.provider.js';
@@ -6,6 +7,10 @@ import {
     SPACE_ACCESS_PORT,
     type SpaceAccessPort,
 } from '../../../spaces/application/ports/public/space-access.port.js';
+import {
+    SPACE_FINANCIAL_CONTEXT_PORT,
+    type SpaceFinancialContextPort,
+} from '../../../spaces/application/ports/public/space-financial-context.port.js';
 import type { PersonId } from '../../../spaces/domain/person/person-id.js';
 import type { SpaceId } from '../../../spaces/domain/space/space-id.js';
 import { civilDate } from '../../domain/shared-expense/settlement-cycle.js';
@@ -17,10 +22,12 @@ export class PlannedTodayQuery implements PlannedTodayQueryPort {
     constructor(
         @Inject(SPACE_ACCESS_PORT) private readonly access: SpaceAccessPort,
         private readonly managers: EntityManagerProvider,
+        @Inject(SPACE_FINANCIAL_CONTEXT_PORT)
+        private readonly contexts: SpaceFinancialContextPort,
     ) {}
 
     async readUpcoming(actor: PersonId, space: SpaceId, referenceDate: string) {
-        await this.access.assertCanRead(actor, space);
+        const authorized = await this.access.assertCanRead(actor, space);
         civilDate(referenceDate);
         type Row = {
             items: {
@@ -39,8 +46,12 @@ export class PlannedTodayQuery implements PlannedTodayQueryPort {
         };
         let rows: Row[];
         try {
-            rows = await this.managers.readSnapshot(() =>
-                nonRecurringReadQuery(
+            rows = await this.managers.readSnapshot(async () => {
+                const context =
+                    authorized.type === 'SHARED'
+                        ? await this.contexts.read(actor, space)
+                        : null;
+                return nonRecurringReadQuery(
                     this.managers.get(),
                     `WITH one_time AS (
                     SELECT c.id AS commitment_id,NULL::uuid AS occurrence_id,'EXPENSE'::text AS kind,c.description,
@@ -67,6 +78,8 @@ export class PlannedTodayQuery implements PlannedTodayQueryPort {
                         make_date(EXTRACT(YEAR FROM months.m)::integer,EXTRACT(MONTH FROM months.m)::integer,
                             LEAST(v.day_of_month,EXTRACT(DAY FROM (months.m+interval '1 month - 1 day')::date)::integer))
                     WHERE c.space_id=$1 AND c.modality='RECURRING'
+                        AND ($3::date IS NULL OR make_date(EXTRACT(YEAR FROM months.m)::integer,EXTRACT(MONTH FROM months.m)::integer,
+                            LEAST(v.day_of_month,EXTRACT(DAY FROM (months.m+interval '1 month - 1 day')::date)::integer))<$3::date)
                         AND (v.frequency='MONTHLY' OR v.month_of_year=EXTRACT(MONTH FROM months.m)::integer)
                         AND o.id IS NULL
                         AND make_date(EXTRACT(YEAR FROM months.m)::integer,EXTRACT(MONTH FROM months.m)::integer,LEAST(v.day_of_month,EXTRACT(DAY FROM (months.m+interval '1 month - 1 day')::date)::integer)) >= v.starts_on
@@ -86,6 +99,7 @@ export class PlannedTodayQuery implements PlannedTodayQueryPort {
                     FROM financial_occurrences o JOIN financial_commitments c ON c.space_id=o.space_id AND c.id=o.commitment_id
                     JOIN financial_recurrence_versions v ON v.space_id=o.space_id AND v.commitment_id=o.commitment_id AND v.version=o.economic_version
                     WHERE o.space_id=$1 AND o.status<>'CANCELLED'
+                        AND ${recurringClosureCutoffSql('o.reference_date', 'o.id', '$3')}
                 ), installments AS (
                     SELECT c.id AS commitment_id,i.id AS occurrence_id,'EXPENSE'::text AS kind,c.description,
                         i.due_date AS expected_date,i.amount_in_cents,i.amount_in_cents AS expected_amount_in_cents,
@@ -115,10 +129,14 @@ export class PlannedTodayQuery implements PlannedTodayQueryPort {
                     'valuePending',amount_in_cents IS NULL
                 ) ORDER BY expected_date,commitment_id) FROM page),'[]'::jsonb) AS items,
                 (SELECT COUNT(*)::text FROM selected) AS "totalCount"`,
-                    [space.value, referenceDate],
+                    [
+                        space.value,
+                        referenceDate,
+                        context?.closureCutoffDate ?? null,
+                    ],
                     referenceDate,
-                ),
-            );
+                );
+            });
         } catch (error) {
             if (error instanceof QueryFailedError)
                 throw new FinanceTodayUnavailableError();

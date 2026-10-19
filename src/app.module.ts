@@ -1,4 +1,5 @@
 import { FinancesModule } from './modules/finances/finances.module.js';
+import { ClosureModule } from './composition/space-closure/closure.module.js';
 import { RoutineModule } from './modules/routine/routine.module.js';
 import { ShoppingModule } from './modules/shopping/shopping.module.js';
 import { mapShoppingError } from './modules/shopping/http/shopping-error.mapper.js';
@@ -32,6 +33,7 @@ import { mapSpacesError } from './modules/spaces/http/filters/spaces-error.mappe
         ShoppingModule,
         TodayModule,
         ShoppingTasksModule,
+        ClosureModule,
     ],
     controllers: [],
     providers: [

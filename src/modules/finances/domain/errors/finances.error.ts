@@ -1,4 +1,5 @@
 export type FinancesErrorCode =
+    | 'CLOSURE_CUTOFF_REACHED'
     | 'FINANCIAL_REVERSAL_NOT_FOUND'
     | 'FINANCIAL_REVERSAL_EXCEEDS_AVAILABLE'
     | 'FINANCIAL_REVERSAL_SETTLEMENT_REQUIRED'
@@ -39,6 +40,8 @@ export type FinancesErrorCode =
     | 'RECURRENCE_ACCEPTANCE_REQUIRED'
     | 'RECURRENCE_ALREADY_TERMINATED';
 const messages: Record<FinancesErrorCode, string> = {
+    CLOSURE_CUTOFF_REACHED:
+        'A data de corte impede criar responsabilidade para esta ocorrência. Defina seu destino no plano de encerramento.',
     FINANCIAL_REVERSAL_NOT_FOUND:
         'Realização financeira não encontrada nesta origem.',
     FINANCIAL_REVERSAL_EXCEEDS_AVAILABLE:

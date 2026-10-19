@@ -11,6 +11,11 @@ export class TypeOrmUnitOfWork implements UnitOfWork {
     ) {}
 
     execute<T>(work: () => Promise<T>): Promise<T> {
+        if (
+            this.transactionContext.getEntityManager()?.queryRunner
+                ?.isTransactionActive
+        )
+            return work();
         return this.dataSource.transaction((entityManager) =>
             this.transactionContext.run(entityManager, work),
         );

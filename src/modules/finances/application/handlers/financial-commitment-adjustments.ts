@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { assertRecurringClosureCutoff } from './assert-recurring-closure-cutoff.js';
 import { randomUUID } from 'node:crypto';
 import {
     SPACE_ACCESS_PORT,
@@ -149,6 +150,12 @@ export class FinancialCommitmentAdjustments {
             lock,
         );
         if (!state) throw new FinancesError('FINANCIAL_COMMITMENT_NOT_FOUND');
+        if (state.modality === 'RECURRING' && state.referenceDate)
+            assertRecurringClosureCutoff(
+                context,
+                state.referenceDate,
+                state.facts.length,
+            );
         if (state.version !== input.expectedCommitmentVersion)
             throw new FinancesError('CONCURRENT_MODIFICATION');
         if (
