@@ -12,6 +12,7 @@ import { FinancesError } from '../../domain/errors/finances.error.js';
 import {
     SettlementReversal,
     planSettlementReversal,
+    settlementReversalSourceKey,
 } from '../../domain/settlement-reversal/settlement-reversal.js';
 import { InterMemberObligation } from '../../domain/shared-expense/inter-member-obligation.js';
 import { civilDate } from '../../domain/shared-expense/settlement-cycle.js';
@@ -266,14 +267,11 @@ export class ReverseSettlementHandler {
                 const after: InterMemberObligation[] = [],
                     created: InterMemberObligation[] = [],
                     effectIds = new Map<string, string | null>();
-                const sourceKey = (obligation: InterMemberObligation) =>
-                    JSON.stringify([
-                        obligation.originCommitmentId,
-                        obligation.originClosureAgreementId,
-                    ]);
-                for (const group of new Set(before.map(sourceKey))) {
+                for (const group of new Set(
+                    before.map(settlementReversalSourceKey),
+                )) {
                     const originObligations = before.filter(
-                        (o) => sourceKey(o) === group,
+                        (o) => settlementReversalSourceKey(o) === group,
                     );
                     const originId = originObligations[0].originCommitmentId;
                     const apps = allocations.filter((a) =>

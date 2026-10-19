@@ -10,6 +10,7 @@ export const RECURRING_COMMITMENT_REPOSITORY = Symbol(
 );
 
 export interface RecurringCommitmentRepository {
+    readSnapshot<T>(work: () => Promise<T>): Promise<T>;
     save(commitment: RecurringCommitment): Promise<void>;
     find(
         spaceId: string,

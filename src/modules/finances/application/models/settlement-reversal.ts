@@ -3,6 +3,7 @@ import type {
     AssignmentCycle,
 } from './settlement-adjustment.js';
 import type { ObligationStatus } from '../../domain/shared-expense/inter-member-obligation.js';
+import type { SettlementReversalSource } from '../../domain/settlement-reversal/settlement-reversal.js';
 export type SettlementResolutionKind = 'TRANSFER' | 'OFFSET';
 export interface SettlementResolutionOriginal {
     kind: SettlementResolutionKind;
@@ -21,9 +22,8 @@ export interface SettlementResolutionAllocation {
     amountInCents: number;
     cycleId: string | null;
 }
-export interface ReversalObligationState {
+export interface ReversalObligationState extends SettlementReversalSource {
     id: string;
-    originCommitmentId: string;
     version: number;
     cycleId: string | null;
     debtorMemberId: string;

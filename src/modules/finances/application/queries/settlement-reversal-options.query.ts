@@ -6,7 +6,10 @@ import {
 import type { PersonId } from '../../../spaces/domain/person/person-id.js';
 import type { SpaceId } from '../../../spaces/domain/space/space-id.js';
 import { FinancesError } from '../../domain/errors/finances.error.js';
-import { planSettlementReversal } from '../../domain/settlement-reversal/settlement-reversal.js';
+import {
+    planSettlementReversal,
+    settlementReversalSourceKey,
+} from '../../domain/settlement-reversal/settlement-reversal.js';
 import type { SettlementResolutionKind } from '../models/settlement-reversal.js';
 import {
     SETTLEMENT_REVERSAL_REPOSITORY,
@@ -57,14 +60,16 @@ export class SettlementReversalOptionsQuery {
             ? []
             : [
                   ...new Set(
-                      state.allocations.map((a) => a.originCommitmentId),
+                      state.obligations.map(settlementReversalSourceKey),
                   ),
-              ].map((originId) => {
+              ].map((sourceKey) => {
                   const origins = state.obligations
-                      .filter((o) => o.originCommitmentId === originId)
+                      .filter(
+                          (o) => settlementReversalSourceKey(o) === sourceKey,
+                      )
                       .map((o) => ({ ...o, spaceId: space.value }));
-                  const applications = state.allocations.filter(
-                      (a) => a.originCommitmentId === originId,
+                  const applications = state.allocations.filter((a) =>
+                      origins.some((o) => o.id === a.obligationId),
                   );
                   const plan = planSettlementReversal(
                       origins,
@@ -89,7 +94,10 @@ export class SettlementReversalOptionsQuery {
                           ),
                   );
                   return {
-                      originCommitmentId: originId,
+                      originCommitmentId: origins[0].originCommitmentId,
+                      occurrenceId: origins[0].occurrenceId,
+                      originClosureAgreementId:
+                          origins[0].originClosureAgreementId,
                       debtorMemberId:
                           target?.debtorMemberId ??
                           plan.newDifference?.debtorMemberId ??
