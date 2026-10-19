@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { assertFinancialClosureOriginOpen } from './assert-financial-closure-origin-open.js';
 import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
 import type {
     NonRecurringChangeRepository,
@@ -158,6 +159,14 @@ export class TypeOrmNonRecurringChangeRepository implements NonRecurringChangeRe
         const manager = this.managers.get();
         if (!manager.queryRunner?.isTransactionActive)
             throw new Error('Economic version writes require a transaction');
+        for (const version of versions)
+            await assertFinancialClosureOriginOpen(
+                manager,
+                state.spaceId,
+                state.id,
+                version.targetId,
+                version.effectiveFrom,
+            );
         const updated = await manager.update(
             FinancialCommitmentOrmEntity,
             { id: state.id, spaceId: state.spaceId, version: state.version },

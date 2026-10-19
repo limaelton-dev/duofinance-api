@@ -6,11 +6,14 @@ import { ConcurrentModificationError } from '../../../application/errors/concurr
 import { IdempotencyKeyReusedError } from '../../../application/errors/idempotency-key-reused.error.js';
 import type {
     ClosureParticipant,
+    ClosureDestinationIntent,
+    ClosureDestinationReplayInput,
     ProposeClosureCutoffInput,
     SpaceClosureCommandBase,
     SpaceClosureCommandResult,
     SpaceClosurePort,
     SpaceClosureView,
+    UpsertClosureDestinationInput,
 } from '../../../application/ports/public/space-closure.port.js';
 import { SpacesDomainError } from '../../../domain/errors/spaces-domain.error.js';
 import { PersonId } from '../../../domain/person/person-id.js';
@@ -100,6 +103,7 @@ export class TypeOrmSpaceClosure implements SpaceClosurePort {
             participants: snapshot.participants,
             approvals: [],
             confirmations: [],
+            futureDestinations: [],
         });
         await manager.insert(SpaceClosureProcessOrmEntity, process);
         await this.saveSpace(space, input.expectedSpaceVersion);
@@ -163,18 +167,7 @@ export class TypeOrmSpaceClosure implements SpaceClosurePort {
         const next = space
             .proposeClosureCutoff(
                 PersonId.from(input.actorId),
-                ClosurePlan.restore({
-                    processId: process.id,
-                    requestedByMemberId: process.requestedByMemberId,
-                    participants: process.participants,
-                    startedAt: process.startedAt.toISOString(),
-                    cutoffDate: process.cutoffDate,
-                    proposedCutoffDate: process.proposedCutoffDate,
-                    planRevision: process.planRevision,
-                    planStatus: process.planStatus,
-                    approvals: process.approvals,
-                    confirmations: process.confirmations,
-                }),
+                this.restorePlan(process),
                 input.cutoffDate,
                 input.now,
             )
@@ -203,6 +196,84 @@ export class TypeOrmSpaceClosure implements SpaceClosurePort {
             input,
             row.actorMemberId!,
             'PROPOSE_CLOSURE_CUTOFF',
+            digest,
+            view,
+            200,
+        );
+        return { view, replayed: false, httpStatus: 200 };
+    }
+
+    async replayDestination(
+        input: ClosureDestinationReplayInput,
+    ): Promise<SpaceClosureCommandResult | null> {
+        this.transactionManager();
+        await this.loadSpace(input.actorId, input.spaceId, true);
+        return this.replay(
+            input,
+            'UPSERT_CLOSURE_DESTINATION',
+            this.digest(input),
+        );
+    }
+
+    async upsertDestination(
+        input: UpsertClosureDestinationInput,
+    ): Promise<SpaceClosureCommandResult> {
+        const manager = this.transactionManager();
+        const row = await this.loadSpace(input.actorId, input.spaceId, true);
+        const digest = this.digest(input);
+        const replay = await this.replay(
+            input,
+            'UPSERT_CLOSURE_DESTINATION',
+            digest,
+        );
+        if (replay) return replay;
+        this.assertVersion(row, input.expectedSpaceVersion);
+        const process = await this.process(input.spaceId, true);
+        if (!process) throw new SpacesDomainError('CLOSURE_PROCESS_NOT_FOUND');
+        if (row.status !== 'CLOSING' || process.status !== 'OPEN') {
+            throw new SpacesDomainError('CLOSURE_PROCESS_NOT_OPEN');
+        }
+        if (process.planRevision !== input.expectedPlanRevision)
+            throw new ConcurrentModificationError();
+        if (
+            JSON.stringify(this.intentDigest(input.intent)) !==
+            JSON.stringify(this.intentDigest(input.destination))
+        ) {
+            throw new SpacesDomainError('CLOSURE_DESTINATION_INVALID');
+        }
+        const space = await this.requireAggregate(input.spaceId);
+        const next = space
+            .upsertClosureDestination(
+                PersonId.from(input.actorId),
+                this.restorePlan(process),
+                input.destination,
+                input.now,
+            )
+            .snapshot();
+        Object.assign(process, {
+            futureDestinations: next.futureDestinations,
+            planRevision: next.planRevision,
+            planStatus: next.planStatus,
+            approvals: next.approvals,
+            confirmations: next.confirmations,
+        });
+        await this.saveSpace(space, input.expectedSpaceVersion);
+        await manager.update(
+            SpaceClosureProcessOrmEntity,
+            { id: process.id, spaceId: input.spaceId },
+            {
+                futureDestinations: process.futureDestinations,
+                planRevision: process.planRevision,
+                planStatus: process.planStatus,
+                approvals: process.approvals,
+                confirmations: process.confirmations,
+            },
+        );
+        const view = this.view({ ...row, version: space.version }, process);
+        await this.record(
+            input,
+            row.actorMemberId!,
+            'UPSERT_CLOSURE_DESTINATION',
             digest,
             view,
             200,
@@ -371,6 +442,7 @@ export class TypeOrmSpaceClosure implements SpaceClosurePort {
             participants: structuredClone(process.participants),
             approvals: structuredClone(process.approvals),
             confirmations: structuredClone(process.confirmations),
+            futureDestinations: structuredClone(process.futureDestinations),
             startedAt: process.startedAt.toISOString(),
             completedAt: process.completedAt?.toISOString() ?? null,
             cancelledAt: process.cancelledAt?.toISOString() ?? null,
@@ -379,20 +451,46 @@ export class TypeOrmSpaceClosure implements SpaceClosurePort {
     }
 
     private digest(
-        input: SpaceClosureCommandBase | ProposeClosureCutoffInput,
+        input:
+            | SpaceClosureCommandBase
+            | ProposeClosureCutoffInput
+            | ClosureDestinationReplayInput,
     ): Buffer {
-        return createHash('sha256')
-            .update(
-                JSON.stringify([
-                    input.spaceId.toLowerCase(),
-                    input.expectedSpaceVersion,
-                    'expectedPlanRevision' in input
-                        ? input.expectedPlanRevision
-                        : null,
-                    'cutoffDate' in input ? input.cutoffDate : null,
-                ]),
-            )
-            .digest();
+        const fields: unknown[] = [
+            input.spaceId.toLowerCase(),
+            input.expectedSpaceVersion,
+            'expectedPlanRevision' in input ? input.expectedPlanRevision : null,
+            'cutoffDate' in input ? input.cutoffDate : null,
+        ];
+        if ('intent' in input) fields.push(this.intentDigest(input.intent));
+        return createHash('sha256').update(JSON.stringify(fields)).digest();
+    }
+
+    private intentDigest(intent: ClosureDestinationIntent): unknown[] {
+        return [
+            intent.originType,
+            intent.originId.toLowerCase(),
+            intent.expectedOriginVersion,
+            intent.destination,
+            intent.assigneeMemberId?.toLowerCase() ?? null,
+            intent.amountInCents ?? null,
+        ];
+    }
+
+    private restorePlan(process: SpaceClosureProcessOrmEntity): ClosurePlan {
+        return ClosurePlan.restore({
+            processId: process.id,
+            requestedByMemberId: process.requestedByMemberId,
+            participants: process.participants,
+            startedAt: process.startedAt.toISOString(),
+            cutoffDate: process.cutoffDate,
+            proposedCutoffDate: process.proposedCutoffDate,
+            planRevision: process.planRevision,
+            planStatus: process.planStatus,
+            approvals: process.approvals,
+            confirmations: process.confirmations,
+            futureDestinations: process.futureDestinations,
+        });
     }
 
     private async replay(

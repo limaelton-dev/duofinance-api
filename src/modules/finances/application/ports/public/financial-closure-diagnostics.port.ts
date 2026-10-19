@@ -28,6 +28,7 @@ export interface FinancialClosureBlocker {
     debtorMemberId?: string;
     creditorMemberId?: string;
     responsibleMemberId?: string;
+    closureAgreementId?: string;
     action: string;
 }
 

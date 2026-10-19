@@ -10,10 +10,11 @@ const ref = (name: string): ReferenceObject => ({
 });
 const object = (
     properties: Record<string, SchemaObject | ReferenceObject>,
+    optional: string[] = [],
 ): SchemaObject => ({
     type: 'object',
     additionalProperties: false,
-    required: Object.keys(properties),
+    required: Object.keys(properties).filter((key) => !optional.includes(key)),
     properties,
 });
 const uuid: SchemaObject = { type: 'string', format: 'uuid' },
@@ -99,6 +100,12 @@ export const closureOpenApi: Pick<
         },
     ],
     paths: {
+        '/v2/spaces/{spaceId}/closure/future-destinations': {
+            post: command(
+                'planClosureFutureDestination',
+                'ClosureFutureDestinationInput',
+            ),
+        },
         '/v2/spaces/{spaceId}/closure': {
             post: command('startSharedSpaceClosure', 'StartClosure', 201),
             get: query(
@@ -153,6 +160,192 @@ export const closureOpenApi: Pick<
     },
     components: {
         schemas: {
+            ClosureFutureDestinationInput: {
+                oneOf: [
+                    'TERMINATE',
+                    'PERSONAL_SUCCESSOR',
+                    'SETTLE_BEFORE_CLOSURE',
+                ].map((destination) =>
+                    object({
+                        expectedSpaceVersion: version,
+                        expectedPlanRevision: version,
+                        originType: {
+                            type: 'string',
+                            enum: ['RECURRING', 'INSTALLMENT'],
+                        },
+                        originId: uuid,
+                        expectedOriginVersion: version,
+                        destination: { type: 'string', enum: [destination] },
+                        ...(destination === 'TERMINATE'
+                            ? {}
+                            : { assigneeMemberId: uuid }),
+                        ...(destination === 'SETTLE_BEFORE_CLOSURE'
+                            ? {
+                                  amountInCents: {
+                                      type: 'integer' as const,
+                                      minimum: 1,
+                                      maximum: Number.MAX_SAFE_INTEGER,
+                                  },
+                              }
+                            : {}),
+                    }),
+                ),
+            },
+            ClosureFutureDestination: object(
+                {
+                    originType: {
+                        type: 'string',
+                        enum: ['RECURRING', 'INSTALLMENT'],
+                    },
+                    originId: uuid,
+                    expectedOriginVersion: version,
+                    destination: {
+                        type: 'string',
+                        enum: [
+                            'TERMINATE',
+                            'PERSONAL_SUCCESSOR',
+                            'SETTLE_BEFORE_CLOSURE',
+                        ],
+                    },
+                    assigneeMemberId: nullable(uuid),
+                    amountInCents: nullable({
+                        type: 'integer',
+                        minimum: 1,
+                        maximum: Number.MAX_SAFE_INTEGER,
+                    }),
+                    cutoffDate: date,
+                    impactByMember: {
+                        type: 'array',
+                        items: object({
+                            memberId: uuid,
+                            beforeInCents: nullable({ type: 'string' }),
+                            afterInCents: nullable({ type: 'string' }),
+                            requiresAcceptance: { type: 'boolean' },
+                        }),
+                    },
+                    originSnapshot: object(
+                        {
+                            version,
+                            fingerprint: { type: 'string' },
+                            kind: {
+                                type: 'string',
+                                enum: ['EXPENSE', 'INCOME'],
+                            },
+                            description: { type: 'string' },
+                            eligibleRemainingInCents: nullable({
+                                type: 'string',
+                            }),
+                            futureItems: {
+                                type: 'array',
+                                items: object({
+                                    originItemId: nullable(uuid),
+                                    referenceDate: date,
+                                    remainingInCents: nullable({
+                                        type: 'integer',
+                                        minimum: 0,
+                                        maximum: Number.MAX_SAFE_INTEGER,
+                                    }),
+                                    version: nullable(version),
+                                }),
+                            },
+                            recurringImpacts: {
+                                type: 'array',
+                                items: object({
+                                    basis: {
+                                        type: 'string',
+                                        enum: ['PER_OCCURRENCE'],
+                                    },
+                                    economicVersion: version,
+                                    effectiveFrom: date,
+                                    valueMode: {
+                                        type: 'string',
+                                        enum: ['FIXED', 'VARIABLE'],
+                                    },
+                                    amountInCents: nullable({
+                                        type: 'integer',
+                                        minimum: 1,
+                                        maximum: Number.MAX_SAFE_INTEGER,
+                                    }),
+                                    distribution: {
+                                        oneOf: [
+                                            object({
+                                                mode: {
+                                                    type: 'string',
+                                                    enum: ['AMOUNTS'],
+                                                },
+                                                shares: {
+                                                    type: 'array',
+                                                    items: object({
+                                                        memberId: uuid,
+                                                        amountInCents: {
+                                                            type: 'integer',
+                                                            minimum: 0,
+                                                            maximum:
+                                                                Number.MAX_SAFE_INTEGER,
+                                                        },
+                                                    }),
+                                                },
+                                            }),
+                                            object({
+                                                mode: {
+                                                    type: 'string',
+                                                    enum: ['PERCENTAGES'],
+                                                },
+                                                shares: {
+                                                    type: 'array',
+                                                    items: object({
+                                                        memberId: uuid,
+                                                        basisPoints: {
+                                                            type: 'integer',
+                                                            minimum: 0,
+                                                            maximum: 10000,
+                                                        },
+                                                    }),
+                                                },
+                                            }),
+                                        ],
+                                    },
+                                    impactByMember: {
+                                        type: 'array',
+                                        items: object({
+                                            memberId: uuid,
+                                            beforeInCents: nullable({
+                                                type: 'string',
+                                                pattern: '^[0-9]+$',
+                                            }),
+                                            afterInCents: nullable({
+                                                type: 'string',
+                                                pattern: '^[0-9]+$',
+                                            }),
+                                            beforeBasisPoints: nullable({
+                                                type: 'integer',
+                                                minimum: 0,
+                                                maximum: 10000,
+                                            }),
+                                            afterBasisPoints: {
+                                                type: 'integer',
+                                                minimum: 0,
+                                                maximum: 10000,
+                                            },
+                                        }),
+                                    },
+                                }),
+                            },
+                        },
+                        ['recurringImpacts'],
+                    ),
+                    agreement: object({
+                        debtorMemberId: uuid,
+                        creditorMemberId: uuid,
+                        amountInCents: {
+                            type: 'integer',
+                            minimum: 1,
+                            maximum: Number.MAX_SAFE_INTEGER,
+                        },
+                    }),
+                },
+                ['agreement'],
+            ),
             ClosureBlocker: {
                 type: 'object',
                 additionalProperties: false,
@@ -162,8 +355,9 @@ export const closureOpenApi: Pick<
                         type: 'string',
                         enum: [...financialClosureBlockerTypes],
                     },
-                    originId: uuid,
+                    originId: { type: 'string', minLength: 1 },
                     action: { type: 'string' },
+                    closureAgreementId: uuid,
                     commitmentId: uuid,
                     occurrenceId: uuid,
                     description: { type: 'string' },
@@ -185,47 +379,54 @@ export const closureOpenApi: Pick<
                 cutoffDate: date,
             }),
             ClosureConsent: consent,
-            SpaceClosureView: object({
-                spaceId: uuid,
-                spaceStatus: {
-                    type: 'string',
-                    enum: ['ACTIVE', 'CLOSING', 'CLOSED'],
+            SpaceClosureView: object(
+                {
+                    spaceId: uuid,
+                    spaceStatus: {
+                        type: 'string',
+                        enum: ['ACTIVE', 'CLOSING', 'CLOSED'],
+                    },
+                    spaceVersion: version,
+                    processId: uuid,
+                    processStatus: {
+                        type: 'string',
+                        enum: ['OPEN', 'COMPLETED', 'CANCELLED'],
+                    },
+                    planRevision: version,
+                    planStatus: {
+                        type: 'string',
+                        enum: ['DRAFT', 'PROPOSED', 'APPROVED', 'REJECTED'],
+                    },
+                    cutoffDate: date,
+                    proposedCutoffDate: nullable(date),
+                    requestedByMemberId: uuid,
+                    requiredMemberIds: {
+                        type: 'array',
+                        minItems: 1,
+                        maxItems: 2,
+                        items: uuid,
+                    },
+                    participants: {
+                        type: 'array',
+                        items: object({
+                            memberId: uuid,
+                            personId: uuid,
+                            displayName: { type: 'string' },
+                        }),
+                    },
+                    approvals: { type: 'array', items: consent },
+                    confirmations: { type: 'array', items: consent },
+                    futureDestinations: {
+                        type: 'array',
+                        items: ref('ClosureFutureDestination'),
+                    },
+                    startedAt: instant,
+                    completedAt: nullable(instant),
+                    cancelledAt: nullable(instant),
+                    invitationStatus: nullable({ type: 'string' }),
                 },
-                spaceVersion: version,
-                processId: uuid,
-                processStatus: {
-                    type: 'string',
-                    enum: ['OPEN', 'COMPLETED', 'CANCELLED'],
-                },
-                planRevision: version,
-                planStatus: {
-                    type: 'string',
-                    enum: ['DRAFT', 'PROPOSED', 'APPROVED', 'REJECTED'],
-                },
-                cutoffDate: date,
-                proposedCutoffDate: nullable(date),
-                requestedByMemberId: uuid,
-                requiredMemberIds: {
-                    type: 'array',
-                    minItems: 1,
-                    maxItems: 2,
-                    items: uuid,
-                },
-                participants: {
-                    type: 'array',
-                    items: object({
-                        memberId: uuid,
-                        personId: uuid,
-                        displayName: { type: 'string' },
-                    }),
-                },
-                approvals: { type: 'array', items: consent },
-                confirmations: { type: 'array', items: consent },
-                startedAt: instant,
-                completedAt: nullable(instant),
-                cancelledAt: nullable(instant),
-                invitationStatus: nullable({ type: 'string' }),
-            }),
+                ['futureDestinations'],
+            ),
             ClosureHistoryEntry: object({
                 id: uuid,
                 processId: uuid,

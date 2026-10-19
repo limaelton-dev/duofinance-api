@@ -22,6 +22,12 @@ export interface OpenObligationView extends PositionKey {
     factDate: string;
     origin:
         | {
+              kind: 'CLOSURE_AGREEMENT';
+              commitmentId: string;
+              closureAgreementId: string;
+              description: string;
+          }
+        | {
               commitmentId: string;
               occurrenceId?: string | null;
               installmentId?: string;

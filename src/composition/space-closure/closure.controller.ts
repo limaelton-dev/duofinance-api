@@ -21,6 +21,7 @@ import {
     diagnosticPage,
     historyPage,
     parseZodInput,
+    futureDestination,
 } from './closure.dto.js';
 
 @Controller('spaces/:spaceId/closure')
@@ -63,6 +64,22 @@ export class ClosureController {
         return this.service.read(
             actor.personId.value,
             parseZodInput(closureParams, p).spaceId,
+        );
+    }
+    @Post('future-destinations')
+    @HttpCode(200)
+    @Header('Cache-Control', 'no-store')
+    destination(
+        @CurrentActor() actor: RequestActor,
+        @Param() p: unknown,
+        @IdempotencyKey() key: string,
+        @Body() b: unknown,
+    ) {
+        return this.service.destination(
+            actor.personId.value,
+            parseZodInput(closureParams, p).spaceId,
+            key,
+            parseZodInput(futureDestination, b),
         );
     }
     @Get('diagnostic')

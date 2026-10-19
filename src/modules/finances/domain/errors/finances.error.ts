@@ -1,4 +1,9 @@
 export type FinancesErrorCode =
+    | 'FINANCIAL_CLOSURE_PLAN_NOT_APPROVED'
+    | 'FINANCIAL_CLOSURE_ORIGIN_CHANGED'
+    | 'FINANCIAL_CLOSURE_FUTURE_NOT_FOUND'
+    | 'FINANCIAL_CLOSURE_AGREEMENT_REQUIRES_TWO'
+    | 'FINANCIAL_CLOSURE_DESTINATION_APPLIED'
     | 'CLOSURE_CUTOFF_REACHED'
     | 'FINANCIAL_REVERSAL_NOT_FOUND'
     | 'FINANCIAL_REVERSAL_EXCEEDS_AVAILABLE'
@@ -40,6 +45,16 @@ export type FinancesErrorCode =
     | 'RECURRENCE_ACCEPTANCE_REQUIRED'
     | 'RECURRENCE_ALREADY_TERMINATED';
 const messages: Record<FinancesErrorCode, string> = {
+    FINANCIAL_CLOSURE_PLAN_NOT_APPROVED:
+        'A aplicação exige o plano atual aprovado por todos os participantes necessários.',
+    FINANCIAL_CLOSURE_ORIGIN_CHANGED:
+        'O futuro ou os fatos desta origem mudaram. Revise o destino e apresente novamente o plano.',
+    FINANCIAL_CLOSURE_FUTURE_NOT_FOUND:
+        'Esta origem não possui futuro elegível para o destino escolhido.',
+    FINANCIAL_CLOSURE_AGREEMENT_REQUIRES_TWO:
+        'O acordo financeiro exige dois participantes reais. Escolha encerrar ou continuar pessoalmente.',
+    FINANCIAL_CLOSURE_DESTINATION_APPLIED:
+        'Este futuro já recebeu destino pelo plano aprovado. Resolva os fatos históricos na origem e use o sucessor para novas realizações.',
     CLOSURE_CUTOFF_REACHED:
         'A data de corte impede criar responsabilidade para esta ocorrência. Defina seu destino no plano de encerramento.',
     FINANCIAL_REVERSAL_NOT_FOUND:

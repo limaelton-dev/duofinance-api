@@ -75,15 +75,23 @@ export interface SettlementCycleResponse extends SettlementContext {
 }
 export interface SelectedSettlementObligation extends SettlementObligationView {
     cycleId: string;
-    origin: SettlementObligationView['origin'] & {
-        kind: 'EXPENSE' | 'INCOME';
-        amountInCents: number;
-        distribution: {
-            kind: 'RESPONSIBILITY' | 'PARTICIPATION';
-            shares: { memberId: string; amountInCents: number }[];
-            actorAmountInCents: number;
-        };
-    };
+    origin:
+        | Extract<
+              SettlementObligationView['origin'],
+              { kind: 'CLOSURE_AGREEMENT' }
+          >
+        | (Exclude<
+              SettlementObligationView['origin'],
+              { kind: 'CLOSURE_AGREEMENT' }
+          > & {
+              kind: 'EXPENSE' | 'INCOME';
+              amountInCents: number;
+              distribution: {
+                  kind: 'RESPONSIBILITY' | 'PARTICIPATION';
+                  shares: { memberId: string; amountInCents: number }[];
+                  actorAmountInCents: number;
+              };
+          });
 }
 export interface SelectedSettlementTotals extends SettlementCycleTotals {
     transferTotalAmountInCents: string;

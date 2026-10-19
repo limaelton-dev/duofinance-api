@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { SpacesDomainError } from '../errors/spaces-domain.error.js';
-import { ClosurePlan, type ClosurePlanProps } from './closure-plan.js';
+import {
+    ClosurePlan,
+    type ClosurePlanProps,
+    type ClosureFutureDestination,
+} from './closure-plan.js';
 
 function draft() {
     return ClosurePlan.start({
@@ -12,6 +16,41 @@ function draft() {
         startedAt: '2026-10-19T13:00:00.000Z',
         cutoffDate: '2026-10-19',
     });
+}
+
+function destination(): ClosureFutureDestination {
+    return {
+        originType: 'RECURRING',
+        originId: 'origin-1',
+        expectedOriginVersion: 1,
+        destination: 'PERSONAL_SUCCESSOR',
+        assigneeMemberId: 'member-1',
+        amountInCents: null,
+        cutoffDate: '2026-10-19',
+        impactByMember: [
+            {
+                memberId: 'member-1',
+                beforeInCents: '10000',
+                afterInCents: '10000',
+                requiresAcceptance: true,
+            },
+        ],
+        originSnapshot: {
+            version: 1,
+            fingerprint: 'fingerprint-1',
+            kind: 'EXPENSE',
+            description: 'Moradia',
+            eligibleRemainingInCents: '10000',
+            futureItems: [
+                {
+                    originItemId: null,
+                    referenceDate: '2026-11-01',
+                    remainingInCents: 10000,
+                    version: null,
+                },
+            ],
+        },
+    };
 }
 
 describe('ClosurePlan', () => {
@@ -127,5 +166,153 @@ describe('ClosurePlan', () => {
                 }),
             ).toThrow('Invalid closure plan');
         }
+    });
+
+    it('registra escolha por origem e revisa materialmente sem preservar aceites antigos', () => {
+        const consent = {
+            memberId: 'member-1',
+            planRevision: 1,
+            recordedAt: '2026-10-19T13:01:00.000Z',
+        };
+        const approved = ClosurePlan.restore({
+            ...draft().snapshot(),
+            planStatus: 'APPROVED',
+            approvals: [consent],
+            confirmations: [consent],
+        });
+        const input = destination();
+        const changed = approved.upsertDestination(input);
+        input.originSnapshot.futureItems[0].remainingInCents = 1;
+        const exposed = changed.snapshot();
+        exposed.futureDestinations[0].impactByMember[0].afterInCents = '1';
+
+        expect(changed.snapshot()).toMatchObject({
+            planRevision: 2,
+            planStatus: 'DRAFT',
+            approvals: [],
+            confirmations: [],
+            futureDestinations: [destination()],
+        });
+        expect(approved.snapshot().futureDestinations).toEqual([]);
+        expect(approved.snapshot().planStatus).toBe('APPROVED');
+    });
+
+    it('substitui a decisão da mesma origem e mantém outras origens', () => {
+        const first = draft().upsertDestination(destination());
+        const second = first.upsertDestination({
+            ...destination(),
+            originType: 'INSTALLMENT',
+            originId: 'origin-2',
+        });
+        const changed = second.upsertDestination({
+            ...destination(),
+            destination: 'TERMINATE',
+            assigneeMemberId: null,
+        });
+
+        expect(changed.snapshot().futureDestinations).toHaveLength(2);
+        expect(
+            changed
+                .snapshot()
+                .futureDestinations.find((item) => item.originId === 'origin-1')
+                ?.destination,
+        ).toBe('TERMINATE');
+        expect(changed.snapshot().planRevision).toBe(4);
+        expect(first.snapshot().futureDestinations[0].destination).toBe(
+            'PERSONAL_SUCCESSOR',
+        );
+    });
+
+    it('recusa membro convidado, versão de snapshot divergente e valor inadequado', () => {
+        for (const invalid of [
+            { ...destination(), assigneeMemberId: 'convidado' },
+            { ...destination(), expectedOriginVersion: 2 },
+            { ...destination(), destination: 'TERMINATE' as const },
+            {
+                ...destination(),
+                destination: 'SETTLE_BEFORE_CLOSURE' as const,
+                assigneeMemberId: null,
+                amountInCents: 0,
+            },
+            {
+                ...destination(),
+                destination: 'SETTLE_BEFORE_CLOSURE' as const,
+                assigneeMemberId: null,
+                amountInCents: Number.MAX_SAFE_INTEGER + 1,
+            },
+        ]) {
+            const plan = draft();
+            expect(() => plan.upsertDestination(invalid)).toThrow(
+                new SpacesDomainError('CLOSURE_DESTINATION_INVALID'),
+            );
+            expect(plan.snapshot().futureDestinations).toEqual([]);
+            expect(plan.snapshot().planRevision).toBe(1);
+        }
+    });
+
+    it('não cria revisão por diferença apenas na ordem das propriedades persistidas', () => {
+        const original = destination();
+        const plan = draft().upsertDestination(original);
+        const reordered = Object.fromEntries(
+            Object.entries(destination()).reverse(),
+        ) as ClosureFutureDestination;
+        expect(() => plan.upsertDestination(reordered)).toThrow(
+            new SpacesDomainError('CLOSURE_PLAN_UNCHANGED'),
+        );
+        expect(plan.snapshot().planRevision).toBe(2);
+    });
+
+    it('vincula acordo explícito somente a duas pessoas participantes reais', () => {
+        const plan = ClosurePlan.restore({
+            ...draft().snapshot(),
+            participants: [
+                ...draft().snapshot().participants,
+                {
+                    memberId: 'member-2',
+                    personId: 'person-2',
+                    displayName: 'B',
+                },
+            ],
+        });
+        const agreement: ClosureFutureDestination = {
+            ...destination(),
+            destination: 'SETTLE_BEFORE_CLOSURE',
+            assigneeMemberId: 'member-1',
+            amountInCents: 5000,
+            agreement: {
+                debtorMemberId: 'member-2',
+                creditorMemberId: 'member-1',
+                amountInCents: 5000,
+            },
+        };
+        expect(
+            plan.upsertDestination(agreement).snapshot().futureDestinations[0]
+                .agreement,
+        ).toEqual(agreement.agreement);
+        expect(() => draft().upsertDestination(agreement)).toThrow(
+            new SpacesDomainError('CLOSURE_DESTINATION_INVALID'),
+        );
+    });
+
+    it('preserva escolha anterior ao revisar o corte, mas exige nova prévia do corte atual para editar destino', () => {
+        const previous = draft().upsertDestination(destination());
+        const revised = previous.proposeCutoff('2026-11-01');
+        expect(revised.snapshot().futureDestinations[0].cutoffDate).toBe(
+            '2026-10-19',
+        );
+        expect(() => revised.upsertDestination(destination())).toThrow(
+            new SpacesDomainError('CLOSURE_DESTINATION_INVALID'),
+        );
+        expect(
+            revised
+                .upsertDestination({
+                    ...destination(),
+                    cutoffDate: '2026-11-01',
+                })
+                .snapshot(),
+        ).toMatchObject({
+            planRevision: 4,
+            futureDestinations: [{ cutoffDate: '2026-11-01' }],
+        });
     });
 });

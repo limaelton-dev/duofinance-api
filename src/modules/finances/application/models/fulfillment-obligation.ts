@@ -4,6 +4,7 @@ export interface FulfillmentObligationView {
     originCommitmentId: string;
     originDisbursementId?: string;
     originExternalLiabilityId?: string;
+    originClosureAgreementId?: string;
     originReceiptId?: string;
     debtorMemberId: string;
     creditorMemberId: string;

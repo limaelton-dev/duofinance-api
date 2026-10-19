@@ -30,3 +30,38 @@ export const historyPage = z
         cursor: z.string().max(3000).optional(),
     })
     .strict();
+
+const futureOrigin = {
+    expectedSpaceVersion: version,
+    expectedPlanRevision: version,
+    originType: z.enum(['RECURRING', 'INSTALLMENT']),
+    originId: z.uuid().transform((value) => value.toLowerCase()),
+    expectedOriginVersion: version,
+};
+export const futureDestination = z.discriminatedUnion('destination', [
+    z.object({ ...futureOrigin, destination: z.literal('TERMINATE') }).strict(),
+    z
+        .object({
+            ...futureOrigin,
+            destination: z.literal('PERSONAL_SUCCESSOR'),
+            assigneeMemberId: z
+                .uuid()
+                .transform((value) => value.toLowerCase()),
+        })
+        .strict(),
+    z
+        .object({
+            ...futureOrigin,
+            destination: z.literal('SETTLE_BEFORE_CLOSURE'),
+            assigneeMemberId: z
+                .uuid()
+                .transform((value) => value.toLowerCase()),
+            amountInCents: z
+                .number()
+                .int()
+                .positive()
+                .max(Number.MAX_SAFE_INTEGER),
+        })
+        .strict(),
+]);
+export type FutureDestinationInput = z.infer<typeof futureDestination>;

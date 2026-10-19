@@ -5,7 +5,11 @@ import { MemberId } from '../member/member-id.js';
 import { Member, MemberStatus } from '../member/member.js';
 import { PersonId } from '../person/person-id.js';
 import { SpaceId } from './space-id.js';
-import { ClosurePlan, type ClosureParticipant } from './closure-plan.js';
+import {
+    ClosurePlan,
+    type ClosureParticipant,
+    type ClosureFutureDestination,
+} from './closure-plan.js';
 
 export enum SpaceType {
     PERSONAL = 'PERSONAL',
@@ -231,6 +235,25 @@ export class Space {
             throw new SpacesDomainError('SPACE_NOT_FOUND');
         }
         return props;
+    }
+
+    upsertClosureDestination(
+        actorPersonId: PersonId,
+        plan: ClosurePlan,
+        destination: ClosureFutureDestination,
+        now: Date,
+    ): ClosurePlan {
+        const props = this.requireClosureMember(actorPersonId);
+        if (props.status !== SpaceStatus.CLOSING) {
+            throw new SpacesDomainError('CLOSURE_PROCESS_NOT_OPEN');
+        }
+        const next = plan.upsertDestination(destination);
+        this.props = new Space({
+            ...props,
+            version: props.version + 1,
+            updatedAt: now,
+        }).props;
+        return next;
     }
 
     issueInvitation(

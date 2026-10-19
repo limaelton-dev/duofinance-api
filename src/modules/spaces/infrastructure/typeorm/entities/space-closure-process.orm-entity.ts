@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import type {
     ClosureConsent,
+    ClosureFutureDestination,
     ClosureParticipant,
 } from '../../../domain/space/closure-plan.js';
 
@@ -43,6 +44,10 @@ import type {
 @Check(
     'CHK_space_closure_processes_consents',
     `jsonb_typeof("approvals") = 'array' AND jsonb_typeof("confirmations") = 'array'`,
+)
+@Check(
+    'CHK_space_closure_processes_destinations',
+    `jsonb_typeof("future_destinations") = 'array'`,
 )
 @Check(
     'CHK_space_closure_processes_resolution',
@@ -102,4 +107,11 @@ export class SpaceClosureProcessOrmEntity {
 
     @Column({ type: 'jsonb' })
     confirmations!: ClosureConsent[];
+
+    @Column({
+        name: 'future_destinations',
+        type: 'jsonb',
+        default: () => "'[]'::jsonb",
+    })
+    futureDestinations!: ClosureFutureDestination[];
 }

@@ -41,6 +41,7 @@ const sql = `WITH obligations AS MATERIALIZED (
         v.frequency,v.day_of_month,v.month_of_year,v.expected_member_id,
         GREATEST(v.starts_on,v.effective_from) AS lo,
         LEAST(COALESCE(v.ends_on,'9999-12-31'::date),COALESCE(t.ends_on,'9999-12-31'::date),
+            COALESCE((SELECT MIN(effect.cutoff_date)-1 FROM financial_closure_effects effect WHERE effect.space_id=c.space_id AND effect.origin_id=c.id),'9999-12-31'::date),
             COALESCE((SELECT MIN(later.effective_from)-1 FROM financial_recurrence_versions later
                 WHERE later.space_id=c.space_id AND later.commitment_id=c.id AND later.effective_from>v.effective_from),'9999-12-31'::date)) AS hi
     FROM financial_commitments c JOIN financial_recurrence_versions v ON v.space_id=c.space_id AND v.commitment_id=c.id
@@ -98,7 +99,7 @@ const sql = `WITH obligations AS MATERIALIZED (
     SELECT 'INTER_MEMBER_OBLIGATION'::text AS type,o.id::text AS origin_id,
         jsonb_build_object('commitmentId',o.commitment_id,'occurrenceId',o.occurrence_id,'description',o.description,
             'version',o.version,'referenceDate',o.fact_date,'amountInCents',o.remaining_amount_in_cents::text,
-            'debtorMemberId',o.debtor_member_id,'creditorMemberId',o.creditor_member_id,
+            'debtorMemberId',o.debtor_member_id,'creditorMemberId',o.creditor_member_id,'closureAgreementId',o.closure_agreement_id,
             'action','Resolver por transferência, compensação ou dispensa do credor.') AS details FROM obligations o
     UNION ALL
     SELECT 'PENDING_FINANCIAL_CHANGE',p.id::text,jsonb_build_object('commitmentId',p.commitment_id,'description',c.description,
@@ -124,12 +125,18 @@ const sql = `WITH obligations AS MATERIALIZED (
         jsonb_build_object('commitmentId',o.commitment_id,'occurrenceId',o.occurrence_id,'description',o.description,'version',o.version,
             'referenceDate',o.reference_date,'amountInCents',o.remaining::text,'responsibleMemberId',o.expected_member_id,
             'action','Resolver a ocorrência existente antes do encerramento.')
-    FROM recurring_open o WHERE o.remaining IS NULL OR o.remaining>0
+    FROM recurring_open o WHERE (o.remaining IS NULL OR o.remaining>0)
+        AND NOT EXISTS (SELECT 1 FROM financial_closure_effects e CROSS JOIN LATERAL jsonb_array_elements(e.snapshot->'originSnapshot'->'futureItems') item
+            WHERE e.space_id=$1 AND e.origin_id=o.commitment_id AND item->>'originItemId'=o.occurrence_id::text
+                AND (item->>'remainingInCents')::numeric IS NOT DISTINCT FROM o.remaining)
     UNION ALL
     SELECT 'UNRESOLVED_INSTALLMENT',i.installment_id::text,jsonb_build_object('commitmentId',i.commitment_id,'occurrenceId',i.installment_id,
         'description',i.description,'version',i.version,'referenceDate',i.due_date,'amountInCents',i.remaining::text,
         'responsibleMemberId',i.expected_member_id,'action','Definir e aplicar o destino da parcela ou resolver o remanescente.')
     FROM installment_open i WHERE i.remaining>0
+        AND NOT EXISTS (SELECT 1 FROM financial_closure_effects e CROSS JOIN LATERAL jsonb_array_elements(e.snapshot->'originSnapshot'->'futureItems') item
+            WHERE e.space_id=$1 AND e.origin_id=i.commitment_id AND item->>'originItemId'=i.installment_id::text
+                AND (item->>'remainingInCents')::numeric IS NOT DISTINCT FROM i.remaining)
     UNION ALL
     SELECT 'OPEN_SETTLEMENT_CYCLE',s.id::text,jsonb_build_object('version',s.version,'referenceDate',s.target_date,
         'action','Resolver as pendências e finalizar o ciclo de acerto.') FROM settlement_cycles s WHERE s.space_id=$1 AND s.status='OPEN'

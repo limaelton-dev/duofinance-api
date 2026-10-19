@@ -1,4 +1,6 @@
 const messages = {
+    CLOSURE_DESTINATION_INVALID:
+        'O destino informado não é válido para esta origem ou participante do plano.',
     CLOSURE_PROCESS_NOT_FOUND: 'Não há processo de encerramento neste espaço.',
     CLOSURE_PROCESS_NOT_OPEN:
         'O encerramento não está aberto. Consulte o estado atual do espaço.',

@@ -56,6 +56,7 @@ interface DetailRow extends CycleRow {
     disbursement_id: string | null;
     external_liability_id: string | null;
     receipt_id: string | null;
+    closure_agreement_id: string | null;
     description: string;
     compensated_amount_in_cents: string;
     waived_amount_in_cents: string;
@@ -240,7 +241,7 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                 p.debtor_member_id,p.creditor_member_id,p.original_amount_in_cents::text,p.recognized_amount_in_cents::text,p.remaining_amount_in_cents::text,
                 to_char(p.fact_date,'YYYY-MM-DD') AS fact_date,
                 to_char(p.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS registered_at,
-                p.commitment_id,p.occurrence_id,p.disbursement_id,p.external_liability_id,p.receipt_id,c.description
+                p.commitment_id,p.occurrence_id,p.disbursement_id,p.external_liability_id,p.receipt_id,p.closure_agreement_id,c.description
                 ,COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.obligation_id=p.id AND ch.type='OFFSET_APPLIED'),0)::text AS compensated_amount_in_cents
                 ,COALESCE((SELECT SUM((ch.snapshot->>'appliedAmountInCents')::bigint) FROM inter_member_obligation_changes ch WHERE ch.space_id=$1 AND ch.obligation_id=p.id AND ch.type='WAIVED'),0)::text AS waived_amount_in_cents
             FROM selected_cycle s CROSS JOIN totals t LEFT JOIN page p ON true
@@ -293,26 +294,33 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                 ).toString(),
                 factDate: row.fact_date,
                 registeredAt: row.registered_at,
-                origin: row.receipt_id
+                origin: row.closure_agreement_id
                     ? {
-                          kind: 'INCOME',
+                          kind: 'CLOSURE_AGREEMENT' as const,
                           commitmentId: row.commitment_id,
-                          occurrenceId: row.occurrence_id,
-                          receiptId: row.receipt_id,
+                          closureAgreementId: row.closure_agreement_id,
                           description: row.description,
                       }
-                    : {
-                          commitmentId: row.commitment_id,
-                          occurrenceId: row.occurrence_id,
-                          ...(row.external_liability_id
-                              ? {
-                                    kind: 'EXPENSE' as const,
-                                    externalLiabilityId:
-                                        row.external_liability_id,
-                                }
-                              : { disbursementId: row.disbursement_id! }),
-                          description: row.description,
-                      },
+                    : row.receipt_id
+                      ? {
+                            kind: 'INCOME',
+                            commitmentId: row.commitment_id,
+                            occurrenceId: row.occurrence_id,
+                            receiptId: row.receipt_id,
+                            description: row.description,
+                        }
+                      : {
+                            commitmentId: row.commitment_id,
+                            occurrenceId: row.occurrence_id,
+                            ...(row.external_liability_id
+                                ? {
+                                      kind: 'EXPENSE' as const,
+                                      externalLiabilityId:
+                                          row.external_liability_id,
+                                  }
+                                : { disbursementId: row.disbursement_id! }),
+                            description: row.description,
+                        },
             }));
         return { cycle: cycle(rows[0]), items };
     }
@@ -425,11 +433,11 @@ export class TypeOrmSettlementCycleReader implements SettlementCycleReader {
                     'effectiveCompensatedAmountInCents',(resolution.compensated-resolution.reversed_compensated)::text,
                     'cycleId',p.cycle_id,'factDate',to_char(p.fact_date,'YYYY-MM-DD'),
                     'registeredAt',to_char(p.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
-                    'origin',jsonb_strip_nulls(jsonb_build_object('kind',c.kind,'commitmentId',c.id,'description',c.description,
+                    'origin',CASE WHEN p.closure_agreement_id IS NOT NULL THEN jsonb_build_object('kind','CLOSURE_AGREEMENT','commitmentId',c.id,'description',c.description,'closureAgreementId',p.closure_agreement_id) ELSE jsonb_strip_nulls(jsonb_build_object('kind',c.kind,'commitmentId',c.id,'description',c.description,
                         'occurrenceId',p.occurrence_id,'installmentId',CASE WHEN c.kind='EXPENSE' AND c.installment_position IS NOT NULL THEN p.occurrence_id ELSE NULL END,
                         'installmentPosition',c.installment_position,'disbursementId',p.disbursement_id,'receiptId',p.receipt_id,'externalLiabilityId',p.external_liability_id,'amountInCents',c.amount_in_cents,
                         'distribution',jsonb_build_object('kind',CASE WHEN c.kind='INCOME' THEN 'PARTICIPATION' ELSE 'RESPONSIBILITY' END,
-                            'shares',c.shares,'actorAmountInCents',c.actor_amount)))) AS item
+                            'shares',c.shares,'actorAmountInCents',c.actor_amount))) END) AS item
                 FROM page p JOIN origins c ON c.obligation_id=p.id
                 CROSS JOIN LATERAL (
                     SELECT COALESCE((SELECT SUM(a.amount_in_cents) FROM settlement_allocations a WHERE a.space_id=$1 AND a.obligation_id=p.id),0) AS transferred,

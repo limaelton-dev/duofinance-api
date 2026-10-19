@@ -30,6 +30,7 @@ import {
 } from '../entities/recurrence.orm-entity.js';
 import { recordFinancialCommandAudit } from './record-financial-command-audit.js';
 import { recurringClosureCutoffSql } from '../queries/recurring-closure-cutoff.sql.js';
+import { assertFinancialClosureOriginOpen } from './assert-financial-closure-origin-open.js';
 
 @Injectable()
 export class TypeOrmRecurringCommitmentRepository implements RecurringCommitmentRepository {
@@ -41,7 +42,6 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
 
     async save(root: RecurringCommitment): Promise<void> {
         const m = this.manager();
-        const personal = root.participation.type === 'PERSONAL';
         await m.insert(FinancialCommitmentOrmEntity, {
             id: root.id,
             spaceId: root.spaceId,
@@ -49,7 +49,10 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
             modality: 'RECURRING',
             description: root.description,
             createdBy: root.createdByPersonId,
-            personalOwnerPersonId: personal ? root.createdByPersonId : null,
+            personalOwnerPersonId:
+                root.participation.type === 'PERSONAL'
+                    ? root.participation.ownerPersonId
+                    : null,
             version: root.version,
             registeredAt: new Date(root.registeredAt),
         });
@@ -121,7 +124,8 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
             order: { version: 'ASC' },
         });
         const [termination]: { ends_on: string }[] = await m.query(
-            `SELECT ends_on::text AS ends_on FROM financial_recurrence_terminations WHERE commitment_id=$1`,
+            `SELECT MIN(ends_on)::text AS ends_on FROM (SELECT ends_on FROM financial_recurrence_terminations WHERE commitment_id=$1
+                UNION ALL SELECT cutoff_date-1 FROM financial_closure_effects WHERE origin_id=$1) boundaries`,
             [commitmentId],
         );
         return this.hydrateSeries(c, versions, termination?.ends_on ?? null);
@@ -302,6 +306,13 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
         wasProjected: boolean,
     ) {
         const m = this.manager();
+        await assertFinancialClosureOriginOpen(
+            m,
+            root.spaceId,
+            root.id,
+            occurrence.id,
+            occurrence.referenceDate,
+        );
         if (wasProjected)
             await m.insert(FinancialOccurrenceOrmEntity, {
                 id: occurrence.id,
@@ -416,7 +427,8 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
         const rootById = new Map(roots.map((root) => [root.id, root]));
         const terminations: { commitment_id: string; ends_on: string }[] =
             await m.query(
-                `SELECT commitment_id,ends_on::text AS ends_on FROM financial_recurrence_terminations WHERE space_id=$1 AND commitment_id=ANY($2::uuid[])`,
+                `SELECT commitment_id,MIN(ends_on)::text AS ends_on FROM (SELECT commitment_id,ends_on FROM financial_recurrence_terminations WHERE space_id=$1 AND commitment_id=ANY($2::uuid[])
+                    UNION ALL SELECT origin_id,cutoff_date-1 FROM financial_closure_effects WHERE space_id=$1 AND origin_id=ANY($2::uuid[])) boundaries GROUP BY commitment_id`,
                 [spaceId, keys],
             );
         const items = ids.map((row) => ({
@@ -620,6 +632,13 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
         wasProjected: boolean,
     ): Promise<void> {
         const m = this.manager();
+        await assertFinancialClosureOriginOpen(
+            m,
+            root.spaceId,
+            root.id,
+            occurrence.id,
+            occurrence.referenceDate,
+        );
         const change = occurrence.valueHistory.at(-1)!;
         if (wasProjected) {
             await m.insert(FinancialOccurrenceOrmEntity, {
@@ -696,6 +715,13 @@ export class TypeOrmRecurringCommitmentRepository implements RecurringCommitment
         wasProjected: boolean,
     ): Promise<void> {
         const m = this.manager();
+        await assertFinancialClosureOriginOpen(
+            m,
+            root.spaceId,
+            root.id,
+            occurrence.id,
+            occurrence.referenceDate,
+        );
         if (wasProjected)
             await m.insert(FinancialOccurrenceOrmEntity, {
                 id: occurrence.id,

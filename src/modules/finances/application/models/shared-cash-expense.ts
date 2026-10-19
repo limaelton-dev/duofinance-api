@@ -168,7 +168,8 @@ export function expenseView(
             ? {
                   id: obligation.id,
                   originCommitmentId: obligation.originCommitmentId,
-                  originDisbursementId: obligation.originDisbursementId,
+                  originDisbursementId:
+                      obligation.originDisbursementId ?? undefined,
                   debtorMemberId: obligation.debtorMemberId,
                   creditorMemberId: obligation.creditorMemberId,
                   originalAmountInCents: obligation.originalAmountInCents,

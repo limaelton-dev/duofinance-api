@@ -82,6 +82,7 @@ export class PlannedTodayQuery implements PlannedTodayQueryPort {
                             LEAST(v.day_of_month,EXTRACT(DAY FROM (months.m+interval '1 month - 1 day')::date)::integer))<$3::date)
                         AND (v.frequency='MONTHLY' OR v.month_of_year=EXTRACT(MONTH FROM months.m)::integer)
                         AND o.id IS NULL
+                        AND ${recurringClosureCutoffSql("make_date(EXTRACT(YEAR FROM months.m)::integer,EXTRACT(MONTH FROM months.m)::integer,LEAST(v.day_of_month,EXTRACT(DAY FROM (months.m+interval '1 month - 1 day')::date)::integer))", 'o.id', '$3')}
                         AND make_date(EXTRACT(YEAR FROM months.m)::integer,EXTRACT(MONTH FROM months.m)::integer,LEAST(v.day_of_month,EXTRACT(DAY FROM (months.m+interval '1 month - 1 day')::date)::integer)) >= v.starts_on
                         AND (v.ends_on IS NULL OR make_date(EXTRACT(YEAR FROM months.m)::integer,EXTRACT(MONTH FROM months.m)::integer,LEAST(v.day_of_month,EXTRACT(DAY FROM (months.m+interval '1 month - 1 day')::date)::integer)) <= v.ends_on)
                         AND make_date(EXTRACT(YEAR FROM months.m)::integer,EXTRACT(MONTH FROM months.m)::integer,LEAST(v.day_of_month,EXTRACT(DAY FROM (months.m+interval '1 month - 1 day')::date)::integer)) >= v.effective_from
@@ -108,6 +109,8 @@ export class PlannedTodayQuery implements PlannedTodayQueryPort {
                     FROM financial_installments i JOIN financial_commitments c ON c.space_id=i.space_id AND c.id=i.commitment_id
                     JOIN financial_occurrences o ON o.space_id=i.space_id AND o.installment_id=i.id
                     WHERE i.space_id=$1 AND c.modality='INSTALLMENT' AND o.status<>'FULFILLED' AND NOT EXISTS (SELECT 1 FROM financial_installment_resolutions resolved WHERE resolved.installment_id=i.id)
+                        AND NOT EXISTS (SELECT 1 FROM financial_closure_effects e CROSS JOIN LATERAL jsonb_array_elements(e.snapshot->'originSnapshot'->'futureItems') item
+                            WHERE e.space_id=i.space_id AND e.origin_id=c.id AND item->>'originItemId'=i.id::text)
                 ), eligible AS (
                     SELECT * FROM one_time WHERE fulfilled<amount_in_cents
                     UNION ALL

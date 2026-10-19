@@ -1,9 +1,18 @@
 import type {
     ClosureConsent,
+    ClosureDestinationIntent,
+    ClosureFutureDestination,
     ClosureParticipant,
+    ClosureRecurringImpact,
 } from '../../../domain/space/closure-plan.js';
 
-export type { ClosureConsent, ClosureParticipant };
+export type {
+    ClosureConsent,
+    ClosureParticipant,
+    ClosureDestinationIntent,
+    ClosureFutureDestination,
+    ClosureRecurringImpact,
+};
 
 export type SpaceClosureView = {
     spaceId: string;
@@ -20,6 +29,7 @@ export type SpaceClosureView = {
     participants: ClosureParticipant[];
     approvals: ClosureConsent[];
     confirmations: ClosureConsent[];
+    futureDestinations: ClosureFutureDestination[];
     startedAt: string;
     completedAt: string | null;
     cancelledAt: string | null;
@@ -37,6 +47,15 @@ export type SpaceClosureCommandBase = {
 export type ProposeClosureCutoffInput = SpaceClosureCommandBase & {
     expectedPlanRevision: number;
     cutoffDate: string;
+};
+
+export type ClosureDestinationReplayInput = SpaceClosureCommandBase & {
+    expectedPlanRevision: number;
+    intent: ClosureDestinationIntent;
+};
+
+export type UpsertClosureDestinationInput = ClosureDestinationReplayInput & {
+    destination: ClosureFutureDestination;
 };
 
 export type SpaceClosureCommandResult = {
@@ -61,6 +80,12 @@ export interface SpaceClosurePort {
     start(input: SpaceClosureCommandBase): Promise<SpaceClosureCommandResult>;
     proposeCutoff(
         input: ProposeClosureCutoffInput,
+    ): Promise<SpaceClosureCommandResult>;
+    replayDestination(
+        input: ClosureDestinationReplayInput,
+    ): Promise<SpaceClosureCommandResult | null>;
+    upsertDestination(
+        input: UpsertClosureDestinationInput,
     ): Promise<SpaceClosureCommandResult>;
     read(actorId: string, spaceId: string): Promise<SpaceClosureView | null>;
     lockForProcess(

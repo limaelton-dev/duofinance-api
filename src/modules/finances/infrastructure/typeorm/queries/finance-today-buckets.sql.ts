@@ -25,6 +25,7 @@ export const financeTodayBucketsSql = `WITH one_time AS (
         v.frequency,v.day_of_month,v.month_of_year,
         GREATEST(v.starts_on,v.effective_from) AS starts_on,
         LEAST(COALESCE(v.ends_on,'9999-12-31'::date),COALESCE(t.ends_on,'9999-12-31'::date),COALESCE($3::date-1,'9999-12-31'::date),
+            COALESCE((SELECT MIN(effect.cutoff_date)-1 FROM financial_closure_effects effect WHERE effect.space_id=c.space_id AND effect.origin_id=c.id),'9999-12-31'::date),
             COALESCE((SELECT MIN(later.effective_from)-1 FROM financial_recurrence_versions later
                 WHERE later.space_id=c.space_id AND later.commitment_id=c.id AND later.effective_from>v.effective_from),'9999-12-31'::date),
             (GREATEST($2::date,v.starts_on,v.effective_from,COALESCE((SELECT MAX(o.reference_date)
@@ -74,6 +75,8 @@ export const financeTodayBucketsSql = `WITH one_time AS (
     WHERE i.space_id=$1 AND c.modality='INSTALLMENT' AND o.status<>'CANCELLED'
         AND NOT EXISTS (SELECT 1 FROM financial_installment_resolutions resolved WHERE resolved.space_id=i.space_id AND resolved.installment_id=i.id)
         AND NOT EXISTS (SELECT 1 FROM financial_commitment_cancellations cancelled WHERE cancelled.space_id=c.space_id AND cancelled.commitment_id=c.id)
+        AND NOT EXISTS (SELECT 1 FROM financial_closure_effects e CROSS JOIN LATERAL jsonb_array_elements(e.snapshot->'originSnapshot'->'futureItems') item
+            WHERE e.space_id=i.space_id AND e.origin_id=c.id AND item->>'originItemId'=i.id::text)
 ), eligible AS (
     SELECT * FROM one_time UNION ALL SELECT * FROM scheduled
     UNION ALL SELECT * FROM materialized UNION ALL SELECT * FROM installments

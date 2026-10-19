@@ -24,6 +24,7 @@ function transaction(p: EntityManagerProvider) {
     return m;
 }
 interface ObligationRow {
+    origin_kind: 'EXPENSE' | 'INCOME';
     status: string;
     id: string;
     space_id: string;
@@ -32,6 +33,7 @@ interface ObligationRow {
     disbursement_id: string | null;
     external_liability_id: string | null;
     receipt_id: string | null;
+    closure_agreement_id: string | null;
     debtor_member_id: string;
     creditor_member_id: string;
     original_amount_in_cents: string;
@@ -61,6 +63,7 @@ interface OptionRow {
     disbursement_id: string | null;
     external_liability_id: string | null;
     receipt_id: string | null;
+    closure_agreement_id: string | null;
     description: string;
     cycle_id: string | null;
     target_date: string | null;
@@ -109,8 +112,8 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
         const result: InterMemberObligation[] = [];
         for (const id of ids) {
             const rows: ObligationRow[] = await m.query(
-                `SELECT o.*, to_char(o.fact_date,'YYYY-MM-DD') AS fact_date, ch.actor_id
-                    FROM inter_member_obligations o JOIN inter_member_obligation_changes ch ON ch.space_id=o.space_id AND ch.obligation_id=o.id AND ch.version=1 WHERE o.space_id=$1 AND o.id=$2 FOR UPDATE OF o`,
+                `SELECT o.*, c.kind AS origin_kind, to_char(o.fact_date,'YYYY-MM-DD') AS fact_date, ch.actor_id
+                    FROM inter_member_obligations o JOIN financial_commitments c ON c.space_id=o.space_id AND c.id=o.commitment_id JOIN inter_member_obligation_changes ch ON ch.space_id=o.space_id AND ch.obligation_id=o.id AND ch.version=1 WHERE o.space_id=$1 AND o.id=$2 FOR UPDATE OF o`,
                 [spaceId, id],
             );
             if (!rows.length) continue;
@@ -126,7 +129,7 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
                     o.commitment_id,
                     o.disbursement_id ??
                         o.receipt_id ??
-                        o.external_liability_id!,
+                        o.external_liability_id,
                     o.debtor_member_id,
                     o.creditor_member_id,
                     amount(o.original_amount_in_cents),
@@ -137,13 +140,15 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
                     amount(o.remaining_amount_in_cents),
                     o.version,
                     changes.map((change) => change.allocation_id),
-                    o.receipt_id ? 'INCOME' : 'EXPENSE',
+                    o.origin_kind,
                     amount(o.recognized_amount_in_cents),
                     o.status === 'RECONCILED',
                     null,
                     o.external_liability_id,
                     o.status === 'WAIVED',
                     o.occurrence_id,
+                    null,
+                    o.closure_agreement_id,
                 ),
             );
         }
@@ -259,7 +264,7 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
                 p.original_amount_in_cents::text,p.recognized_amount_in_cents::text,p.remaining_amount_in_cents::text,
                 to_char(p.fact_date,'YYYY-MM-DD') AS fact_date,
                 to_char(p.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS registered_at,
-                p.commitment_id,p.occurrence_id,p.disbursement_id,p.external_liability_id,p.receipt_id,c.description,p.cycle_id,
+                p.commitment_id,p.occurrence_id,p.disbursement_id,p.external_liability_id,p.receipt_id,p.closure_agreement_id,c.description,p.cycle_id,
                 to_char(s.target_date,'YYYY-MM-DD') AS target_date,s.status AS cycle_status
             FROM totals t LEFT JOIN page p ON true
             LEFT JOIN financial_commitments c ON c.space_id=$1 AND c.id=p.commitment_id
@@ -287,30 +292,37 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
                 remainingAmountInCents: amount(r.remaining_amount_in_cents),
                 factDate: r.fact_date,
                 registeredAt: r.registered_at,
-                origin: r.receipt_id
+                origin: r.closure_agreement_id
                     ? {
-                          kind: 'INCOME',
+                          kind: 'CLOSURE_AGREEMENT' as const,
                           commitmentId: r.commitment_id,
-                          ...(r.occurrence_id
-                              ? { occurrenceId: r.occurrence_id }
-                              : {}),
-                          receiptId: r.receipt_id,
+                          closureAgreementId: r.closure_agreement_id,
                           description: r.description,
                       }
-                    : {
-                          commitmentId: r.commitment_id,
-                          ...(r.occurrence_id
-                              ? { occurrenceId: r.occurrence_id }
-                              : {}),
-                          ...(r.external_liability_id
-                              ? {
-                                    kind: 'EXPENSE' as const,
-                                    externalLiabilityId:
-                                        r.external_liability_id,
-                                }
-                              : { disbursementId: r.disbursement_id! }),
-                          description: r.description,
-                      },
+                    : r.receipt_id
+                      ? {
+                            kind: 'INCOME',
+                            commitmentId: r.commitment_id,
+                            ...(r.occurrence_id
+                                ? { occurrenceId: r.occurrence_id }
+                                : {}),
+                            receiptId: r.receipt_id,
+                            description: r.description,
+                        }
+                      : {
+                            commitmentId: r.commitment_id,
+                            ...(r.occurrence_id
+                                ? { occurrenceId: r.occurrence_id }
+                                : {}),
+                            ...(r.external_liability_id
+                                ? {
+                                      kind: 'EXPENSE' as const,
+                                      externalLiabilityId:
+                                          r.external_liability_id,
+                                  }
+                                : { disbursementId: r.disbursement_id! }),
+                            description: r.description,
+                        },
                 settlementCycle: r.cycle_id
                     ? {
                           id: r.cycle_id,
@@ -366,12 +378,13 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
             disbursement_id: string | null;
             external_liability_id: string | null;
             receipt_id: string | null;
+            closure_agreement_id: string | null;
             description: string;
             reversed_amount_in_cents: string;
         }[] = await this.provider
             .get()
             .query(
-                `SELECT a.id,a.obligation_id,a.cycle_id,a.amount_in_cents::text,o.commitment_id,o.occurrence_id,o.disbursement_id,o.external_liability_id,o.receipt_id,c.description,COALESCE(ra.amount_in_cents,0)::text AS reversed_amount_in_cents FROM settlement_allocations a JOIN inter_member_obligations o ON o.space_id=a.space_id AND o.id=a.obligation_id JOIN financial_commitments c ON c.space_id=o.space_id AND c.id=o.commitment_id LEFT JOIN settlement_reversal_applications ra ON ra.space_id=a.space_id AND ra.original_transfer_allocation_id=a.id WHERE a.space_id=$1 AND a.transfer_id=$2 ORDER BY a.id`,
+                `SELECT a.id,a.obligation_id,a.cycle_id,a.amount_in_cents::text,o.commitment_id,o.occurrence_id,o.disbursement_id,o.external_liability_id,o.receipt_id,o.closure_agreement_id,c.description,COALESCE(ra.amount_in_cents,0)::text AS reversed_amount_in_cents FROM settlement_allocations a JOIN inter_member_obligations o ON o.space_id=a.space_id AND o.id=a.obligation_id JOIN financial_commitments c ON c.space_id=o.space_id AND c.id=o.commitment_id LEFT JOIN settlement_reversal_applications ra ON ra.space_id=a.space_id AND ra.original_transfer_allocation_id=a.id WHERE a.space_id=$1 AND a.transfer_id=$2 ORDER BY a.id`,
                 [spaceId, id],
             );
         return {
@@ -406,30 +419,37 @@ export class TypeOrmSettlementTransferRepository implements SettlementTransferRe
                         BigInt(a.reversed_amount_in_cents)
                     ).toString(),
                 ),
-                origin: a.receipt_id
+                origin: a.closure_agreement_id
                     ? {
-                          kind: 'INCOME',
+                          kind: 'CLOSURE_AGREEMENT' as const,
                           commitmentId: a.commitment_id,
-                          ...(a.occurrence_id
-                              ? { occurrenceId: a.occurrence_id }
-                              : {}),
-                          receiptId: a.receipt_id,
+                          closureAgreementId: a.closure_agreement_id,
                           description: a.description,
                       }
-                    : {
-                          commitmentId: a.commitment_id,
-                          ...(a.occurrence_id
-                              ? { occurrenceId: a.occurrence_id }
-                              : {}),
-                          ...(a.external_liability_id
-                              ? {
-                                    kind: 'EXPENSE' as const,
-                                    externalLiabilityId:
-                                        a.external_liability_id,
-                                }
-                              : { disbursementId: a.disbursement_id! }),
-                          description: a.description,
-                      },
+                    : a.receipt_id
+                      ? {
+                            kind: 'INCOME',
+                            commitmentId: a.commitment_id,
+                            ...(a.occurrence_id
+                                ? { occurrenceId: a.occurrence_id }
+                                : {}),
+                            receiptId: a.receipt_id,
+                            description: a.description,
+                        }
+                      : {
+                            commitmentId: a.commitment_id,
+                            ...(a.occurrence_id
+                                ? { occurrenceId: a.occurrence_id }
+                                : {}),
+                            ...(a.external_liability_id
+                                ? {
+                                      kind: 'EXPENSE' as const,
+                                      externalLiabilityId:
+                                          a.external_liability_id,
+                                  }
+                                : { disbursementId: a.disbursement_id! }),
+                            description: a.description,
+                        },
             })),
             affectedCycleIds: [
                 ...new Set(

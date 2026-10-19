@@ -272,6 +272,12 @@ export const settlementOffsetOpenApi: Pick<
             SettlementOffsetOrigin: {
                 oneOf: [
                     object({
+                        kind: { type: 'string', enum: ['CLOSURE_AGREEMENT'] },
+                        commitmentId: uuid,
+                        closureAgreementId: uuid,
+                        description: { type: 'string' },
+                    }),
+                    object({
                         kind: { type: 'string', enum: ['EXPENSE'] },
                         commitmentId: uuid,
                         disbursementId: uuid,
