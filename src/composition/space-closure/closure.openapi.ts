@@ -33,6 +33,27 @@ const consent = object({
     planRevision: version,
     recordedAt: instant,
 });
+const count: SchemaObject = { type: 'integer', minimum: 0 };
+const routineSummary = object({
+    pendingTaskCount: count,
+    activeRecurrenceCount: count,
+});
+const shoppingSummary = object({ activeListCount: count });
+const outstandingAmounts: SchemaObject = {
+    type: 'array',
+    items: object({
+        debtorMemberId: uuid,
+        creditorMemberId: uuid,
+        amountInCents: { type: 'string', pattern: '^[0-9]+$' },
+    }),
+};
+const financialDiagnostic = object({
+    blockers: { type: 'array', items: ref('ClosureBlocker') },
+    totalCount: count,
+    counts: { type: 'object', additionalProperties: count },
+    outstandingAmounts,
+    financiallyReady: { type: 'boolean' },
+});
 const response = (schema: SchemaObject | ReferenceObject) => ({
     description: 'Resultado autorizado; sem cache.',
     headers: {
@@ -100,6 +121,18 @@ export const closureOpenApi: Pick<
         },
     ],
     paths: {
+        '/v2/spaces/{spaceId}/closure/plan-review': {
+            get: query('reviewClosurePlan', ref('ClosurePlanReview')),
+        },
+        '/v2/spaces/{spaceId}/closure/proposal': {
+            post: command('proposeClosurePlan', 'ClosurePlanConsent'),
+        },
+        '/v2/spaces/{spaceId}/closure/approval': {
+            post: command('approveClosurePlan', 'ClosurePlanConsent'),
+        },
+        '/v2/spaces/{spaceId}/closure/rejection': {
+            post: command('rejectClosurePlan', 'ClosurePlanDecision'),
+        },
         '/v2/spaces/{spaceId}/closure/future-destinations': {
             post: command(
                 'planClosureFutureDestination',
@@ -379,8 +412,52 @@ export const closureOpenApi: Pick<
                 cutoffDate: date,
             }),
             ClosureConsent: consent,
+            ClosurePlanDecision: object({
+                expectedSpaceVersion: version,
+                expectedPlanRevision: version,
+            }),
+            ClosurePlanConsent: object({
+                expectedSpaceVersion: version,
+                expectedPlanRevision: version,
+                expectedFinancialFingerprint: {
+                    type: 'string',
+                    pattern: '^[a-f0-9]{64}$',
+                },
+            }),
+            ClosureProposalSnapshot: object({
+                financialFingerprint: { type: 'string' },
+                financialBlockerCount: count,
+                outstandingAmounts,
+                routine: routineSummary,
+                shopping: shoppingSummary,
+            }),
+            ClosurePlanReview: object({
+                spaceId: uuid,
+                closure: ref('SpaceClosureView'),
+                finance: object({
+                    fingerprint: { type: 'string' },
+                    diagnostic: financialDiagnostic,
+                    missingDestinationOriginIds: { type: 'array', items: uuid },
+                }),
+                informational: object({
+                    routine: routineSummary,
+                    shopping: shoppingSummary,
+                }),
+            }),
             SpaceClosureView: object(
                 {
+                    proposalSnapshot: nullable(ref('ClosureProposalSnapshot')),
+                    hasBilateralApproval: { type: 'boolean' },
+                    actorNextAction: {
+                        type: 'string',
+                        enum: [
+                            'PROPOSE_PLAN',
+                            'REVIEW_PLAN',
+                            'WAIT_APPROVAL',
+                            'RESOLVE_FINANCES',
+                            'READ_ONLY',
+                        ],
+                    },
                     spaceId: uuid,
                     spaceStatus: {
                         type: 'string',
@@ -425,7 +502,12 @@ export const closureOpenApi: Pick<
                     cancelledAt: nullable(instant),
                     invitationStatus: nullable({ type: 'string' }),
                 },
-                ['futureDestinations'],
+                [
+                    'futureDestinations',
+                    'proposalSnapshot',
+                    'hasBilateralApproval',
+                    'actorNextAction',
+                ],
             ),
             ClosureHistoryEntry: object({
                 id: uuid,

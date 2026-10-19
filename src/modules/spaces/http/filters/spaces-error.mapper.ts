@@ -8,6 +8,11 @@ import {
 } from '../../domain/errors/spaces-domain.error.js';
 
 const domainStatuses: Record<SpacesDomainErrorCode, number> = {
+    CLOSURE_PLAN_INCOMPLETE: 409,
+    CLOSURE_PLAN_OBSOLETE: 409,
+    CLOSURE_PLAN_DECISION_NOT_ALLOWED: 403,
+    CLOSURE_PLAN_NOT_PROPOSED: 409,
+    CLOSURE_PROPOSAL_CHANGED: 409,
     CLOSURE_DESTINATION_INVALID: 400,
     CLOSURE_PROCESS_NOT_FOUND: 404,
     CLOSURE_PROCESS_NOT_OPEN: 409,

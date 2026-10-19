@@ -12,6 +12,20 @@ export type ClosureConsent = {
     recordedAt: string;
 };
 
+export type ClosureProposalSnapshot = {
+    financialFingerprint: string;
+    financialBlockerCount: number;
+    outstandingAmounts: {
+        debtorMemberId: string;
+        creditorMemberId: string;
+        amountInCents: string;
+    }[];
+    routine: { pendingTaskCount: number; activeRecurrenceCount: number };
+    shopping: { activeListCount: number };
+};
+
+export type ClosurePlanAction = 'PROPOSE' | 'APPROVE' | 'REJECT';
+
 export type ClosureDestinationIntent = {
     originType: 'RECURRING' | 'INSTALLMENT';
     originId: string;
@@ -88,6 +102,8 @@ export type ClosurePlanProps = {
     approvals: ClosureConsent[];
     confirmations: ClosureConsent[];
     futureDestinations: ClosureFutureDestination[];
+    proposalSnapshot: ClosureProposalSnapshot | null;
+    hasBilateralApproval: boolean;
 };
 
 function destinationIdentity(destination: ClosureFutureDestination): string {
@@ -210,7 +226,14 @@ export class ClosurePlan {
                     (destination) =>
                         `${destination.originType}:${destination.originId}`,
                 ),
-            ).size !== props.futureDestinations.length
+            ).size !== props.futureDestinations.length ||
+            typeof props.hasBilateralApproval !== 'boolean' ||
+            (props.hasBilateralApproval && props.participants.length !== 2) ||
+            [props.approvals, props.confirmations].some(
+                (consents) =>
+                    new Set(consents.map((consent) => consent.memberId))
+                        .size !== consents.length,
+            )
         )
             throw new Error('Invalid closure plan');
     }
@@ -224,6 +247,8 @@ export class ClosurePlan {
             | 'approvals'
             | 'confirmations'
             | 'futureDestinations'
+            | 'proposalSnapshot'
+            | 'hasBilateralApproval'
         >,
     ): ClosurePlan {
         return new ClosurePlan({
@@ -234,6 +259,8 @@ export class ClosurePlan {
             approvals: [],
             confirmations: [],
             futureDestinations: [],
+            proposalSnapshot: null,
+            hasBilateralApproval: false,
         });
     }
 
@@ -259,6 +286,7 @@ export class ClosurePlan {
             planStatus: 'DRAFT',
             approvals: [],
             confirmations: [],
+            proposalSnapshot: null,
         });
     }
 
@@ -344,7 +372,136 @@ export class ClosurePlan {
             planStatus: 'DRAFT',
             approvals: [],
             confirmations: [],
+            proposalSnapshot: null,
         });
+    }
+
+    decide(input: {
+        action: ClosurePlanAction;
+        actorMemberId: string;
+        now: Date;
+        proposalSnapshot?: ClosureProposalSnapshot;
+    }): ClosurePlan {
+        if (
+            !this.props.participants.some(
+                (member) => member.memberId === input.actorMemberId,
+            )
+        ) {
+            throw new SpacesDomainError('CLOSURE_PLAN_DECISION_NOT_ALLOWED');
+        }
+        if (
+            !Number.isFinite(input.now.getTime()) ||
+            input.now.toISOString() < this.props.startedAt
+        ) {
+            throw new Error('Invalid closure decision time');
+        }
+        if (input.action === 'PROPOSE') {
+            if (!input.proposalSnapshot)
+                throw new SpacesDomainError('CLOSURE_PROPOSAL_CHANGED');
+            this.assertProposalSnapshot(input.proposalSnapshot);
+            if (
+                (this.props.planStatus === 'PROPOSED' ||
+                    this.props.planStatus === 'APPROVED') &&
+                this.props.proposalSnapshot?.financialFingerprint ===
+                    input.proposalSnapshot.financialFingerprint
+            ) {
+                throw new SpacesDomainError('CLOSURE_PLAN_UNCHANGED');
+            }
+            const revision =
+                this.props.planRevision +
+                (this.props.planStatus === 'DRAFT' ? 0 : 1);
+            const approved = this.props.participants.length === 1;
+            return new ClosurePlan({
+                ...this.snapshot(),
+                planRevision: revision,
+                planStatus: approved ? 'APPROVED' : 'PROPOSED',
+                proposalSnapshot: structuredClone(input.proposalSnapshot),
+                approvals: [
+                    {
+                        memberId: input.actorMemberId,
+                        planRevision: revision,
+                        recordedAt: input.now.toISOString(),
+                    },
+                ],
+                confirmations: [],
+                cutoffDate: approved
+                    ? (this.props.proposedCutoffDate ?? this.props.cutoffDate)
+                    : this.props.cutoffDate,
+                proposedCutoffDate: approved
+                    ? null
+                    : this.props.proposedCutoffDate,
+            });
+        }
+        if (
+            this.props.participants.length !== 2 ||
+            this.props.approvals[0]?.memberId === input.actorMemberId
+        ) {
+            throw new SpacesDomainError('CLOSURE_PLAN_DECISION_NOT_ALLOWED');
+        }
+        if (
+            this.props.planStatus !== 'PROPOSED' ||
+            this.props.approvals.length !== 1 ||
+            !this.props.proposalSnapshot
+        ) {
+            throw new SpacesDomainError('CLOSURE_PLAN_NOT_PROPOSED');
+        }
+        if (input.action === 'REJECT') {
+            return new ClosurePlan({
+                ...this.snapshot(),
+                planStatus: 'REJECTED',
+                confirmations: [],
+            });
+        }
+        if (
+            !input.proposalSnapshot ||
+            input.proposalSnapshot.financialFingerprint !==
+                this.props.proposalSnapshot.financialFingerprint
+        ) {
+            throw new SpacesDomainError('CLOSURE_PROPOSAL_CHANGED');
+        }
+        this.assertProposalSnapshot(input.proposalSnapshot);
+        return new ClosurePlan({
+            ...this.snapshot(),
+            planStatus: 'APPROVED',
+            hasBilateralApproval: true,
+            approvals: [
+                ...this.props.approvals,
+                {
+                    memberId: input.actorMemberId,
+                    planRevision: this.props.planRevision,
+                    recordedAt: input.now.toISOString(),
+                },
+            ],
+            cutoffDate: this.props.proposedCutoffDate ?? this.props.cutoffDate,
+            proposedCutoffDate: null,
+            confirmations: [],
+        });
+    }
+
+    private assertProposalSnapshot(snapshot: ClosureProposalSnapshot): void {
+        const counts = [
+            snapshot.financialBlockerCount,
+            snapshot.routine.pendingTaskCount,
+            snapshot.routine.activeRecurrenceCount,
+            snapshot.shopping.activeListCount,
+        ];
+        if (
+            !snapshot.financialFingerprint ||
+            counts.some((count) => !Number.isSafeInteger(count) || count < 0) ||
+            snapshot.outstandingAmounts.some(
+                (amount) =>
+                    !/^[0-9]+$/.test(amount.amountInCents) ||
+                    amount.debtorMemberId === amount.creditorMemberId ||
+                    !this.props.participants.some(
+                        (member) => member.memberId === amount.debtorMemberId,
+                    ) ||
+                    !this.props.participants.some(
+                        (member) => member.memberId === amount.creditorMemberId,
+                    ),
+            )
+        ) {
+            throw new SpacesDomainError('CLOSURE_PROPOSAL_CHANGED');
+        }
     }
 
     snapshot(): ClosurePlanProps {

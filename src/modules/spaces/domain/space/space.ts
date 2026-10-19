@@ -9,6 +9,8 @@ import {
     ClosurePlan,
     type ClosureParticipant,
     type ClosureFutureDestination,
+    type ClosurePlanAction,
+    type ClosureProposalSnapshot,
 } from './closure-plan.js';
 
 export enum SpaceType {
@@ -235,6 +237,38 @@ export class Space {
             throw new SpacesDomainError('SPACE_NOT_FOUND');
         }
         return props;
+    }
+
+    decideClosurePlan(
+        actorPersonId: PersonId,
+        plan: ClosurePlan,
+        action: ClosurePlanAction,
+        proposalSnapshot: ClosureProposalSnapshot | undefined,
+        now: Date,
+    ): ClosurePlan {
+        const props = this.requireClosureMember(actorPersonId);
+        if (props.status !== SpaceStatus.CLOSING) {
+            throw new SpacesDomainError('CLOSURE_PROCESS_NOT_OPEN');
+        }
+        const member = plan
+            .snapshot()
+            .participants.find(
+                (participant) => participant.personId === actorPersonId.value,
+            );
+        if (!member)
+            throw new SpacesDomainError('CLOSURE_PLAN_DECISION_NOT_ALLOWED');
+        const next = plan.decide({
+            action,
+            actorMemberId: member.memberId,
+            proposalSnapshot,
+            now,
+        });
+        this.props = new Space({
+            ...props,
+            version: props.version + 1,
+            updatedAt: now,
+        }).props;
+        return next;
     }
 
     upsertClosureDestination(

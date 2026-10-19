@@ -10,6 +10,11 @@ export const startClosure = z
 export const planVersion = startClosure.extend({
     expectedPlanRevision: version,
 });
+export const planConsent = planVersion
+    .extend({
+        expectedFinancialFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+    })
+    .strict();
 export const cutoffDate = planVersion
     .extend({ cutoffDate: z.iso.date() })
     .strict();

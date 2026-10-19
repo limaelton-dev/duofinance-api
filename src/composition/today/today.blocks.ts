@@ -146,7 +146,20 @@ export function todayBlocks(
                                                           closure.data
                                                               .processId,
                                                   },
-                                                  label: 'Encerramento do espaço em andamento',
+                                                  label:
+                                                      closure.data
+                                                          .actorNextAction ===
+                                                      'REVIEW_PLAN'
+                                                          ? 'Revisar proposta de encerramento'
+                                                          : closure.data
+                                                                  .actorNextAction ===
+                                                              'WAIT_APPROVAL'
+                                                            ? 'Aguardando aprovação do plano de encerramento'
+                                                            : closure.data
+                                                                    .actorNextAction ===
+                                                                'RESOLVE_FINANCES'
+                                                              ? 'Plano aprovado: resolver finanças antes de confirmar o encerramento'
+                                                              : 'Revisar plano de encerramento',
                                                   date: closure.data.cutoffDate,
                                                   details: closure.data,
                                               },

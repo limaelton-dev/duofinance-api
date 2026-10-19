@@ -22,11 +22,72 @@ import {
     historyPage,
     parseZodInput,
     futureDestination,
+    planVersion,
+    planConsent,
 } from './closure.dto.js';
 
 @Controller('spaces/:spaceId/closure')
 export class ClosureController {
     constructor(private readonly service: ClosureService) {}
+    @Get('plan-review')
+    @Header('Cache-Control', 'no-store')
+    reviewPlan(@CurrentActor() actor: RequestActor, @Param() p: unknown) {
+        return this.service.reviewPlan(
+            actor.personId.value,
+            parseZodInput(closureParams, p).spaceId,
+        );
+    }
+    @Post('proposal')
+    @HttpCode(200)
+    @Header('Cache-Control', 'no-store')
+    proposePlan(
+        @CurrentActor() actor: RequestActor,
+        @Param() p: unknown,
+        @IdempotencyKey() key: string,
+        @Body() b: unknown,
+    ) {
+        return this.service.decidePlan(
+            actor.personId.value,
+            parseZodInput(closureParams, p).spaceId,
+            key,
+            parseZodInput(planConsent, b),
+            'PROPOSE',
+        );
+    }
+    @Post('approval')
+    @HttpCode(200)
+    @Header('Cache-Control', 'no-store')
+    approvePlan(
+        @CurrentActor() actor: RequestActor,
+        @Param() p: unknown,
+        @IdempotencyKey() key: string,
+        @Body() b: unknown,
+    ) {
+        return this.service.decidePlan(
+            actor.personId.value,
+            parseZodInput(closureParams, p).spaceId,
+            key,
+            parseZodInput(planConsent, b),
+            'APPROVE',
+        );
+    }
+    @Post('rejection')
+    @HttpCode(200)
+    @Header('Cache-Control', 'no-store')
+    rejectPlan(
+        @CurrentActor() actor: RequestActor,
+        @Param() p: unknown,
+        @IdempotencyKey() key: string,
+        @Body() b: unknown,
+    ) {
+        return this.service.decidePlan(
+            actor.personId.value,
+            parseZodInput(closureParams, p).spaceId,
+            key,
+            parseZodInput(planVersion, b),
+            'REJECT',
+        );
+    }
     @Post()
     @Header('Cache-Control', 'no-store')
     start(

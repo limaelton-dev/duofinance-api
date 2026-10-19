@@ -1,4 +1,14 @@
 const messages = {
+    CLOSURE_PLAN_INCOMPLETE:
+        'Defina o destino de todos os compromissos futuros antes de propor ou aprovar.',
+    CLOSURE_PLAN_OBSOLETE:
+        'As consequências financeiras mudaram. Revise o plano antes de concordar.',
+    CLOSURE_PLAN_DECISION_NOT_ALLOWED:
+        'Somente o outro participante pode aprovar ou rejeitar esta proposta.',
+    CLOSURE_PLAN_NOT_PROPOSED:
+        'O plano precisa estar proposto para receber esta decisão.',
+    CLOSURE_PROPOSAL_CHANGED:
+        'As consequências financeiras mudaram. Revise e proponha uma nova versão do plano.',
     CLOSURE_DESTINATION_INVALID:
         'O destino informado não é válido para esta origem ou participante do plano.',
     CLOSURE_PROCESS_NOT_FOUND: 'Não há processo de encerramento neste espaço.',

@@ -1,3 +1,5 @@
+import type { FinancialClosureDiagnostic } from './financial-closure-diagnostics.port.js';
+
 export const FINANCIAL_CLOSURE_DESTINATIONS_PORT = Symbol(
     'FINANCIAL_CLOSURE_DESTINATIONS_PORT',
 );
@@ -79,7 +81,19 @@ export type FinancialClosureApplication = {
     agreementObligationId: string | null;
 };
 
+export type FinancialClosurePlanReview = {
+    fingerprint: string;
+    diagnostic: FinancialClosureDiagnostic;
+    missingDestinationOriginIds: string[];
+};
+
 export interface FinancialClosureDestinationsPort {
+    reviewPlan(
+        actorId: string,
+        spaceId: string,
+        cutoffDate: string,
+        destinations: FinancialClosureDestination[],
+    ): Promise<FinancialClosurePlanReview>;
     preview(
         actorId: string,
         spaceId: string,

@@ -27,7 +27,12 @@ import type {
     FinancialClosureDestinationsPort,
     FinancialClosureFutureItem,
     FinancialClosureRecurringImpact,
+    FinancialClosurePlanReview,
 } from '../../../application/ports/public/financial-closure-destinations.port.js';
+import {
+    FINANCIAL_CLOSURE_DIAGNOSTICS_PORT,
+    type FinancialClosureDiagnosticsPort,
+} from '../../../application/ports/public/financial-closure-diagnostics.port.js';
 import {
     RECURRING_COMMITMENT_REPOSITORY,
     type RecurringCommitmentRepository,
@@ -55,6 +60,7 @@ import { FinancialCommitmentOrmEntity } from '../entities/shared-expense.orm-ent
 import { FinancialClosureEffectOrmEntity } from '../entities/financial-closure-effect.orm-entity.js';
 import { nonRecurringReadQuery } from '../queries/non-recurring-version-selection.js';
 import { recordFinancialCommandAudit } from './record-financial-command-audit.js';
+import { financialClosureStateSignatures } from '../queries/financial-closure-state-signatures.js';
 
 type FutureItem = FinancialClosureFutureItem & { fulfilledInCents: number };
 type Inspected = {
@@ -104,7 +110,126 @@ export class TypeOrmFinancialClosureDestinations implements FinancialClosureDest
         private readonly installments: InstallmentCommitmentRepository,
         @Inject(INTER_MEMBER_OBLIGATION_REPOSITORY)
         private readonly obligations: InterMemberObligationRepository,
+        @Inject(FINANCIAL_CLOSURE_DIAGNOSTICS_PORT)
+        private readonly diagnostics: FinancialClosureDiagnosticsPort,
     ) {}
+
+    async reviewPlan(
+        actorId: string,
+        spaceId: string,
+        cutoffDate: string,
+        destinations: FinancialClosureDestination[],
+    ): Promise<FinancialClosurePlanReview> {
+        civilDate(cutoffDate);
+        if (
+            new Set(destinations.map((destination) => destination.originId))
+                .size !== destinations.length
+        )
+            throw new FinancesError('VALIDATION_ERROR', ['futureDestinations']);
+        return this.managers.readSnapshot(async () => {
+            const context = await this.contexts.read(
+                PersonId.from(actorId),
+                SpaceId.from(spaceId),
+            );
+            const effects = await this.managers
+                .get()
+                .find(FinancialClosureEffectOrmEntity, { where: { spaceId } });
+            for (const destination of destinations) {
+                const prior = effects.find(
+                    (effect) => effect.originId === destination.originId,
+                );
+                if (prior) {
+                    if (digest(prior.snapshot) !== digest(destination))
+                        throw new FinancesError(
+                            'FINANCIAL_CLOSURE_DESTINATION_APPLIED',
+                        );
+                    continue;
+                }
+                if (destination.cutoffDate !== cutoffDate)
+                    throw new FinancesError('FINANCIAL_CLOSURE_ORIGIN_CHANGED');
+                const source = await this.inspect(
+                    spaceId,
+                    cutoffDate,
+                    destination,
+                );
+                if (
+                    digest(
+                        this.snapshot(context, cutoffDate, destination, source),
+                    ) !== digest(destination)
+                )
+                    throw new FinancesError('FINANCIAL_CLOSURE_ORIGIN_CHANGED');
+            }
+            const diagnostic = await this.diagnostics.read(
+                actorId,
+                spaceId,
+                cutoffDate,
+                { limit: 100 },
+            );
+            for (
+                let offset = 100;
+                offset < diagnostic.totalCount;
+                offset += 100
+            ) {
+                const page = await this.diagnostics.read(
+                    actorId,
+                    spaceId,
+                    cutoffDate,
+                    { limit: 100, offset },
+                );
+                if (
+                    page.totalCount !== diagnostic.totalCount ||
+                    page.blockers.length === 0
+                )
+                    throw new FinancesError('FINANCIAL_CLOSURE_ORIGIN_CHANGED');
+                diagnostic.blockers.push(...page.blockers);
+            }
+            if (diagnostic.blockers.length !== diagnostic.totalCount)
+                throw new FinancesError('FINANCIAL_CLOSURE_ORIGIN_CHANGED');
+            const chosen = new Set(
+                destinations.map((destination) => destination.originId),
+            );
+            const missingDestinationOriginIds = [
+                ...new Set(
+                    diagnostic.blockers
+                        .filter(
+                            (blocker) =>
+                                blocker.type === 'ACTIVE_RECURRENCE' ||
+                                ((blocker.type ===
+                                    'OPEN_RECURRING_OCCURRENCE' ||
+                                    blocker.type ===
+                                        'UNRESOLVED_INSTALLMENT') &&
+                                    blocker.referenceDate !== undefined &&
+                                    blocker.referenceDate >= cutoffDate),
+                        )
+                        .filter((blocker) => {
+                            const id = blocker.commitmentId ?? blocker.originId;
+                            if (!chosen.has(id)) return true;
+                            const applied = effects.find(
+                                (effect) => effect.originId === id,
+                            );
+                            return (
+                                applied !== undefined &&
+                                blocker.referenceDate !== undefined &&
+                                blocker.referenceDate < applied.cutoffDate
+                            );
+                        })
+                        .map(
+                            (blocker) =>
+                                blocker.commitmentId ?? blocker.originId,
+                        ),
+                ),
+            ].sort();
+            const signatures = await financialClosureStateSignatures(
+                this.managers.get(),
+                spaceId,
+            );
+            return {
+                fingerprint: digest({ cutoffDate, diagnostic, signatures }),
+                diagnostic,
+                missingDestinationOriginIds,
+            };
+        });
+    }
 
     async preview(
         actorId: string,

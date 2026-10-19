@@ -8,11 +8,14 @@ import type {
     ClosureParticipant,
     ClosureDestinationIntent,
     ClosureDestinationReplayInput,
+    ClosurePlanDecisionInput,
+    ClosurePlanAction,
     ProposeClosureCutoffInput,
     SpaceClosureCommandBase,
     SpaceClosureCommandResult,
     SpaceClosurePort,
     SpaceClosureView,
+    SpaceClosureNextAction,
     UpsertClosureDestinationInput,
 } from '../../../application/ports/public/space-closure.port.js';
 import { SpacesDomainError } from '../../../domain/errors/spaces-domain.error.js';
@@ -104,6 +107,8 @@ export class TypeOrmSpaceClosure implements SpaceClosurePort {
             approvals: [],
             confirmations: [],
             futureDestinations: [],
+            proposalSnapshot: null,
+            hasBilateralApproval: false,
         });
         await manager.insert(SpaceClosureProcessOrmEntity, process);
         await this.saveSpace(space, input.expectedSpaceVersion);
@@ -176,6 +181,7 @@ export class TypeOrmSpaceClosure implements SpaceClosurePort {
             planRevision: next.planRevision,
             planStatus: next.planStatus,
             proposedCutoffDate: next.proposedCutoffDate,
+            proposalSnapshot: next.proposalSnapshot,
             approvals: next.approvals,
             confirmations: next.confirmations,
         });
@@ -187,6 +193,7 @@ export class TypeOrmSpaceClosure implements SpaceClosurePort {
                 planRevision: process.planRevision,
                 planStatus: process.planStatus,
                 proposedCutoffDate: process.proposedCutoffDate,
+                proposalSnapshot: process.proposalSnapshot,
                 approvals: process.approvals,
                 confirmations: process.confirmations,
             },
@@ -252,6 +259,7 @@ export class TypeOrmSpaceClosure implements SpaceClosurePort {
             .snapshot();
         Object.assign(process, {
             futureDestinations: next.futureDestinations,
+            proposalSnapshot: next.proposalSnapshot,
             planRevision: next.planRevision,
             planStatus: next.planStatus,
             approvals: next.approvals,
@@ -263,6 +271,7 @@ export class TypeOrmSpaceClosure implements SpaceClosurePort {
             { id: process.id, spaceId: input.spaceId },
             {
                 futureDestinations: process.futureDestinations,
+                proposalSnapshot: process.proposalSnapshot,
                 planRevision: process.planRevision,
                 planStatus: process.planStatus,
                 approvals: process.approvals,
@@ -274,6 +283,89 @@ export class TypeOrmSpaceClosure implements SpaceClosurePort {
             input,
             row.actorMemberId!,
             'UPSERT_CLOSURE_DESTINATION',
+            digest,
+            view,
+            200,
+        );
+        return { view, replayed: false, httpStatus: 200 };
+    }
+
+    async replayPlanDecision(
+        input: ClosurePlanDecisionInput,
+    ): Promise<SpaceClosureCommandResult | null> {
+        this.transactionManager();
+        await this.loadSpace(input.actorId, input.spaceId, true);
+        return this.replay(
+            input,
+            this.planOperation(input.action),
+            this.digest(input),
+        );
+    }
+
+    async decidePlan(
+        input: ClosurePlanDecisionInput,
+    ): Promise<SpaceClosureCommandResult> {
+        const manager = this.transactionManager();
+        const row = await this.loadSpace(input.actorId, input.spaceId, true);
+        const digest = this.digest(input);
+        const operation = this.planOperation(input.action);
+        const replay = await this.replay(input, operation, digest);
+        if (replay) return replay;
+        this.assertVersion(row, input.expectedSpaceVersion);
+        const process = await this.process(input.spaceId, true);
+        if (!process) throw new SpacesDomainError('CLOSURE_PROCESS_NOT_FOUND');
+        if (row.status !== 'CLOSING' || process.status !== 'OPEN')
+            throw new SpacesDomainError('CLOSURE_PROCESS_NOT_OPEN');
+        if (process.planRevision !== input.expectedPlanRevision)
+            throw new ConcurrentModificationError();
+        if (
+            input.action !== 'REJECT' &&
+            (!input.proposalSnapshot ||
+                input.proposalSnapshot.financialFingerprint !==
+                    input.expectedFinancialFingerprint)
+        ) {
+            throw new SpacesDomainError('CLOSURE_PROPOSAL_CHANGED');
+        }
+        const space = await this.requireAggregate(input.spaceId);
+        const next = space
+            .decideClosurePlan(
+                PersonId.from(input.actorId),
+                this.restorePlan(process),
+                input.action,
+                input.proposalSnapshot,
+                input.now,
+            )
+            .snapshot();
+        Object.assign(process, {
+            cutoffDate: next.cutoffDate,
+            proposedCutoffDate: next.proposedCutoffDate,
+            proposalSnapshot: next.proposalSnapshot,
+            hasBilateralApproval: next.hasBilateralApproval,
+            planRevision: next.planRevision,
+            planStatus: next.planStatus,
+            approvals: next.approvals,
+            confirmations: next.confirmations,
+        });
+        await this.saveSpace(space, input.expectedSpaceVersion);
+        await manager.update(
+            SpaceClosureProcessOrmEntity,
+            { id: process.id, spaceId: input.spaceId },
+            {
+                cutoffDate: process.cutoffDate,
+                proposedCutoffDate: process.proposedCutoffDate,
+                proposalSnapshot: process.proposalSnapshot,
+                hasBilateralApproval: process.hasBilateralApproval,
+                planRevision: process.planRevision,
+                planStatus: process.planStatus,
+                approvals: process.approvals,
+                confirmations: process.confirmations,
+            },
+        );
+        const view = this.view({ ...row, version: space.version }, process);
+        await this.record(
+            input,
+            row.actorMemberId!,
+            operation,
             digest,
             view,
             200,
@@ -443,6 +535,9 @@ export class TypeOrmSpaceClosure implements SpaceClosurePort {
             approvals: structuredClone(process.approvals),
             confirmations: structuredClone(process.confirmations),
             futureDestinations: structuredClone(process.futureDestinations),
+            proposalSnapshot: structuredClone(process.proposalSnapshot ?? null),
+            hasBilateralApproval: process.hasBilateralApproval ?? false,
+            actorNextAction: this.nextAction(row, process),
             startedAt: process.startedAt.toISOString(),
             completedAt: process.completedAt?.toISOString() ?? null,
             cancelledAt: process.cancelledAt?.toISOString() ?? null,
@@ -454,7 +549,8 @@ export class TypeOrmSpaceClosure implements SpaceClosurePort {
         input:
             | SpaceClosureCommandBase
             | ProposeClosureCutoffInput
-            | ClosureDestinationReplayInput,
+            | ClosureDestinationReplayInput
+            | ClosurePlanDecisionInput,
     ): Buffer {
         const fields: unknown[] = [
             input.spaceId.toLowerCase(),
@@ -463,7 +559,37 @@ export class TypeOrmSpaceClosure implements SpaceClosurePort {
             'cutoffDate' in input ? input.cutoffDate : null,
         ];
         if ('intent' in input) fields.push(this.intentDigest(input.intent));
+        if ('action' in input)
+            fields.push(
+                input.action,
+                input.action === 'REJECT'
+                    ? null
+                    : (input.expectedFinancialFingerprint ?? null),
+            );
         return createHash('sha256').update(JSON.stringify(fields)).digest();
+    }
+
+    private planOperation(action: ClosurePlanAction): string {
+        return {
+            PROPOSE: 'PROPOSE_CLOSURE_PLAN',
+            APPROVE: 'APPROVE_CLOSURE_PLAN',
+            REJECT: 'REJECT_CLOSURE_PLAN',
+        }[action];
+    }
+
+    private nextAction(
+        row: ClosureSpaceRow,
+        process: SpaceClosureProcessOrmEntity,
+    ): SpaceClosureNextAction {
+        if (row.status !== 'CLOSING' || process.status !== 'OPEN')
+            return 'READ_ONLY';
+        if (process.planStatus === 'APPROVED') return 'RESOLVE_FINANCES';
+        if (process.planStatus === 'PROPOSED') {
+            return process.approvals[0]?.memberId === row.actorMemberId
+                ? 'WAIT_APPROVAL'
+                : 'REVIEW_PLAN';
+        }
+        return 'PROPOSE_PLAN';
     }
 
     private intentDigest(intent: ClosureDestinationIntent): unknown[] {
@@ -490,6 +616,8 @@ export class TypeOrmSpaceClosure implements SpaceClosurePort {
             approvals: process.approvals,
             confirmations: process.confirmations,
             futureDestinations: process.futureDestinations,
+            proposalSnapshot: process.proposalSnapshot ?? null,
+            hasBilateralApproval: process.hasBilateralApproval ?? false,
         });
     }
 

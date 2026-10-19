@@ -4,6 +4,8 @@ import type {
     ClosureFutureDestination,
     ClosureParticipant,
     ClosureRecurringImpact,
+    ClosureProposalSnapshot,
+    ClosurePlanAction,
 } from '../../../domain/space/closure-plan.js';
 
 export type {
@@ -12,7 +14,16 @@ export type {
     ClosureDestinationIntent,
     ClosureFutureDestination,
     ClosureRecurringImpact,
+    ClosureProposalSnapshot,
+    ClosurePlanAction,
 };
+
+export type SpaceClosureNextAction =
+    | 'PROPOSE_PLAN'
+    | 'REVIEW_PLAN'
+    | 'WAIT_APPROVAL'
+    | 'RESOLVE_FINANCES'
+    | 'READ_ONLY';
 
 export type SpaceClosureView = {
     spaceId: string;
@@ -30,6 +41,9 @@ export type SpaceClosureView = {
     approvals: ClosureConsent[];
     confirmations: ClosureConsent[];
     futureDestinations: ClosureFutureDestination[];
+    proposalSnapshot?: ClosureProposalSnapshot | null;
+    hasBilateralApproval?: boolean;
+    actorNextAction?: SpaceClosureNextAction;
     startedAt: string;
     completedAt: string | null;
     cancelledAt: string | null;
@@ -56,6 +70,13 @@ export type ClosureDestinationReplayInput = SpaceClosureCommandBase & {
 
 export type UpsertClosureDestinationInput = ClosureDestinationReplayInput & {
     destination: ClosureFutureDestination;
+};
+
+export type ClosurePlanDecisionInput = SpaceClosureCommandBase & {
+    expectedPlanRevision: number;
+    action: ClosurePlanAction;
+    expectedFinancialFingerprint?: string;
+    proposalSnapshot?: ClosureProposalSnapshot;
 };
 
 export type SpaceClosureCommandResult = {
@@ -86,6 +107,12 @@ export interface SpaceClosurePort {
     ): Promise<SpaceClosureCommandResult | null>;
     upsertDestination(
         input: UpsertClosureDestinationInput,
+    ): Promise<SpaceClosureCommandResult>;
+    replayPlanDecision(
+        input: ClosurePlanDecisionInput,
+    ): Promise<SpaceClosureCommandResult | null>;
+    decidePlan(
+        input: ClosurePlanDecisionInput,
     ): Promise<SpaceClosureCommandResult>;
     read(actorId: string, spaceId: string): Promise<SpaceClosureView | null>;
     lockForProcess(

@@ -1,4 +1,5 @@
-import { ConflictException, Inject, Injectable } from '@nestjs/common';
+import { ConcurrentModificationError } from '../../modules/spaces/application/errors/concurrent-modification.error.js';
+import { Inject, Injectable } from '@nestjs/common';
 import {
     FINANCIAL_CLOSURE_DESTINATIONS_PORT,
     type FinancialClosureDestinationsPort,
@@ -97,6 +98,106 @@ export class ClosureService {
     read(actorId: string, spaceId: string) {
         return this.spaces.read(actorId, spaceId);
     }
+    async reviewPlan(actorId: string, spaceId: string) {
+        const actor = PersonId.from(actorId),
+            space = SpaceId.from(spaceId);
+        await this.access.assertCanRead(actor, space);
+        const result = await this.manager.readSnapshot(async () => {
+            const closure = await this.spaces.read(actorId, spaceId);
+            if (!closure)
+                throw new SpacesDomainError('CLOSURE_PROCESS_NOT_FOUND');
+            const finance = await this.destinations.reviewPlan(
+                actorId,
+                spaceId,
+                closure.proposedCutoffDate ?? closure.cutoffDate,
+                closure.futureDestinations,
+            );
+            const routine = await this.routine.summary(actorId, spaceId),
+                shopping = await this.shopping.summary(actorId, spaceId);
+            return {
+                spaceId,
+                closure,
+                finance,
+                informational: { routine, shopping },
+            };
+        });
+        await this.access.assertCanRead(actor, space);
+        return result;
+    }
+    async decidePlan(
+        actorId: string,
+        spaceId: string,
+        key: string,
+        input: {
+            expectedSpaceVersion: number;
+            expectedPlanRevision: number;
+            expectedFinancialFingerprint?: string;
+        },
+        action: 'PROPOSE' | 'APPROVE' | 'REJECT',
+    ) {
+        const command = {
+            actorId,
+            spaceId,
+            idempotencyKey: key,
+            ...input,
+            action,
+            now: this.clock.now(),
+        };
+        return this.uow.execute(async () => {
+            const closure = await this.spaces.lockForProcess(actorId, spaceId);
+            const replay = await this.spaces.replayPlanDecision(command);
+            if (replay) return replay.view;
+            if (
+                !closure ||
+                closure.spaceStatus !== 'CLOSING' ||
+                closure.processStatus !== 'OPEN'
+            )
+                throw new SpacesDomainError('CLOSURE_PROCESS_NOT_OPEN');
+            if (
+                closure.spaceVersion !== input.expectedSpaceVersion ||
+                closure.planRevision !== input.expectedPlanRevision
+            )
+                throw new ConcurrentModificationError();
+            let proposalSnapshot;
+            if (action !== 'REJECT') {
+                const review = await this.destinations.reviewPlan(
+                    actorId,
+                    spaceId,
+                    closure.proposedCutoffDate ?? closure.cutoffDate,
+                    closure.futureDestinations,
+                );
+                if (review.missingDestinationOriginIds.length)
+                    throw new SpacesDomainError('CLOSURE_PLAN_INCOMPLETE');
+                if (input.expectedFinancialFingerprint !== review.fingerprint)
+                    throw new SpacesDomainError('CLOSURE_PLAN_OBSOLETE');
+                if (
+                    action === 'APPROVE' &&
+                    closure.proposalSnapshot?.financialFingerprint !==
+                        review.fingerprint
+                )
+                    throw new SpacesDomainError('CLOSURE_PLAN_OBSOLETE');
+                proposalSnapshot = {
+                    financialFingerprint: review.fingerprint,
+                    financialBlockerCount: review.diagnostic.totalCount,
+                    outstandingAmounts: review.diagnostic.outstandingAmounts,
+                    routine: await this.routine.summary(actorId, spaceId),
+                    shopping: await this.shopping.summary(actorId, spaceId),
+                };
+            }
+            const result = await this.spaces.decidePlan({
+                ...command,
+                proposalSnapshot,
+            });
+            if (result.view.planStatus === 'APPROVED')
+                await this.destinations.applyApproved(
+                    actorId,
+                    spaceId,
+                    result.view.processId,
+                    command.now,
+                );
+            return result.view;
+        });
+    }
     async destination(
         actorId: string,
         spaceId: string,
@@ -134,12 +235,7 @@ export class ClosureService {
                 closure.spaceVersion !== expectedSpaceVersion ||
                 closure.planRevision !== expectedPlanRevision
             )
-                throw new ConflictException({
-                    code: 'CONCURRENT_MODIFICATION',
-                    message:
-                        'O estado mudou. Atualize o plano e confirme novamente.',
-                    details: {},
-                });
+                throw new ConcurrentModificationError();
             const destination = await this.destinations.preview(
                 actorId,
                 spaceId,
