@@ -10,7 +10,10 @@ import {
     Query,
     Res,
 } from '@nestjs/common';
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, Matches } from 'class-validator';
+import { z } from 'zod';
+import { parseZodInput } from '../../../../shared/technical/http/validation/parse-zod-input.js';
+import { uuid } from '../dto/record-shared-cash-expense.dto.js';
 import type { Response } from 'express';
 import {
     CurrentActor,
@@ -44,7 +47,11 @@ import {
 } from '../dto/recurring-commitment.dto.js';
 
 class MonthQuery {
-    @IsString({ message: 'Informe o mês no formato YYYY-MM.' }) month!: string;
+    @IsString({ message: 'Informe o mês no formato YYYY-MM.' })
+    @Matches(/^(?!0000)\d{4}-(0[1-9]|1[0-2])$/, {
+        message: 'Informe um mês válido no formato YYYY-MM.',
+    })
+    month!: string;
     @IsOptional()
     @IsString({ message: 'Informe um cursor válido.' })
     cursor?: string;
@@ -54,10 +61,16 @@ class MonthQuery {
 export class RecurringCommitmentController {
     constructor(private readonly handler: RecurringCommitmentHandler) {}
 
+    private identifier(value: string, field: string) {
+        return parseZodInput(z.object({ [field]: uuid }), { [field]: value })[
+            field
+        ]!;
+    }
+
     private ids(actor: RequestActor, spaceId: string) {
         return {
             actorId: PersonId.from(actor.personId.value),
-            spaceId: SpaceId.from(spaceId.toLowerCase()),
+            spaceId: SpaceId.from(this.identifier(spaceId, 'spaceId')),
         };
     }
     private referenceDate(value: string) {
@@ -116,7 +129,7 @@ export class RecurringCommitmentController {
         return this.handler.detail(
             this.ids(actor, spaceId).actorId,
             this.ids(actor, spaceId).spaceId,
-            id.toLowerCase(),
+            this.identifier(id, 'id'),
         );
     }
 
@@ -131,7 +144,7 @@ export class RecurringCommitmentController {
         return this.handler.occurrences(
             this.ids(actor, spaceId).actorId,
             this.ids(actor, spaceId).spaceId,
-            id.toLowerCase(),
+            this.identifier(id, 'id'),
             query.month,
         );
     }
@@ -150,7 +163,7 @@ export class RecurringCommitmentController {
         return this.handler.changePreview(
             ids.actorId,
             ids.spaceId,
-            id.toLowerCase(),
+            this.identifier(id, 'id'),
             input,
         );
     }
@@ -169,7 +182,7 @@ export class RecurringCommitmentController {
         const result = await this.handler.changeVersion({
             ...this.ids(actor, spaceId),
             ...input,
-            commitmentId: commitmentId.toLowerCase(),
+            commitmentId: this.identifier(commitmentId, 'id'),
             idempotencyKey,
         });
         if (result.replayed) response.status(200);
@@ -190,7 +203,7 @@ export class RecurringCommitmentController {
         const result = await this.handler.terminate({
             ...this.ids(actor, spaceId),
             ...input,
-            commitmentId: commitmentId.toLowerCase(),
+            commitmentId: this.identifier(commitmentId, 'id'),
             idempotencyKey,
         });
         if (result.replayed) response.status(200);
@@ -211,7 +224,7 @@ export class RecurringCommitmentController {
         return this.handler.terminationPreview(
             ids.actorId,
             ids.spaceId,
-            id.toLowerCase(),
+            this.identifier(id, 'id'),
             input,
         );
     }
@@ -231,7 +244,7 @@ export class RecurringCommitmentController {
         const result = await this.handler.cancelOccurrence({
             ...this.ids(actor, spaceId),
             ...input,
-            commitmentId: commitmentId.toLowerCase(),
+            commitmentId: this.identifier(commitmentId, 'id'),
             referenceDate: this.referenceDate(referenceDate),
             idempotencyKey,
         });
@@ -251,7 +264,7 @@ export class RecurringCommitmentController {
         return this.handler.options(
             this.ids(actor, spaceId).actorId,
             this.ids(actor, spaceId).spaceId,
-            id.toLowerCase(),
+            this.identifier(id, 'id'),
             this.referenceDate(referenceDate),
             cursor,
         );
@@ -272,7 +285,7 @@ export class RecurringCommitmentController {
             ...this.ids(actor, spaceId),
             ...input,
             idempotencyKey,
-            commitmentId: commitmentId.toLowerCase(),
+            commitmentId: this.identifier(commitmentId, 'id'),
             referenceDate: this.referenceDate(referenceDate),
         });
         if (result.replayed) response.status(200);
@@ -294,7 +307,7 @@ export class RecurringCommitmentController {
             ...this.ids(actor, spaceId),
             ...input,
             idempotencyKey,
-            commitmentId: commitmentId.toLowerCase(),
+            commitmentId: this.identifier(commitmentId, 'id'),
             referenceDate: this.referenceDate(referenceDate),
             kind: 'DISBURSEMENT',
         });
@@ -317,7 +330,7 @@ export class RecurringCommitmentController {
             ...this.ids(actor, spaceId),
             ...input,
             idempotencyKey,
-            commitmentId: commitmentId.toLowerCase(),
+            commitmentId: this.identifier(commitmentId, 'id'),
             referenceDate: this.referenceDate(referenceDate),
             kind: 'RECEIPT',
         });
@@ -341,7 +354,7 @@ export class RecurringCommitmentController {
             ...this.ids(actor, spaceId),
             ...input,
             idempotencyKey,
-            commitmentId: commitmentId.toLowerCase(),
+            commitmentId: this.identifier(commitmentId, 'id'),
             referenceDate: this.referenceDate(referenceDate),
             kind: 'EXTERNAL_LIABILITY',
         });
@@ -368,9 +381,9 @@ export class RecurringCommitmentController {
             ...this.ids(actor, spaceId),
             ...input,
             idempotencyKey,
-            commitmentId: commitmentId.toLowerCase(),
+            commitmentId: this.identifier(commitmentId, 'id'),
             referenceDate: this.referenceDate(referenceDate),
-            liabilityId: liabilityId.toLowerCase(),
+            liabilityId: this.identifier(liabilityId, 'liabilityId'),
             kind: 'SETTLE_EXTERNAL_LIABILITY',
         });
         if (result.replayed) response.status(200);

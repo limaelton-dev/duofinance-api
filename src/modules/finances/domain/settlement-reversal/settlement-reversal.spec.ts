@@ -4,6 +4,7 @@ import {
     SettlementReversal,
     planSettlementReversal,
     type ReversalAllocation,
+    settlementReversalSourceKey,
 } from './settlement-reversal.js';
 
 const allocation = (
@@ -170,6 +171,52 @@ describe('Settlement reversal facts and current origin position', () => {
         const after = old.reverseResolution(0, 5000, 2);
         expect(after.recognizedAmountInCents).toBe(5000);
         expect(after.status).toBe('RECONCILED');
+    });
+    it.each([
+        [{ occurrenceId: 'september' }, { occurrenceId: 'october' }],
+        [{ occurrenceId: 'installment-1' }, { occurrenceId: 'installment-2' }],
+        [{ occurrenceId: null }, { occurrenceId: 'september' }],
+        [
+            { originClosureAgreementId: 'agreement-1' },
+            { originClosureAgreementId: 'agreement-2' },
+        ],
+        [
+            { originClosureAgreementId: null },
+            { originClosureAgreementId: 'agreement-1' },
+        ],
+    ])(
+        'rejects reconciliation between distinct financial sources %j and %j',
+        (a, b) => {
+            const original = { ...obligation(), ...a };
+            const unrelated = { ...obligation('later', 'b', 'a', 5000), ...b };
+            expect(settlementReversalSourceKey(original)).not.toBe(
+                settlementReversalSourceKey(unrelated),
+            );
+            expect(() =>
+                planSettlementReversal(
+                    [original, unrelated],
+                    [allocation()],
+                    [],
+                ),
+            ).toThrow();
+            expect(unrelated.remainingAmountInCents).toBe(5000);
+        },
+    );
+    it.each([
+        { occurrenceId: 'same-occurrence' },
+        { originClosureAgreementId: 'same-agreement' },
+    ])('retains current-position reconciliation within source %j', (source) => {
+        const original = { ...obligation(), ...source };
+        const later = { ...obligation('later', 'b', 'a', 5000), ...source };
+        const plan = planSettlementReversal(
+            [original, later],
+            [allocation()],
+            [],
+        );
+        expect(plan.newDifference).toBeNull();
+        expect(plan.changes.map((c) => c.remainingAmountInCents)).toEqual([
+            0, 0,
+        ]);
     });
     it('retains later realized amounts and other valid settlements', () => {
         const current = obligation('original', 'a', 'b', 3000);

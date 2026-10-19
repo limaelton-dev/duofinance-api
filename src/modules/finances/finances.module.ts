@@ -1,3 +1,11 @@
+import { CreateRecurringCommitmentHandler } from './application/handlers/create-recurring-commitment.handler.js';
+import { ChangeRecurringCommitmentHandler } from './application/handlers/change-recurring-commitment.handler.js';
+import { MaintainRecurringCommitmentHandler } from './application/handlers/maintain-recurring-commitment.handler.js';
+import { SetRecurringValueHandler } from './application/handlers/set-recurring-value.handler.js';
+import { RecordRecurringCommitmentHandler } from './application/handlers/record-recurring-commitment.handler.js';
+import { RecurringCommitmentQueries } from './application/handlers/recurring-commitment.queries.js';
+import { RecurringVersionChange } from './application/handlers/recurring-version-change.js';
+import { RecurringCommandExecution } from './application/handlers/recurring-command-execution.js';
 import { financialChangeEntities } from './infrastructure/typeorm/entities/financial-change.orm-entity.js';
 import { FINANCIAL_CLOSURE_DIAGNOSTICS_PORT } from './application/ports/public/financial-closure-diagnostics.port.js';
 import { FINANCIAL_CLOSURE_DESTINATIONS_PORT } from './application/ports/public/financial-closure-destinations.port.js';
@@ -344,6 +352,14 @@ import {
         },
         CreatePlannedExpenseHandler,
         RecurringCommitmentHandler,
+        CreateRecurringCommitmentHandler,
+        ChangeRecurringCommitmentHandler,
+        MaintainRecurringCommitmentHandler,
+        SetRecurringValueHandler,
+        RecordRecurringCommitmentHandler,
+        RecurringCommitmentQueries,
+        RecurringVersionChange,
+        RecurringCommandExecution,
         InstallmentCommitmentHandler,
         CreateInstallmentCommitmentHandler,
         InstallmentCommitmentQueries,

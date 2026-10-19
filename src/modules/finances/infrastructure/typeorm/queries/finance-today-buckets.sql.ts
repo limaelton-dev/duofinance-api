@@ -67,7 +67,10 @@ export const financeTodayBucketsSql = `WITH one_time AS (
         AND ${recurringClosureCutoffSql('o.reference_date', 'o.id', '$3')}
 ), installments AS (
     SELECT c.id AS commitment_id,i.id AS occurrence_id,c.modality,c.kind,c.description,
-        i.due_date AS expected_date,i.amount_in_cents,i.amount_in_cents AS expected_amount_in_cents,
+        i.due_date AS expected_date,
+        CASE WHEN EXISTS (SELECT 1 FROM financial_installment_anticipations anticipated WHERE anticipated.space_id=i.space_id AND anticipated.installment_id=i.id)
+            THEN o.amount_in_cents ELSE i.amount_in_cents END AS amount_in_cents,
+        i.amount_in_cents AS expected_amount_in_cents,
         ${fulfillmentSql('f.occurrence_id=i.id')} AS fulfilled
     FROM financial_installments i
     JOIN financial_commitments c ON c.space_id=i.space_id AND c.id=i.commitment_id

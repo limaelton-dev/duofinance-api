@@ -14,6 +14,19 @@ export interface ReversalAllocation {
     correctionCycleId: string | null;
 }
 
+export type SettlementReversalSource = Pick<
+    InterMemberObligation,
+    'originCommitmentId' | 'occurrenceId' | 'originClosureAgreementId'
+>;
+
+export function settlementReversalSourceKey(source: SettlementReversalSource) {
+    return JSON.stringify([
+        source.originCommitmentId,
+        source.occurrenceId,
+        source.originClosureAgreementId,
+    ]);
+}
+
 export class SettlementReversal {
     readonly amountInCents: number;
     readonly allocations: readonly Readonly<ReversalAllocation>[];
@@ -81,6 +94,8 @@ export function planSettlementReversal<
         | 'id'
         | 'spaceId'
         | 'originCommitmentId'
+        | 'occurrenceId'
+        | 'originClosureAgreementId'
         | 'cycleId'
         | 'debtorMemberId'
         | 'creditorMemberId'
@@ -107,7 +122,8 @@ export function planSettlementReversal<
         obligations.some(
             (o) =>
                 o.spaceId !== first.spaceId ||
-                o.originCommitmentId !== first.originCommitmentId,
+                settlementReversalSourceKey(o) !==
+                    settlementReversalSourceKey(first),
         )
     )
         throw new FinancesError('VALIDATION_ERROR', ['applications']);

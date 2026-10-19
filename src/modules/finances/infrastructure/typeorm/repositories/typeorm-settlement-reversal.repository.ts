@@ -79,15 +79,15 @@ export class TypeOrmSettlementReversalRepository implements SettlementReversalRe
             > & { remainingAmountInCents: string })[] = await this.provider
                 .get()
                 .query(
-                    `SELECT id,commitment_id AS "originCommitmentId",version,cycle_id AS "cycleId",debtor_member_id AS "debtorMemberId",creditor_member_id AS "creditorMemberId",remaining_amount_in_cents::text AS "remainingAmountInCents",status FROM inter_member_obligations WHERE space_id=$1 AND commitment_id=ANY($2::uuid[]) ORDER BY id`,
-                    [
-                        spaceId,
-                        [
-                            ...new Set(
-                                allocations.map((a) => a.originCommitmentId),
-                            ),
-                        ],
-                    ],
+                    `SELECT o.id,o.commitment_id AS "originCommitmentId",o.occurrence_id AS "occurrenceId",o.closure_agreement_id AS "originClosureAgreementId",o.version,o.cycle_id AS "cycleId",o.debtor_member_id AS "debtorMemberId",o.creditor_member_id AS "creditorMemberId",o.remaining_amount_in_cents::text AS "remainingAmountInCents",o.status FROM inter_member_obligations o WHERE o.space_id=$1 AND EXISTS (
+                        SELECT 1 FROM ${transfer ? 'settlement_allocations' : 'settlement_offset_allocations'} a
+                        JOIN inter_member_obligations original ON original.space_id=a.space_id AND original.id=a.obligation_id
+                        WHERE a.space_id=o.space_id AND a.${transfer ? 'transfer_id' : 'offset_id'}=$2
+                          AND original.commitment_id=o.commitment_id
+                          AND original.occurrence_id IS NOT DISTINCT FROM o.occurrence_id
+                          AND original.closure_agreement_id IS NOT DISTINCT FROM o.closure_agreement_id
+                    ) ORDER BY o.id`,
+                    [spaceId, id],
                 );
             const cycleIds = [
                 ...new Set(

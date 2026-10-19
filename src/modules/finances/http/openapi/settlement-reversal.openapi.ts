@@ -89,7 +89,7 @@ function operation(
             : 'Consultar original, reversões anteriores e impacto permitido',
         description: confirm
             ? 'Reverte integralmente o efeito ainda válido de todas as aplicações do original. Seleção parcial não é suportada. Não executa PIX nem cria receita, despesa ou dinheiro novo. Conserva o original e fatos posteriores; recalcula somente efeitos correspondentes. Origem em ciclo finalizado exige correctionCycleId aberto explícito e sua versão; composição e histórico encerrados permanecem intactos. Reversão, aplicações corretivas, efeitos, histórico, recibo e auditoria são atômicos. Após resultado incerto, repita chave e entrada originais.'
-            : 'Consulta sem escrita. Exibe saldos, versões e ciclos atuais afetados para confirmação explícita. requiresCorrectionCycle indica necessidade de escolher outro ciclo aberto. A correção pode também reduzir uma pendência oposta em outro ciclo aberto, respeitando os fatos posteriores e a confirmação de suas versões. Posição líquida não resolve nem reverte fatos.',
+            : 'Consulta sem escrita. Exibe saldos, versões e ciclos atuais afetados para confirmação explícita. Cada impacto preserva a identidade da origem, ocorrência ou acordo de encerramento; ocorrências distintas só são compensadas por comando explícito. requiresCorrectionCycle indica necessidade de escolher outro ciclo aberto. A correção pode também reduzir uma pendência oposta da mesma origem em outro ciclo aberto, respeitando os fatos posteriores e a confirmação de suas versões. Posição líquida não resolve nem reverte fatos.',
         security: [{ sessionCookie: [] }],
         parameters: [
             {
@@ -253,6 +253,8 @@ export const settlementReversalOpenApi: Pick<
                     items: object({
                         id: uuid,
                         originCommitmentId: uuid,
+                        occurrenceId: nullable(uuid),
+                        originClosureAgreementId: nullable(uuid),
                         version: positive,
                         cycleId: nullable(uuid),
                         debtorMemberId: uuid,
@@ -284,6 +286,8 @@ export const settlementReversalOpenApi: Pick<
                     type: 'array',
                     items: object({
                         originCommitmentId: uuid,
+                        occurrenceId: nullable(uuid),
+                        originClosureAgreementId: nullable(uuid),
                         debtorMemberId: nullable(uuid),
                         creditorMemberId: nullable(uuid),
                         remainingAmountInCents: money,

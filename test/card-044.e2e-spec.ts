@@ -373,6 +373,169 @@ describe('CARD-044 Today cross-module composition HTTP/PostgreSQL', () => {
         expect(await snapshot()).toEqual(before);
     });
 
+    it.each([
+        { previouslyPaid: 0, anticipatedPaid: 8000 },
+        { previouslyPaid: 2000, anticipatedPaid: 6000 },
+        { previouslyPaid: 0, anticipatedPaid: 12000 },
+    ])(
+        'keeps anticipated installments out of Today until a reversal reopens their effective balance ($previouslyPaid paid before $anticipatedPaid anticipated)',
+        async ({ previouslyPaid, anticipatedPaid }) => {
+            instant = '2026-10-19T14:00:00Z';
+            vi.mocked(
+                app.get<FinancesClock>(FINANCES_CLOCK).today,
+            ).mockImplementation(() => instant.slice(0, 10));
+            const { b, base } = await personal(),
+                plans = `${base}/installment-commitments`,
+                root = (
+                    await b
+                        .post(plans, {
+                            scope: 'PERSONAL',
+                            description: 'Parcela antecipada',
+                            count: 1,
+                            firstDueDate: '2026-11-20',
+                            cadence: 'MONTHLY',
+                            totalAmountInCents: 10000,
+                        })
+                        .expect(201)
+                ).body.commitment,
+                installment = root.plan.installments[0],
+                planPath = `${plans}/${root.id}`,
+                effectiveAmountInCents = previouslyPaid + anticipatedPaid;
+            if (previouslyPaid > 0)
+                await b
+                    .post(
+                        `${planPath}/installments/${installment.id}/disbursements`,
+                        {
+                            expectedCommitmentVersion: 1,
+                            expectedInstallmentVersion: 1,
+                            amountInCents: previouslyPaid,
+                            factDate: '2026-10-19',
+                            method: 'PIX',
+                        },
+                    )
+                    .expect(201);
+            const anticipated = (
+                await b
+                    .post(`${planPath}/anticipations`, {
+                        selection: {
+                            mode: 'IDS',
+                            installmentIds: [installment.id],
+                        },
+                        factDate: '2026-10-19',
+                        method: 'PIX',
+                        expectedCommitmentVersion: previouslyPaid > 0 ? 2 : 1,
+                        values: [
+                            {
+                                installmentId: installment.id,
+                                expectedInstallmentVersion:
+                                    previouslyPaid > 0 ? 2 : 1,
+                                paidAmountInCents: anticipatedPaid,
+                            },
+                        ],
+                    })
+                    .expect(201)
+            ).body;
+            expect(anticipated.commitment.plan).toMatchObject({
+                status: 'COMPLETED',
+                fulfilledAmountInCents: effectiveAmountInCents,
+                remainingAmountInCents: 0,
+            });
+            const before = await snapshot();
+            for (const date of ['2026-10-19', '2026-11-20', '2026-11-21']) {
+                instant = `${date}T14:00:00Z`;
+                const details = (
+                        await b.agent
+                            .get(`${planPath}/installments`)
+                            .expect(200)
+                    ).body,
+                    result: TodayResponse = (
+                        await b.agent.get(`${base}/today`).expect(200)
+                    ).body;
+                expect(details.items[0]).toMatchObject({
+                    id: installment.id,
+                    amountInCents: 10000,
+                    effectiveAmountInCents,
+                    fulfilledAmountInCents: effectiveAmountInCents,
+                    remainingAmountInCents: 0,
+                    status: 'FULFILLED',
+                });
+                expect(result).toMatchObject({
+                    referenceDate: date,
+                    finance: {
+                        status: 'AVAILABLE',
+                        data: {
+                            upcomingCommitments: { items: [], totalCount: 0 },
+                        },
+                    },
+                });
+                for (const kind of ['ATTENTION', 'TODAY', 'UPCOMING'] as const)
+                    expect(block(result, kind)).toMatchObject({
+                        status: 'AVAILABLE',
+                        items: [],
+                        totalCount: 0,
+                        knownTotalCount: 0,
+                        hasMore: false,
+                    });
+            }
+            expect(await snapshot()).toEqual(before);
+
+            instant = '2026-10-19T14:00:00Z';
+            await b
+                .post(`${base}/financial-commitments/${root.id}/reversals`, {
+                    originalKind: 'DISBURSEMENT',
+                    originalId: anticipated.items[0].fact.id,
+                    amountInCents: 3000,
+                    expectedCommitmentVersion: anticipated.commitment.version,
+                    expectedOccurrenceVersion:
+                        anticipated.commitment.plan.installments[0]
+                            .stateVersion,
+                    installmentId: installment.id,
+                    reason: 'Estorno parcial da antecipação',
+                    factDate: '2026-10-19',
+                })
+                .expect(201);
+            const afterReversal = await snapshot();
+            for (const [date, bucket] of [
+                ['2026-10-19', 'UPCOMING'],
+                ['2026-11-20', 'TODAY'],
+                ['2026-11-21', 'ATTENTION'],
+            ] as const) {
+                instant = `${date}T14:00:00Z`;
+                const result: TodayResponse = (
+                    await b.agent.get(`${base}/today`).expect(200)
+                ).body;
+                expect(block(result, bucket)).toMatchObject({
+                    status: 'AVAILABLE',
+                    totalCount: 1,
+                    knownTotalCount: 1,
+                    hasMore: false,
+                    items: [
+                        {
+                            type: 'FINANCIAL_COMMITMENT',
+                            reference: {
+                                commitmentId: root.id,
+                                occurrenceId: installment.id,
+                                modality: 'INSTALLMENT',
+                                expectedDate: '2026-11-20',
+                            },
+                            details: {
+                                amountInCents: effectiveAmountInCents,
+                                expectedAmountInCents: 10000,
+                                fulfilledAmountInCents:
+                                    effectiveAmountInCents - 3000,
+                                remainingAmountInCents: 3000,
+                            },
+                        },
+                    ],
+                });
+                for (const kind of ['ATTENTION', 'TODAY', 'UPCOMING'] as const)
+                    if (kind !== bucket)
+                        expect(block(result, kind).totalCount).toBe(0);
+            }
+            expect(await snapshot()).toEqual(afterReversal);
+        },
+    );
+
     it('exposes navigable virtual routine occurrences without creating instances on GET', async () => {
         const { b, base } = await personal(),
             recurrence = (

@@ -36,6 +36,10 @@ import { assertFinancialClosureOriginOpen } from './assert-financial-closure-ori
 export class TypeOrmRecurringCommitmentRepository implements RecurringCommitmentRepository {
     constructor(private readonly provider: EntityManagerProvider) {}
 
+    readSnapshot<T>(work: () => Promise<T>): Promise<T> {
+        return this.provider.readSnapshot(work);
+    }
+
     private manager() {
         return this.provider.get();
     }
