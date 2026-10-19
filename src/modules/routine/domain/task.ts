@@ -19,6 +19,7 @@ export interface Task {
         completedAt: string;
         assignee: Participant | null;
     } | null;
+    shoppingListId: string | null;
 }
 export function validDate(value: string): boolean {
     const instant = new Date(value + 'T12:00:00Z');
@@ -53,4 +54,10 @@ export function assignTask(task: Task, assignee: Participant | null): Task {
     if (task.status !== 'PENDING')
         throw new RoutineError('INVALID_TASK_TRANSITION');
     return { ...task, assignee, version: task.version + 1 };
+}
+export function linkShoppingList(
+    task: Task,
+    shoppingListId: string | null,
+): Task {
+    return { ...task, shoppingListId, version: task.version + 1 };
 }

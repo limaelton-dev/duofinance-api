@@ -17,8 +17,13 @@ import {
     routineReference,
 } from './routine-clock.js';
 import { taskAttention } from '../domain/task-attention.js';
+import { isPostgresqlUnavailable } from '../../../shared/technical/database/postgresql-unavailable.js';
+import {
+    SHOPPING_LISTS_PORT,
+    type ShoppingListsPort,
+} from '../../shopping/application/ports/public/shopping-lists.port.js';
 export function taskView(task: TaskItem, canWrite = true) {
-    return {
+    const view = {
         ...task,
         kind: task.kind ?? ('ONE_OFF' as const),
         allowedActions: !canWrite
@@ -31,6 +36,12 @@ export function taskView(task: TaskItem, canWrite = true) {
                 ? ['REOPEN']
                 : [],
     };
+    if (canWrite && task.kind !== 'OCCURRENCE')
+        view.allowedActions.push(
+            'LINK_SHOPPING_LIST',
+            ...(task.shoppingListId ? ['UNLINK_SHOPPING_LIST'] : []),
+        );
+    return view;
 }
 @Injectable()
 export class TaskQueries {
@@ -39,6 +50,8 @@ export class TaskQueries {
         private readonly participants: SpaceParticipantsPort,
         @Inject(ROUTINE_STORE) private readonly store: RoutineStore,
         @Inject(ROUTINE_CLOCK) private readonly clock: RoutineClock,
+        @Inject(SHOPPING_LISTS_PORT)
+        private readonly shopping: ShoppingListsPort,
     ) {}
     async context(actor: string, space: string) {
         return this.participants.read(
@@ -53,13 +66,20 @@ export class TaskQueries {
         present: (result: T, context: SpaceParticipantsContext) => T = (
             result,
         ) => result,
+        unavailableError?: Error,
     ) {
         const authorized = await this.context(actor, space);
         let outcome: { ok: true; result: T } | { ok: false; error: unknown };
         try {
             outcome = { ok: true, result: await this.store.snapshot(work) };
         } catch (error) {
-            outcome = { ok: false, error };
+            outcome = {
+                ok: false,
+                error:
+                    unavailableError && isPostgresqlUnavailable(error)
+                        ? unavailableError
+                        : error,
+            };
         }
         const confirmed = await this.context(actor, space);
         if (
@@ -79,6 +99,13 @@ export class TaskQueries {
                 const task = await this.store.find(space, id);
                 return {
                     ...taskView(task),
+                    shoppingList: task.shoppingListId
+                        ? await this.shopping.reference(
+                              PersonId.from(actor),
+                              SpaceId.from(space),
+                              task.shoppingListId,
+                          )
+                        : null,
                     ...reference,
                     conditions: taskAttention(task, reference),
                 };

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { QueryFailedError } from 'typeorm';
+import { isPostgresqlUnavailable } from '../../../shared/technical/database/postgresql-unavailable.js';
 import { EntityManagerProvider } from '../../../shared/technical/database/typeorm/entity-manager.provider.js';
 import { RoutineAttentionUnavailableError } from '../application/ports/public/routine-attention-query.port.js';
 import type {
@@ -63,35 +63,7 @@ export class TypeOrmTaskAttentionReader implements TaskAttentionReader {
                 return { rows, counts };
             })
             .catch((error) => {
-                const cause =
-                        error instanceof QueryFailedError
-                            ? error.driverError
-                            : error,
-                    code =
-                        typeof cause === 'object' &&
-                        cause !== null &&
-                        'code' in cause
-                            ? cause.code
-                            : null;
-                if (
-                    typeof code === 'string' &&
-                    (code.startsWith('08') ||
-                        [
-                            '53000',
-                            '53100',
-                            '53200',
-                            '53300',
-                            '53400',
-                            '57014',
-                            '57P01',
-                            '57P02',
-                            '57P03',
-                            'ECONNREFUSED',
-                            'ECONNRESET',
-                            'ETIMEDOUT',
-                            'EPIPE',
-                        ].includes(code))
-                )
+                if (isPostgresqlUnavailable(error))
                     throw new RoutineAttentionUnavailableError();
                 throw error;
             });

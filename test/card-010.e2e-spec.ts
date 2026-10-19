@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import { Logger, type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import request from 'supertest';
 import {
     afterEach,
@@ -28,7 +28,6 @@ import {
     SPACE_ACCESS_PORT,
     type SpaceAccessPort,
 } from '../dist/modules/spaces/application/ports/public/space-access.port.js';
-import { EntityManagerProvider } from '../dist/shared/technical/database/typeorm/entity-manager.provider.js';
 
 describe('CARD-010 HTTP authorized Today financial composition', () => {
     let app: INestApplication<Server>, db: DataSource, instant: Date;
@@ -690,17 +689,18 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
         const f = await shared();
         const outsider = await browser('Fora');
         await record(f);
-        const manager = app.get(EntityManagerProvider).get();
-        const original = manager.query.bind(manager);
-        vi.spyOn(manager, 'query').mockImplementation(async (sql, params) => {
-            const rows = await original(sql, params);
-            if (sql.includes('overdue AS MATERIALIZED ('))
-                await original(
-                    `UPDATE space_members SET person_id=$2 WHERE id=$1`,
-                    [f.ma, outsider.context.person.id],
-                );
-            return rows;
-        });
+        const original = EntityManager.prototype.query;
+        vi.spyOn(EntityManager.prototype, 'query').mockImplementation(
+            async function (this: EntityManager, sql, params) {
+                const rows = await original.call(this, sql, params);
+                if (sql.includes('overdue AS MATERIALIZED ('))
+                    await db.query(
+                        `UPDATE space_members SET person_id=$2 WHERE id=$1`,
+                        [f.ma, outsider.context.person.id],
+                    );
+                return rows;
+            },
+        );
         await f.a.agent
             .get(path(f.space))
             .expect(404)
@@ -729,8 +729,7 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
         const first = await record(f, 10000, f.mb, '2026-10-08');
         const second = await record(f, 5000);
         const next = await record(f, 3000, f.mb, '2026-10-10');
-        const manager = app.get(EntityManagerProvider).get();
-        const spy = vi.spyOn(manager, 'query');
+        const spy = vi.spyOn(EntityManager.prototype, 'query');
         await today(f);
         const statements = spy.mock.calls.filter(([sql]) =>
             sql.includes('overdue AS MATERIALIZED ('),
@@ -857,8 +856,7 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
         );
         await db.query('ANALYZE settlement_cycles');
         await db.query('ANALYZE inter_member_obligations');
-        const manager = app.get(EntityManagerProvider).get();
-        const spy = vi.spyOn(manager, 'query');
+        const spy = vi.spyOn(EntityManager.prototype, 'query');
         const financial = (await today(f)).finance.data.settlements;
         expect(financial.overdueCycles.totalCount).toBe(3000);
         expect(financial.overdueCycles.items).toHaveLength(3);
@@ -899,15 +897,18 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
     it('A19 distinguishes technical source unavailability from access loss and allows retry', async () => {
         const f = await shared();
         const outsider = await browser('Fora');
-        const manager = app.get(EntityManagerProvider).get();
-        const original = manager.query.bind(manager);
-        vi.spyOn(manager, 'query').mockImplementation((sql, params) =>
-            sql.includes('overdue AS MATERIALIZED (')
+        const original = EntityManager.prototype.query;
+        vi.spyOn(EntityManager.prototype, 'query').mockImplementation(function (
+            this: EntityManager,
+            sql,
+            params,
+        ) {
+            return sql.includes('overdue AS MATERIALIZED (')
                 ? Promise.reject(
                       Object.assign(new Error('secret SQL'), { code: '57014' }),
                   )
-                : original(sql, params),
-        );
+                : original.call(this, sql, params);
+        });
         const unavailable = await today(f);
         expect(unavailable.finance).toEqual({
             status: 'UNAVAILABLE',
@@ -941,15 +942,18 @@ describe('CARD-010 HTTP authorized Today financial composition', () => {
         'A19 preserves SQL or persisted-data inconsistency %s as a safe HTTP error',
         async (code) => {
             const f = await shared();
-            const manager = app.get(EntityManagerProvider).get();
-            const original = manager.query.bind(manager);
+            const original = EntityManager.prototype.query;
             vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
-            vi.spyOn(manager, 'query').mockImplementation((sql, params) =>
-                sql.includes('overdue AS MATERIALIZED (')
-                    ? Promise.reject(
-                          Object.assign(new Error('secret SQL data'), { code }),
-                      )
-                    : original(sql, params),
+            vi.spyOn(EntityManager.prototype, 'query').mockImplementation(
+                function (this: EntityManager, sql, params) {
+                    return sql.includes('overdue AS MATERIALIZED (')
+                        ? Promise.reject(
+                              Object.assign(new Error('secret SQL data'), {
+                                  code,
+                              }),
+                          )
+                        : original.call(this, sql, params);
+                },
             );
             const response = await f.a.agent.get(path(f.space)).expect(500);
             expect(response.body).toEqual({

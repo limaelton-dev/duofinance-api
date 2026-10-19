@@ -44,6 +44,7 @@ export const routineSchemas: Record<string, SchemaObject> = {
             assigneeMemberId: nullable(uuid),
             deadline: nullable(ref('RoutineDeadline')),
             urgency: { ...ref('RoutineUrgency'), default: 'NORMAL' },
+            shoppingListId: nullable(uuid),
         },
         ['description'],
     ),
@@ -69,6 +70,7 @@ export const routineSchemas: Record<string, SchemaObject> = {
                 assignee: nullable(ref('RoutineParticipant')),
             }),
         ),
+        shoppingListId: nullable(uuid),
     }),
     RoutineTaskView: {
         allOf: [
@@ -117,7 +119,22 @@ export const routineSchemas: Record<string, SchemaObject> = {
 routineSchemas.RoutineTaskView = object({
     ...routineSchemas.RoutineTask.properties,
     kind: { type: 'string', enum: ['ONE_OFF'] },
-    allowedActions: { type: 'array', items: { type: 'string' } },
+    allowedActions: {
+        type: 'array',
+        items: {
+            type: 'string',
+            enum: [
+                'ASSIGN',
+                'COMPLETE',
+                'DEADLINE',
+                'URGENCY',
+                'CANCEL',
+                'REOPEN',
+                'LINK_SHOPPING_LIST',
+                'UNLINK_SHOPPING_LIST',
+            ],
+        },
+    },
 });
 routineSchemas.RoutineConditions = object({
     today: { type: 'boolean' },
@@ -165,6 +182,18 @@ routineSchemas.RoutineTaskDetail = object({
     referenceDate: { type: 'string', format: 'date' },
     referenceTime: { type: 'string' },
     referenceInstant: { type: 'string', format: 'date-time' },
+    shoppingList: nullable(
+        object({
+            id: uuid,
+            name: nullable({ type: 'string' }),
+            status: { type: 'string', enum: ['ACTIVE', 'ARCHIVED'] },
+            summary: object({
+                activeItemCount: { type: 'integer', minimum: 0 },
+                actionableItemCount: { type: 'integer', minimum: 0 },
+                isComplete: { type: 'boolean' },
+            }),
+        }),
+    ),
 });
 export function routineOperation(
     method: 'get' | 'post',
@@ -271,6 +300,10 @@ export function routineOperation(
 }
 const base = '/v2/spaces/{spaceId}';
 routineSchemas.RoutineTaskVersion = object({ expectedVersion: integer });
+routineSchemas.RoutineTaskShoppingLink = object({
+    expectedVersion: integer,
+    shoppingListId: uuid,
+});
 routineSchemas.RoutineDeadlineChange = object({
     expectedVersion: integer,
     deadline: nullable(ref('RoutineDeadline')),
@@ -362,6 +395,15 @@ export const routineOpenApi: Pick<
     },
     components: { schemas: routineSchemas },
 };
+for (const [suffix, body] of Object.entries({
+    'shopping-list': 'RoutineTaskShoppingLink',
+    'shopping-list/removal': 'RoutineTaskVersion',
+})) {
+    const path = `${base}/tasks/{taskId}/${suffix}`;
+    routineOpenApi.paths[path] = {
+        post: routineOperation('post', path, 'RoutineTask', body),
+    };
+}
 const taskListOperation = routineOpenApi.paths[`${base}/tasks`]!.get!;
 taskListOperation.parameters!.push(
     ...Object.entries({
@@ -452,7 +494,11 @@ routineSchemas.RoutineRecurrencePage = object({
     nextCursor: nullable({ type: 'string' }),
 });
 const occurrenceFields = {
-    ...routineSchemas.RoutineTask.properties,
+    ...Object.fromEntries(
+        Object.entries(routineSchemas.RoutineTask.properties!).filter(
+            ([key]) => key !== 'shoppingListId',
+        ),
+    ),
     id: {
         type: 'string' as const,
         description:

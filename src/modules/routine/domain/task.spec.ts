@@ -12,6 +12,7 @@ const task: Task = {
     version: 1,
     createdAt: '2026-10-18T12:00:00Z',
     completion: null,
+    shoppingListId: null,
 };
 describe('one-off task invariants', () => {
     it('changes responsibility without changing author or inventing an executor', () => {

@@ -4,6 +4,7 @@ import type {
     ResponseObject,
     SchemaObject,
 } from '@nestjs/swagger';
+import { todayCompositionSchemas } from './today.schemas.js';
 
 const ref = (name: string): ReferenceObject => ({
     $ref: `#/components/schemas/${name}`,
@@ -55,7 +56,7 @@ export const todayOpenApi: Pick<
                 tags: ['Today'],
                 summary: 'Consultar Hoje no espaço atual',
                 description:
-                    'Compõe contratos públicos de Finanças. Próximos compromissos traz até quatro receitas únicas e despesas avulsas ou recorrentes com restante positivo, sua data prevista e contagem. Datas de acerto não se tornam vencimentos. Pessoal retorna settlements null. Autoriza antes e depois. Falha técnica financeira permite UNAVAILABLE com contexto preservado. GET não escreve.',
+                    'Compõe portas públicas de Finanças, Rotina e Compras com uma referência temporal em America/Sao_Paulo e snapshot por fonte. Preserva finance/routine e acrescenta shopping e blocos ordenados ATTENTION → TODAY → NEXT_SETTLEMENT → UPCOMING → TASKS → SHOPPING, com limites, totais reais e referências navegáveis. Datas de acerto não se tornam vencimentos. Falha técnica isolada preserva as fontes saudáveis; blocos mistos ficam PARTIAL com total desconhecido. Autoriza antes e depois; perda de acesso bloqueia toda resposta. GET não escreve. Atenção de encerramento ainda não é suportada.',
                 security: [{ sessionCookie: [] }],
                 parameters: [
                     {
@@ -81,6 +82,7 @@ export const todayOpenApi: Pick<
     },
     components: {
         schemas: {
+            ...todayCompositionSchemas,
             TodaySettlementSummary: object({
                 actorMemberId: uuid,
                 members: {
@@ -156,19 +158,43 @@ export const todayOpenApi: Pick<
                                             format: 'date',
                                         },
                                         amountInCents: {
-                                            type: 'integer',
-                                            minimum: 1,
-                                            maximum: Number.MAX_SAFE_INTEGER,
+                                            oneOf: [
+                                                {
+                                                    type: 'integer',
+                                                    minimum: 1,
+                                                    maximum:
+                                                        Number.MAX_SAFE_INTEGER,
+                                                },
+                                                { type: 'null' },
+                                            ],
                                         },
+                                        expectedAmountInCents: {
+                                            oneOf: [
+                                                {
+                                                    type: 'integer',
+                                                    minimum: 1,
+                                                    maximum:
+                                                        Number.MAX_SAFE_INTEGER,
+                                                },
+                                                { type: 'null' },
+                                            ],
+                                        },
+                                        valuePending: { type: 'boolean' },
                                         fulfilledAmountInCents: {
                                             type: 'integer',
                                             minimum: 0,
                                             maximum: Number.MAX_SAFE_INTEGER,
                                         },
                                         remainingAmountInCents: {
-                                            type: 'integer',
-                                            minimum: 1,
-                                            maximum: Number.MAX_SAFE_INTEGER,
+                                            oneOf: [
+                                                {
+                                                    type: 'integer',
+                                                    minimum: 1,
+                                                    maximum:
+                                                        Number.MAX_SAFE_INTEGER,
+                                                },
+                                                { type: 'null' },
+                                            ],
                                         },
                                         overdue: { type: 'boolean' },
                                     }),
@@ -201,6 +227,19 @@ export const todayOpenApi: Pick<
                 }),
             }),
             TodayResponse: object({
+                shopping: ref('TodayShoppingSource'),
+                blocks: {
+                    type: 'array',
+                    minItems: 6,
+                    maxItems: 6,
+                    items: ref('TodayBlock'),
+                },
+                capabilities: object({
+                    spaceClosureAttention: {
+                        type: 'string',
+                        enum: ['NOT_SUPPORTED'],
+                    },
+                }),
                 routine: {
                     oneOf: [
                         object({

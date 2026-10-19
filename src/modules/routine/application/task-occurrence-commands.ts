@@ -11,7 +11,6 @@ import {
     type TaskOccurrence,
 } from '../domain/task-recurrence.js';
 import { completeTask, reopenTask } from '../domain/task-completion.js';
-import type { Task } from '../domain/task.js';
 import { RoutineError } from '../domain/routine-error.js';
 export interface OccurrenceCommandInput {
     expectedRecurrenceVersion: number;
@@ -62,7 +61,7 @@ export class TaskOccurrenceCommands {
                 const changed =
                     action === 'COMPLETE'
                         ? completeTask(
-                              snapshot as Task,
+                              snapshot,
                               {
                                   personId: actor,
                                   memberId: context.actorMemberId,
@@ -70,7 +69,7 @@ export class TaskOccurrenceCommands {
                               now,
                           )
                         : action === 'REOPEN'
-                          ? reopenTask(snapshot as Task)
+                          ? reopenTask(snapshot)
                           : {
                                 ...snapshot,
                                 status: 'SKIPPED' as const,

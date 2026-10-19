@@ -11,7 +11,11 @@ import {
     expect,
     vi,
 } from 'vitest';
-import { financeBrowser, sharedFinance } from './settlement-fixture.js';
+import {
+    financeBrowser,
+    sharedFinance,
+    rewindFinanceMigrationsTo,
+} from './settlement-fixture.js';
 import {
     routineApp,
     prepareRoutineDatabase,
@@ -730,6 +734,10 @@ describe('CARD-037 recurring routine HTTP/PostgreSQL', () => {
     });
     it('paginates occurrence and rule history and safeguards empty down/up and historical down', async () => {
         await migrationSource.initialize();
+        await rewindFinanceMigrationsTo(
+            migrationSource,
+            'RoutineRecurrences1792337903897',
+        );
         await migrationSource.undoLastMigration();
         expect(
             (
@@ -787,6 +795,10 @@ describe('CARD-037 recurring routine HTTP/PostgreSQL', () => {
             ).body.items[0].type,
         ).toBe('RECURRENCE_CANCELLED');
         const before = await routineSnapshot(db);
+        await rewindFinanceMigrationsTo(
+            migrationSource,
+            'RoutineRecurrences1792337903897',
+        );
         await expect(migrationSource.undoLastMigration()).rejects.toThrow(
             /histórico/i,
         );

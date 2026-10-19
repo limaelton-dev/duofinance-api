@@ -13,6 +13,7 @@ const task: Task = {
     version: 1,
     createdAt: '2026-10-18T12:00:00Z',
     completion: null,
+    shoppingListId: null,
 };
 describe('pending task maintenance', () => {
     it('changes or removes deadline without changing responsibility or urgency', () => {

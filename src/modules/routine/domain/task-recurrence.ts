@@ -29,7 +29,10 @@ export interface TaskRecurrence {
     cancelledAt: string | null;
     cancelledOn: string | null;
 }
-export interface TaskOccurrence extends Omit<Task, 'status'> {
+export interface TaskOccurrence extends Omit<
+    Task,
+    'status' | 'shoppingListId'
+> {
     recurrenceId: string;
     scheduledDate: string;
     status: Task['status'] | 'SKIPPED';

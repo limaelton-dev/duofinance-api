@@ -1,7 +1,10 @@
 import { FinancesModule } from './modules/finances/finances.module.js';
 import { RoutineModule } from './modules/routine/routine.module.js';
+import { ShoppingModule } from './modules/shopping/shopping.module.js';
+import { mapShoppingError } from './modules/shopping/http/shopping-error.mapper.js';
 import { mapRoutineError } from './modules/routine/http/routine-error.mapper.js';
 import { TodayModule } from './composition/today/today.module.js';
+import { ShoppingTasksModule } from './composition/shopping-tasks/shopping-tasks.module.js';
 import { mapFinancesError } from './modules/finances/http/filters/finances-error.mapper.js';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
@@ -26,7 +29,9 @@ import { mapSpacesError } from './modules/spaces/http/filters/spaces-error.mappe
         IdentityModule,
         FinancesModule,
         RoutineModule,
+        ShoppingModule,
         TodayModule,
+        ShoppingTasksModule,
     ],
     controllers: [],
     providers: [
@@ -38,6 +43,7 @@ import { mapSpacesError } from './modules/spaces/http/filters/spaces-error.mappe
                     mapSpacesError,
                     mapFinancesError,
                     mapRoutineError,
+                    mapShoppingError,
                 ]),
         },
     ],

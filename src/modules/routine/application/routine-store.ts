@@ -1,4 +1,5 @@
 import type { Task } from '../domain/task.js';
+import type { LinkedTaskReference } from './ports/public/routine-linked-tasks.port.js';
 export const ROUTINE_STORE = Symbol('ROUTINE_STORE');
 export interface HistoryEvent {
     id: string;
@@ -14,6 +15,12 @@ export interface RoutineStore {
     find(space: string, id: string): Promise<Task>;
     insert(task: Task): Promise<void>;
     update(before: Task, after: Task): Promise<void>;
+    linkedTasks(
+        space: string,
+        list: string,
+        after: { createdAt: string; id: string } | null,
+        limit: number,
+    ): Promise<{ items: LinkedTaskReference[]; totalCount: number }>;
     event(event: HistoryEvent): Promise<void>;
     history(
         space: string,

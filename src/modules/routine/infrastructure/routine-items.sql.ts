@@ -7,7 +7,7 @@ export const itemConditionsSql = {
     noDeadline: `status='PENDING' AND deadline_date IS NULL`,
 };
 export const itemSortSql = `concat(CASE WHEN ${itemConditionsSql.overdue} THEN '0' WHEN ${itemConditionsSql.today} THEN '1' WHEN deadline_date IS NOT NULL THEN '2' ELSE '3' END,':',CASE urgency WHEN 'URGENT' THEN '0' WHEN 'HIGH' THEN '1' WHEN 'NORMAL' THEN '2' ELSE '3' END,':',coalesce(deadline_date::text,'9999-12-31'),':',coalesce(deadline_time,'23:59'),':',identity)`;
-const jsonTask = `jsonb_build_object('id',t.id,'spaceId',t.space_id,'description',t.description,'creator',jsonb_build_object('personId',t.creator_person_id,'memberId',t.creator_member_id),'assignee',CASE WHEN t.assignee_person_id IS NULL THEN NULL ELSE jsonb_build_object('personId',t.assignee_person_id,'memberId',t.assignee_member_id) END,'deadline',CASE WHEN t.deadline_date IS NULL THEN NULL ELSE jsonb_build_object('date',t.deadline_date,'time',t.deadline_time) END,'urgency',t.urgency,'status',t.status,'version',t.version,'createdAt',to_char(t.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),'completion',t.completion,'kind','ONE_OFF')`;
+const jsonTask = `jsonb_build_object('id',t.id,'spaceId',t.space_id,'description',t.description,'creator',jsonb_build_object('personId',t.creator_person_id,'memberId',t.creator_member_id),'assignee',CASE WHEN t.assignee_person_id IS NULL THEN NULL ELSE jsonb_build_object('personId',t.assignee_person_id,'memberId',t.assignee_member_id) END,'deadline',CASE WHEN t.deadline_date IS NULL THEN NULL ELSE jsonb_build_object('date',t.deadline_date,'time',t.deadline_time) END,'urgency',t.urgency,'status',t.status,'version',t.version,'createdAt',to_char(t.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),'completion',t.completion,'shoppingListId',t.shopping_list_id,'kind','ONE_OFF')`;
 export const routineSourceSql = `WITH rules AS MATERIALIZED (
     SELECT r.*,r.snapshot->'rule' rule,r.snapshot->>'urgency' urgency,r.snapshot->'deadline' <> 'null'::jsonb has_deadline,r.snapshot->'deadline'->>'time' deadline_time,
     greatest(r.starts_on,coalesce($8::date,r.starts_on)) lo,
@@ -16,8 +16,8 @@ export const routineSourceSql = `WITH rules AS MATERIALIZED (
 ), ranges AS MATERIALIZED (
     SELECT r.*,
     greatest(lo,CASE WHEN $7='TODAY' THEN $3::date WHEN $7='UPCOMING' THEN $3::date+1 ELSE lo END) match_lo,
-    least(hi,CASE WHEN $7 IN ('TODAY','OVERDUE') OR ($7='ATTENTION' AND urgency<>'URGENT') THEN CASE WHEN $7='OVERDUE' AND (deadline_time IS NULL OR ($3::date::text || ' ' || deadline_time)::timestamp >= ($4::timestamptz AT TIME ZONE 'America/Sao_Paulo')) THEN $3::date-1 ELSE $3::date END ELSE hi END) match_hi
-    FROM rules r WHERE ($7::text IS NULL OR $7='URGENT' AND urgency='URGENT' OR $7 IN ('TODAY','OVERDUE','UPCOMING') AND has_deadline OR $7='NO_DEADLINE' AND NOT has_deadline OR $7='ATTENTION' AND (has_deadline OR urgency='URGENT'))
+    least(hi,CASE WHEN $7 IN ('TODAY','OVERDUE') OR ($7 IN ('ATTENTION','NEEDS_ATTENTION') AND urgency<>'URGENT') THEN CASE WHEN $7 IN ('OVERDUE','NEEDS_ATTENTION') AND (deadline_time IS NULL OR ($3::date::text || ' ' || deadline_time)::timestamp >= ($4::timestamptz AT TIME ZONE 'America/Sao_Paulo')) THEN $3::date-1 ELSE $3::date END ELSE hi END) match_hi
+    FROM rules r WHERE ($7::text IS NULL OR $7='URGENT' AND urgency='URGENT' OR $7 IN ('TODAY','OVERDUE','UPCOMING') AND has_deadline OR $7='NO_DEADLINE' AND NOT has_deadline OR $7 IN ('ATTENTION','NEEDS_ATTENTION') AND (has_deadline OR urgency='URGENT'))
 ), materialized AS MATERIALIZED (
     SELECT o.snapshot || jsonb_build_object('kind','OCCURRENCE','materialized',true,'recurrenceVersion',r.version) item,o.recurrence_id::text || '/' || o.scheduled_date::text identity
     FROM routine_task_occurrences o JOIN routine_task_recurrences r ON r.id=o.recurrence_id AND r.space_id=o.space_id WHERE o.space_id=$1
@@ -29,7 +29,7 @@ export const routineSourceSql = `WITH rules AS MATERIALIZED (
     FROM facts WHERE ($6='ALL' OR item->'assignee'->>'personId'=$2) AND ($5='ALL' OR item->>'status'=$5)
     AND ($8::date IS NULL OR coalesce((item->>'scheduledDate')::date,(item->'deadline'->>'date')::date)>=$8::date) AND ($9::date IS NULL OR coalesce((item->>'scheduledDate')::date,(item->'deadline'->>'date')::date)<=$9::date)
 ), filtered_facts AS MATERIALIZED (
-    SELECT * FROM fact_values WHERE $7::text IS NULL OR CASE $7 WHEN 'TODAY' THEN ${itemConditionsSql.today} WHEN 'OVERDUE' THEN ${itemConditionsSql.overdue} WHEN 'URGENT' THEN ${itemConditionsSql.urgent} WHEN 'UPCOMING' THEN ${itemConditionsSql.upcoming} WHEN 'NO_DEADLINE' THEN ${itemConditionsSql.noDeadline} WHEN 'ATTENTION' THEN (${itemConditionsSql.overdue}) OR (${itemConditionsSql.today}) OR (${itemConditionsSql.urgent}) END
+    SELECT * FROM fact_values WHERE $7::text IS NULL OR CASE $7 WHEN 'TODAY' THEN ${itemConditionsSql.today} WHEN 'OVERDUE' THEN ${itemConditionsSql.overdue} WHEN 'URGENT' THEN ${itemConditionsSql.urgent} WHEN 'UPCOMING' THEN ${itemConditionsSql.upcoming} WHEN 'NO_DEADLINE' THEN ${itemConditionsSql.noDeadline} WHEN 'ATTENTION' THEN (${itemConditionsSql.overdue}) OR (${itemConditionsSql.today}) OR (${itemConditionsSql.urgent}) WHEN 'NEEDS_ATTENTION' THEN (${itemConditionsSql.overdue}) OR (${itemConditionsSql.urgent}) END
 )`;
 const overdueHigh = `CASE WHEN deadline_time IS NOT NULL AND ($3::date::text || ' ' || deadline_time)::timestamp < ($4::timestamptz AT TIME ZONE 'America/Sao_Paulo') THEN $3::date ELSE $3::date-1 END`;
 export const routineCountsSql = `${routineSourceSql}, existing AS (
