@@ -438,6 +438,7 @@ describe('CARD-011 PostgreSQL transaction and migration compatibility', () => {
                     external_liability_id: _externalLiabilityId,
                     recognized_amount_in_cents: _recognized,
                     occurrence_id: _occurrenceId,
+                    closure_agreement_id: _closureAgreementId,
                     ...legacy
                 }: Record<string, unknown>) => legacy,
             ),

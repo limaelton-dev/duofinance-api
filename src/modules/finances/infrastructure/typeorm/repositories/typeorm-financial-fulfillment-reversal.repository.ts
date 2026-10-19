@@ -33,6 +33,7 @@ import {
 } from '../entities/installment.orm-entity.js';
 import { FinancialExternalLiabilitySettlementOrmEntity } from '../entities/external-liability-settlement.orm-entity.js';
 import { financialFulfillmentReversals } from '../queries/financial-fulfillment-reversal-projection.js';
+import { assertFinancialClosureOriginOpen } from './assert-financial-closure-origin-open.js';
 
 @Injectable()
 export class TypeOrmFinancialFulfillmentReversalRepository implements FinancialFulfillmentReversalRepository {
@@ -116,6 +117,16 @@ export class TypeOrmFinancialFulfillmentReversalRepository implements FinancialF
             installmentId:
                 root.modality === 'INSTALLMENT' ? row.occurrence_id : null,
         };
+        if (
+            original.kind !== 'EXTERNAL_SETTLEMENT' &&
+            original.occurrenceId !== null
+        )
+            await assertFinancialClosureOriginOpen(
+                manager,
+                spaceId,
+                commitmentId,
+                original.occurrenceId,
+            );
         let target: FinancialReversalTarget = {};
         let globalPayoff: FinancialFulfillmentReversalState['globalPayoff'] =
             null;
@@ -289,6 +300,16 @@ export class TypeOrmFinancialFulfillmentReversalRepository implements FinancialF
         const manager = this.managers.get();
         if (!manager.queryRunner?.isTransactionActive)
             throw new Error('Financial reversals require a transaction');
+        if (
+            state.original.kind !== 'EXTERNAL_SETTLEMENT' &&
+            state.original.occurrenceId !== null
+        )
+            await assertFinancialClosureOriginOpen(
+                manager,
+                state.origin.spaceId,
+                state.origin.id,
+                state.original.occurrenceId,
+            );
         const impact = validateFinancialReversal(state, reversal.amountInCents);
         if (
             reversal.spaceId !== state.origin.spaceId ||

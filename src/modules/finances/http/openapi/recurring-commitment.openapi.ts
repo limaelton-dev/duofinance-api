@@ -373,9 +373,10 @@ const recurringCommitment = object({
     },
     version,
     scope: { type: 'string', enum: ['PERSONAL', 'SHARED'] },
+    closureCutoffDate: date,
     nextOccurrence: {
         description:
-            'Projeção da série a partir de hoje; consulte occurrences para o estado materializado.',
+            'Projeção da série a partir de hoje, limitada ao corte vigente de encerramento; consulte occurrences para os fatos materializados.',
         oneOf: [
             object({
                 referenceDate: date,
@@ -404,6 +405,7 @@ recurringCommitment.required = recurringCommitment.required!.filter(
             'settlementRuleSnapshot',
             'settlementRuleSourceVersion',
             'referenceDate',
+            'closureCutoffDate',
         ].includes(name),
 );
 const options = object({
@@ -485,6 +487,7 @@ const command = (operationId: string, request: string) => ({
             'IDEMPOTENCY_KEY_REUSED',
             'EXPENSE_OPTIONS_CHANGED',
             'OCCURRENCE_VALUE_REQUIRED',
+            'CLOSURE_CUTOFF_REACHED',
         ),
     },
 });
@@ -876,6 +879,7 @@ export const recurringCommitmentOpenApi: Pick<
                             'Versões, participantes e sugestão atual.',
                         ),
                         404: error('FINANCIAL_COMMITMENT_NOT_FOUND'),
+                        409: error('CLOSURE_CUTOFF_REACHED'),
                     },
                 },
             },
@@ -901,6 +905,7 @@ export const recurringCommitmentOpenApi: Pick<
                             'OCCURRENCE_ALREADY_RESOLVED',
                             'IDEMPOTENCY_KEY_REUSED',
                             'EXPENSE_OPTIONS_CHANGED',
+                            'CLOSURE_CUTOFF_REACHED',
                         ),
                     },
                 },

@@ -59,7 +59,7 @@ export class RoutineCommands {
         work: (context: SpaceParticipantsContext, now: string) => Promise<T>,
     ): Promise<T> {
         return this.uow.execute(async () => {
-            const context = await this.participants.lockForWrite(
+            await this.participants.read(
                 PersonId.from(actor),
                 SpaceId.from(space),
             );
@@ -73,6 +73,10 @@ export class RoutineCommands {
                     throw new RoutineError('IDEMPOTENCY_KEY_REUSED');
                 return old.result as T;
             }
+            const context = await this.participants.lockForWrite(
+                PersonId.from(actor),
+                SpaceId.from(space),
+            );
             const now = this.clock.now().toISOString();
             const result = await work(context, now);
             await this.store.finish({

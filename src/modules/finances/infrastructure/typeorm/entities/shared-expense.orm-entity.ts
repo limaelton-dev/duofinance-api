@@ -28,7 +28,7 @@ const money = (column: string, positive = false) =>
 @Unique('UQ_financial_commitments_space_id', ['spaceId', 'id'])
 @Check(
     'CHK_financial_commitments_scope',
-    `kind IN ('EXPENSE','INCOME') AND modality IN ('ONE_TIME','RECURRING','INSTALLMENT') AND version > 0 AND length(description) BETWEEN 1 AND 160 AND description = btrim(description) AND (personal_owner_person_id IS NULL OR personal_owner_person_id = created_by)`,
+    `kind IN ('EXPENSE','INCOME') AND modality IN ('ONE_TIME','RECURRING','INSTALLMENT') AND version > 0 AND length(description) BETWEEN 1 AND 160 AND description = btrim(description) AND (personal_owner_person_id IS NULL OR modality <> 'ONE_TIME' OR personal_owner_person_id=created_by)`,
 )
 @Index('IDX_financial_commitments_space_registered', [
     'spaceId',
@@ -310,13 +310,17 @@ export class SettlementCycleOrmEntity {
 @Unique('UQ_obligations_space_id', ['spaceId', 'id'])
 @Index('UQ_obligations_open_one_time', ['spaceId', 'commitmentId'], {
     unique: true,
-    where: 'remaining_amount_in_cents > 0 AND occurrence_id IS NULL',
+    where: 'remaining_amount_in_cents > 0 AND occurrence_id IS NULL AND closure_agreement_id IS NULL',
 })
 @Index('UQ_obligations_open_occurrence', ['spaceId', 'occurrenceId'], {
     unique: true,
-    where: 'remaining_amount_in_cents > 0 AND occurrence_id IS NOT NULL',
+    where: 'remaining_amount_in_cents > 0 AND occurrence_id IS NOT NULL AND closure_agreement_id IS NULL',
 })
 @Index('IDX_obligations_space_origin', ['spaceId', 'commitmentId'])
+@Index('UQ_obligations_closure_agreement', ['closureAgreementId'], {
+    unique: true,
+    where: 'remaining_amount_in_cents > 0',
+})
 @Index('IDX_obligations_space_cycle', ['spaceId', 'cycleId'])
 @Check(
     'CHK_obligations_state',
@@ -324,7 +328,7 @@ export class SettlementCycleOrmEntity {
 )
 @Check(
     'CHK_obligations_origin_xor',
-    `num_nonnulls(disbursement_id, receipt_id, external_liability_id) = 1`,
+    `num_nonnulls(disbursement_id, receipt_id, external_liability_id, closure_agreement_id) = 1`,
 )
 @ForeignKey(
     () => FinancialExternalLiabilityOrmEntity,
@@ -369,12 +373,23 @@ export class SettlementCycleOrmEntity {
     ['spaceId', 'id'],
     { name: 'FK_obligations_cycle', onDelete: 'RESTRICT' },
 )
+@ForeignKey(
+    'financial_closure_effects',
+    ['spaceId', 'commitmentId', 'closureAgreementId'],
+    ['spaceId', 'originId', 'id'],
+    {
+        name: 'FK_obligations_closure_agreement',
+        onDelete: 'RESTRICT',
+    },
+)
 export class InterMemberObligationOrmEntity {
     @PrimaryColumn('uuid') id!: string;
     @Column({ name: 'space_id', type: 'uuid' }) spaceId!: string;
     @Column({ name: 'commitment_id', type: 'uuid' }) commitmentId!: string;
     @Column({ name: 'occurrence_id', type: 'uuid', nullable: true })
     occurrenceId!: string | null;
+    @Column({ name: 'closure_agreement_id', type: 'uuid', nullable: true })
+    closureAgreementId!: string | null;
     @Column({ name: 'disbursement_id', type: 'uuid', nullable: true })
     disbursementId!: string | null;
     @Column({ name: 'receipt_id', type: 'uuid', nullable: true })

@@ -20,6 +20,7 @@ export interface RecurringCommitmentRepository {
         spaceId: string,
         month: string,
         after: string | null,
+        closureCutoffDate?: string | null,
     ): Promise<{
         items: { commitment: RecurringCommitment; referenceDate: string }[];
         totalCount: number;

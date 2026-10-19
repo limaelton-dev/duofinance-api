@@ -1,4 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import {
+    SPACE_CLOSURE_PORT,
+    type SpaceClosurePort,
+} from '../../modules/spaces/application/ports/public/space-closure.port.js';
+import { isPostgresqlUnavailable } from '../../shared/technical/database/postgresql-unavailable.js';
 import {
     SPACE_ACCESS_PORT,
     type SpaceAccessPort,
@@ -59,6 +64,9 @@ export class TodayQuery {
         private readonly routine: RoutineTodayQueryPort,
         @Inject(SHOPPING_ATTENTION_QUERY_PORT)
         private readonly shopping: ShoppingAttentionQueryPort,
+        @Optional()
+        @Inject(SPACE_CLOSURE_PORT)
+        private readonly closures?: SpaceClosurePort,
     ) {}
 
     async execute(actor: PersonId, space: SpaceId): Promise<TodayResponse> {
@@ -88,6 +96,7 @@ export class TodayQuery {
         const financial = sourceResult(outcomes[0]);
         const tasks = sourceResult(outcomes[1]);
         const shopping = sourceResult(outcomes[2]);
+        const closure = await this.readClosure(actor, space, authorized.type);
         for (const source of [financial, tasks, shopping]) {
             if (source.status !== 'AVAILABLE') continue;
             if (
@@ -140,8 +149,40 @@ export class TodayQuery {
                     ? { status: 'AVAILABLE', data: tasks.data.legacy }
                     : tasks,
             shopping,
-            blocks: todayBlocks(confirmed.type, financial, tasks, shopping),
-            capabilities: { spaceClosureAttention: 'NOT_SUPPORTED' },
+            closure,
+            blocks: todayBlocks(
+                confirmed.type,
+                financial,
+                tasks,
+                shopping,
+                closure,
+            ),
+            capabilities: { spaceClosureAttention: 'SUPPORTED' },
         };
+    }
+    private async readClosure(
+        actor: PersonId,
+        space: SpaceId,
+        type: 'PERSONAL' | 'SHARED',
+    ): Promise<TodayResponse['closure']> {
+        try {
+            const data =
+                type === 'SHARED' && this.closures
+                    ? await this.closures.read(actor.value, space.value)
+                    : null;
+            if (data && data.spaceId !== space.value)
+                throw new SpacesDomainError('SPACE_NOT_FOUND');
+            return { status: 'AVAILABLE', data };
+        } catch (error) {
+            if (!isPostgresqlUnavailable(error)) throw error;
+            return {
+                status: 'UNAVAILABLE',
+                error: {
+                    code: 'SPACE_CLOSURE_UNAVAILABLE',
+                    message:
+                        'Não foi possível carregar o encerramento. Tente novamente.',
+                },
+            };
+        }
     }
 }

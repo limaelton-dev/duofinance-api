@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ROUTINE_CLOSURE_PORT } from './application/ports/public/routine-closure.port.js';
+import { TypeOrmRoutineClosure } from './infrastructure/typeorm-routine-closure.js';
 import {
     TaskRecurrenceOrmEntity,
     TaskOccurrenceOrmEntity,
@@ -56,6 +58,7 @@ import { RoutineTodayQuery } from './application/routine-today-query.js';
         ]),
     ],
     providers: [
+        { provide: ROUTINE_CLOSURE_PORT, useClass: TypeOrmRoutineClosure },
         {
             provide: TASK_RECURRENCE_STORE,
             useClass: TypeOrmTaskRecurrenceStore,
@@ -88,6 +91,7 @@ import { RoutineTodayQuery } from './application/routine-today-query.js';
         TaskShoppingListController,
     ],
     exports: [
+        ROUTINE_CLOSURE_PORT,
         ROUTINE_ATTENTION_QUERY,
         ROUTINE_LINKED_TASKS_PORT,
         ROUTINE_TODAY_QUERY_PORT,

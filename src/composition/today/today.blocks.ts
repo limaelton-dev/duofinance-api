@@ -8,6 +8,7 @@ import type {
     TodayBlock,
     TodayPreviewItem,
     TodaySource,
+    TodayResponse,
 } from './today.response.js';
 
 type Preview = { items: TodayPreviewItem[]; totalCount: number };
@@ -16,6 +17,23 @@ type Cycle = NonNullable<
     FinanceTodayCompositionRead['legacy']['settlements']
 >['overdueCycles']['items'][number];
 
+function closureLabel(action?: string): string {
+    switch (action) {
+        case 'REVIEW_PLAN':
+            return 'Revisar proposta de encerramento';
+        case 'WAIT_APPROVAL':
+            return 'Aguardando aprovação do plano de encerramento';
+        case 'REVIEW_CLOSURE':
+        case 'RESOLVE_FINANCES':
+            return 'Revisar resumo final do encerramento';
+        case 'WAIT_CANCELLATION':
+            return 'Aguardando concordância para cancelar o encerramento';
+        case 'APPROVE_CANCELLATION':
+            return 'Revisar pedido de cancelamento do encerramento';
+        default:
+            return 'Revisar plano de encerramento';
+    }
+}
 function financialItem(item: FinancialTodayItem): TodayPreviewItem {
     return {
         type: 'FINANCIAL_COMMITMENT',
@@ -98,6 +116,7 @@ export function todayBlocks(
     >,
     routine: TodaySource<RoutineTodayRead, 'ROUTINE_TODAY_UNAVAILABLE'>,
     shopping: TodaySource<ShoppingAttentionRead, 'SHOPPING_TODAY_UNAVAILABLE'>,
+    closure?: TodayResponse['closure'],
 ): TodayBlock[] {
     const finance = financial.status === 'AVAILABLE' ? financial.data : null;
     const tasks = routine.status === 'AVAILABLE' ? routine.data : null;
@@ -129,6 +148,38 @@ export function todayBlocks(
         : null;
     return [
         block('ATTENTION', [
+            ...(closure
+                ? [
+                      closure.status === 'AVAILABLE'
+                          ? {
+                                items:
+                                    closure.data?.spaceStatus === 'CLOSING'
+                                        ? [
+                                              {
+                                                  type: 'SPACE_CLOSURE' as const,
+                                                  reference: {
+                                                      type: 'SPACE_CLOSURE' as const,
+                                                      processId:
+                                                          closure.data
+                                                              .processId,
+                                                  },
+                                                  label: closureLabel(
+                                                      closure.data
+                                                          .actorNextAction,
+                                                  ),
+                                                  date: closure.data.cutoffDate,
+                                                  details: closure.data,
+                                              },
+                                          ]
+                                        : [],
+                                totalCount:
+                                    closure.data?.spaceStatus === 'CLOSING'
+                                        ? 1
+                                        : 0,
+                            }
+                          : null,
+                  ]
+                : []),
             financeAttention,
             tasks ? mapPreview(tasks.attention, taskItem) : null,
         ]),

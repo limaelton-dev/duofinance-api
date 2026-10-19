@@ -1,4 +1,5 @@
 import type { SpaceAccessContext } from '../../modules/spaces/application/ports/public/space-access.port.js';
+import type { SpaceClosureView } from '../../modules/spaces/application/ports/public/space-closure.port.js';
 import type {
     FinanceTodayCompositionRead,
     FinancialTodayItem,
@@ -51,7 +52,8 @@ export type TodayPreviewItem =
           { proposalId: string; commitmentId: string },
           ProposalPreview
       >
-    | PreviewItem<'SETTLEMENT_CYCLE', { cycleId: string }, CyclePreview>;
+    | PreviewItem<'SETTLEMENT_CYCLE', { cycleId: string }, CyclePreview>
+    | PreviewItem<'SPACE_CLOSURE', { processId: string }, SpaceClosureView>;
 
 export interface TodayBlock {
     kind:
@@ -83,5 +85,6 @@ export interface TodayResponse {
     >;
     shopping: TodaySource<ShoppingAttentionRead, 'SHOPPING_TODAY_UNAVAILABLE'>;
     blocks: TodayBlock[];
-    capabilities: { spaceClosureAttention: 'NOT_SUPPORTED' };
+    closure: TodaySource<SpaceClosureView | null, 'SPACE_CLOSURE_UNAVAILABLE'>;
+    capabilities: { spaceClosureAttention: 'SUPPORTED' };
 }

@@ -1,4 +1,10 @@
 import { financialChangeEntities } from './infrastructure/typeorm/entities/financial-change.orm-entity.js';
+import { FINANCIAL_CLOSURE_DIAGNOSTICS_PORT } from './application/ports/public/financial-closure-diagnostics.port.js';
+import { FINANCIAL_CLOSURE_DESTINATIONS_PORT } from './application/ports/public/financial-closure-destinations.port.js';
+import { FinancialClosureEffectOrmEntity } from './infrastructure/typeorm/entities/financial-closure-effect.orm-entity.js';
+import { TypeOrmFinancialClosureDestinations } from './infrastructure/typeorm/repositories/typeorm-financial-closure-destinations.js';
+import { ClosureResolutionAudit } from './infrastructure/typeorm/repositories/closure-resolution-audit.js';
+import { TypeOrmFinancialClosureDiagnostics } from './infrastructure/typeorm/queries/typeorm-financial-closure-diagnostics.js';
 import {
     FinancialCommitmentAdjustmentOrmEntity,
     FinancialCommitmentCancellationOrmEntity,
@@ -248,6 +254,7 @@ import {
         SpacesModule,
         TypeOrmModule.forFeature([
             ...financialChangeEntities,
+            FinancialClosureEffectOrmEntity,
             FinancialCommitmentAdjustmentOrmEntity,
             FinancialCommitmentCancellationOrmEntity,
             FinancialFulfillmentReversalOrmEntity,
@@ -297,6 +304,15 @@ import {
         SettlementTransferController,
     ],
     providers: [
+        ClosureResolutionAudit,
+        {
+            provide: FINANCIAL_CLOSURE_DESTINATIONS_PORT,
+            useClass: TypeOrmFinancialClosureDestinations,
+        },
+        {
+            provide: FINANCIAL_CLOSURE_DIAGNOSTICS_PORT,
+            useClass: TypeOrmFinancialClosureDiagnostics,
+        },
         FinancialCommitmentChangesHandler,
         FinancialCommitmentAdjustments,
         FinancialCommitmentCancellations,
@@ -530,6 +546,8 @@ import {
         },
     ],
     exports: [
+        FINANCIAL_CLOSURE_DESTINATIONS_PORT,
+        FINANCIAL_CLOSURE_DIAGNOSTICS_PORT,
         SETTLEMENT_CYCLE_QUERY_PORT,
         FINANCE_TODAY_QUERY_PORT,
         FINANCE_TODAY_COMPOSITION_QUERY_PORT,

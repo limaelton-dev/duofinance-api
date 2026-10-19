@@ -295,12 +295,15 @@ export class FinancialCommitmentChangesHandler {
                     result = isAdjustment
                         ? await this.adjustments.applyApproved(
                               c,
-                              parseZodInput(
-                                  adjustmentSchema,
-                                  'adjustment' in configuration
-                                      ? configuration.adjustment
-                                      : null,
-                              ),
+                              {
+                                  ...parseZodInput(
+                                      adjustmentSchema,
+                                      'adjustment' in configuration
+                                          ? configuration.adjustment
+                                          : null,
+                                  ),
+                                  expectedSpaceVersion: c.expectedSpaceVersion,
+                              },
                               approval,
                           )
                         : await this.apply(

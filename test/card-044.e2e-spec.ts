@@ -94,7 +94,7 @@ describe('CARD-044 Today cross-module composition HTTP/PostgreSQL', () => {
                     status: 'AVAILABLE',
                     data: { items: [], totalCount: 0, activeListCount: 0 },
                 },
-                capabilities: { spaceClosureAttention: 'NOT_SUPPORTED' },
+                capabilities: { spaceClosureAttention: 'SUPPORTED' },
             });
             expect(result.blocks.map((value) => value.kind)).toEqual([
                 'ATTENTION',
@@ -618,7 +618,7 @@ describe('CARD-044 Today cross-module composition HTTP/PostgreSQL', () => {
     });
 
     it.each(['finance', 'routine', 'shopping', 'all'] as const)(
-        'isolates %s source failures without replacing unavailable data with zeros',
+        'isolates %s legacy source failures while preserving closure availability',
         async (failed) => {
             const f = await sharedFinance(app),
                 base = `/v2/spaces/${f.space}`;
@@ -656,7 +656,10 @@ describe('CARD-044 Today cross-module composition HTTP/PostgreSQL', () => {
                 expect(
                     result.blocks.every(
                         (value) =>
-                            value.status === 'UNAVAILABLE' &&
+                            value.status ===
+                                (value.kind === 'ATTENTION'
+                                    ? 'PARTIAL'
+                                    : 'UNAVAILABLE') &&
                             value.totalCount === null &&
                             value.knownTotalCount === 0 &&
                             value.hasMore === null,

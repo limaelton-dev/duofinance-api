@@ -11,6 +11,15 @@ import {
 @Entity({ name: 'space_invitations' })
 @Unique('UQ_space_invitations_id_space', ['id', 'spaceId'])
 @ForeignKey(
+    'space_closure_processes',
+    ['closureProcessId', 'spaceId'],
+    ['id', 'spaceId'],
+    {
+        name: 'FK_space_invitations_closure_process',
+        onDelete: 'RESTRICT',
+    },
+)
+@ForeignKey(
     'space_invitations',
     ['replacedByInvitationId', 'spaceId'],
     ['id', 'spaceId'],
@@ -43,10 +52,18 @@ import {
         AND "cancellation_reason" = 'REPLACED'
         AND "replaced_by_invitation_id" IS NOT NULL
         AND "replaced_by_invitation_id" <> "id"
+        AND "closure_process_id" IS NULL
+    ) OR (
+        "status" = 'CANCELLED'
+        AND "cancellation_reason" IS NOT NULL
+        AND "cancellation_reason" = 'SPACE_CLOSURE'
+        AND "replaced_by_invitation_id" IS NULL
+        AND "closure_process_id" IS NOT NULL
     ) OR (
         "status" <> 'CANCELLED'
         AND "cancellation_reason" IS NULL
         AND "replaced_by_invitation_id" IS NULL
+        AND "closure_process_id" IS NULL
     )`,
 )
 @Index('UQ_space_invitations_pending', ['spaceId'], {
@@ -94,7 +111,7 @@ export class SpaceInvitationOrmEntity {
         length: 16,
         nullable: true,
     })
-    cancellationReason!: 'REPLACED' | null;
+    cancellationReason!: 'REPLACED' | 'SPACE_CLOSURE' | null;
 
     @Column({
         name: 'replaced_by_invitation_id',
@@ -102,4 +119,7 @@ export class SpaceInvitationOrmEntity {
         nullable: true,
     })
     replacedByInvitationId!: string | null;
+
+    @Column({ name: 'closure_process_id', type: 'uuid', nullable: true })
+    closureProcessId!: string | null;
 }

@@ -31,7 +31,7 @@ export class InterMemberObligation {
         readonly id: string,
         readonly spaceId: string,
         readonly originCommitmentId: string,
-        readonly originDisbursementId: string,
+        readonly originDisbursementId: string | null,
         readonly debtorMemberId: string,
         readonly creditorMemberId: string,
         readonly originalAmountInCents: number,
@@ -50,8 +50,15 @@ export class InterMemberObligation {
         readonly waived = false,
         readonly occurrenceId: string | null = null,
         readonly correctionCauseId: string | null = null,
+        readonly originClosureAgreementId: string | null = null,
     ) {
         if (
+            (originClosureAgreementId === null && !originDisbursementId) ||
+            (originClosureAgreementId !== null &&
+                (!originClosureAgreementId ||
+                    originDisbursementId !== null ||
+                    originExternalLiabilityId !== null ||
+                    occurrenceId !== null)) ||
             debtorMemberId === creditorMemberId ||
             Money.from(originalAmountInCents).amountInCents === 0 ||
             !Number.isSafeInteger(remainingAmountInCents) ||
@@ -120,6 +127,8 @@ export class InterMemberObligation {
             this.originExternalLiabilityId,
             this.waived,
             this.occurrenceId,
+            this.correctionCauseId,
+            this.originClosureAgreementId,
         );
     }
     applySettlement(
@@ -158,6 +167,8 @@ export class InterMemberObligation {
             this.originExternalLiabilityId,
             this.waived,
             this.occurrenceId,
+            this.correctionCauseId,
+            this.originClosureAgreementId,
         );
     }
     reconcile(
@@ -166,6 +177,8 @@ export class InterMemberObligation {
         causeFulfillmentId: string,
         registeredAt: string,
     ): InterMemberObligation {
+        if (this.originClosureAgreementId)
+            throw new FinancesError('VALIDATION_ERROR', ['obligationId']);
         Money.from(remainingAmountInCents);
         const settled =
             this.recognizedAmountInCents - this.remainingAmountInCents;
@@ -203,6 +216,8 @@ export class InterMemberObligation {
             this.originExternalLiabilityId,
             this.waived && remainingAmountInCents === 0,
             this.occurrenceId,
+            this.correctionCauseId,
+            this.originClosureAgreementId,
         );
     }
     waive(
@@ -245,6 +260,8 @@ export class InterMemberObligation {
             this.originExternalLiabilityId,
             remaining === 0,
             this.occurrenceId,
+            this.correctionCauseId,
+            this.originClosureAgreementId,
         );
     }
     reverseResolution(
@@ -285,6 +302,8 @@ export class InterMemberObligation {
             this.originExternalLiabilityId,
             this.waived && remainingAmountInCents === 0,
             this.occurrenceId,
+            this.correctionCauseId,
+            this.originClosureAgreementId,
         );
     }
 }

@@ -42,7 +42,7 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
         const m = transaction(this.provider);
         if (lock) {
             const cycles: { id: string }[] = await m.query(
-                `SELECT DISTINCT cycle_id AS id FROM inter_member_obligations WHERE space_id=$1 AND commitment_id=$2 AND occurrence_id IS NOT DISTINCT FROM $3::uuid AND cycle_id IS NOT NULL ORDER BY cycle_id`,
+                `SELECT DISTINCT cycle_id AS id FROM inter_member_obligations WHERE space_id=$1 AND commitment_id=$2 AND occurrence_id IS NOT DISTINCT FROM $3::uuid AND closure_agreement_id IS NULL AND cycle_id IS NOT NULL ORDER BY cycle_id`,
                 [spaceId, commitmentId, occurrenceId],
             );
             for (const cycle of cycles)
@@ -54,7 +54,7 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
         const query = m
             .createQueryBuilder(InterMemberObligationOrmEntity, 'o')
             .where(
-                'o.space_id=:spaceId AND o.commitment_id=:commitmentId AND o.occurrence_id IS NOT DISTINCT FROM :occurrenceId',
+                'o.space_id=:spaceId AND o.commitment_id=:commitmentId AND o.occurrence_id IS NOT DISTINCT FROM :occurrenceId AND o.closure_agreement_id IS NULL',
                 {
                     spaceId,
                     commitmentId,
@@ -99,17 +99,17 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
             );
         }
         const chronology: { id: string }[] = await m.query(
-            `SELECT o.id FROM inter_member_obligations o LEFT JOIN financial_disbursements d ON d.space_id=o.space_id AND d.commitment_id=o.commitment_id AND d.id=o.disbursement_id LEFT JOIN financial_receipts r ON r.space_id=o.space_id AND r.commitment_id=o.commitment_id AND r.id=o.receipt_id LEFT JOIN financial_external_liabilities e ON e.space_id=o.space_id AND e.commitment_id=o.commitment_id AND e.id=o.external_liability_id WHERE o.space_id=$1 AND o.commitment_id=$2 AND o.occurrence_id IS NOT DISTINCT FROM $3::uuid ORDER BY COALESCE(d.sequence,r.sequence,e.sequence),o.registered_at,o.id`,
+            `SELECT o.id FROM inter_member_obligations o LEFT JOIN financial_disbursements d ON d.space_id=o.space_id AND d.commitment_id=o.commitment_id AND d.id=o.disbursement_id LEFT JOIN financial_receipts r ON r.space_id=o.space_id AND r.commitment_id=o.commitment_id AND r.id=o.receipt_id LEFT JOIN financial_external_liabilities e ON e.space_id=o.space_id AND e.commitment_id=o.commitment_id AND e.id=o.external_liability_id WHERE o.space_id=$1 AND o.commitment_id=$2 AND o.occurrence_id IS NOT DISTINCT FROM $3::uuid AND o.closure_agreement_id IS NULL ORDER BY COALESCE(d.sequence,r.sequence,e.sequence),o.registered_at,o.id`,
             [spaceId, commitmentId, occurrenceId],
         );
         const order = new Map(chronology.map((row, index) => [row.id, index]));
         obligations.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
         const settlements: OriginSettlement[] = await m.query(
-            `SELECT t.payer_member_id AS "payerMemberId",t.recipient_member_id AS "recipientMemberId",a.amount_in_cents::text AS "amountInCents" FROM settlement_allocations a JOIN settlement_transfers t ON t.space_id=a.space_id AND t.id=a.transfer_id JOIN inter_member_obligations o ON o.space_id=a.space_id AND o.id=a.obligation_id WHERE o.space_id=$1 AND o.commitment_id=$2 AND o.occurrence_id IS NOT DISTINCT FROM $3::uuid
+            `SELECT t.payer_member_id AS "payerMemberId",t.recipient_member_id AS "recipientMemberId",a.amount_in_cents::text AS "amountInCents" FROM settlement_allocations a JOIN settlement_transfers t ON t.space_id=a.space_id AND t.id=a.transfer_id JOIN inter_member_obligations o ON o.space_id=a.space_id AND o.id=a.obligation_id WHERE o.space_id=$1 AND o.commitment_id=$2 AND o.occurrence_id IS NOT DISTINCT FROM $3::uuid AND o.closure_agreement_id IS NULL
             UNION ALL
-            SELECT o.debtor_member_id AS "payerMemberId",o.creditor_member_id AS "recipientMemberId",ch.snapshot->>'appliedAmountInCents' AS "amountInCents" FROM inter_member_obligation_changes ch JOIN inter_member_obligations o ON o.space_id=ch.space_id AND o.id=ch.obligation_id WHERE o.space_id=$1 AND o.commitment_id=$2 AND o.occurrence_id IS NOT DISTINCT FROM $3::uuid AND ch.type IN ('OFFSET_APPLIED','WAIVED')
+            SELECT o.debtor_member_id AS "payerMemberId",o.creditor_member_id AS "recipientMemberId",ch.snapshot->>'appliedAmountInCents' AS "amountInCents" FROM inter_member_obligation_changes ch JOIN inter_member_obligations o ON o.space_id=ch.space_id AND o.id=ch.obligation_id WHERE o.space_id=$1 AND o.commitment_id=$2 AND o.occurrence_id IS NOT DISTINCT FROM $3::uuid AND o.closure_agreement_id IS NULL AND ch.type IN ('OFFSET_APPLIED','WAIVED')
             UNION ALL
-            SELECT a.creditor_member_id,a.debtor_member_id,a.amount_in_cents::text FROM settlement_reversal_applications a JOIN inter_member_obligations o ON o.space_id=a.space_id AND o.id=a.original_obligation_id WHERE o.space_id=$1 AND o.commitment_id=$2 AND o.occurrence_id IS NOT DISTINCT FROM $3::uuid`,
+            SELECT a.creditor_member_id,a.debtor_member_id,a.amount_in_cents::text FROM settlement_reversal_applications a JOIN inter_member_obligations o ON o.space_id=a.space_id AND o.id=a.original_obligation_id WHERE o.space_id=$1 AND o.commitment_id=$2 AND o.occurrence_id IS NOT DISTINCT FROM $3::uuid AND o.closure_agreement_id IS NULL`,
             [spaceId, commitmentId, occurrenceId],
         );
         return {
@@ -223,11 +223,13 @@ export class TypeOrmInterMemberObligationRepository implements InterMemberObliga
             result.push({
                 id: o.id,
                 originCommitmentId: o.commitmentId,
-                ...(o.receiptId
-                    ? { originReceiptId: o.receiptId }
-                    : o.externalLiabilityId
-                      ? { originExternalLiabilityId: o.externalLiabilityId }
-                      : { originDisbursementId: o.disbursementId! }),
+                ...(o.closureAgreementId
+                    ? { originClosureAgreementId: o.closureAgreementId }
+                    : o.receiptId
+                      ? { originReceiptId: o.receiptId }
+                      : o.externalLiabilityId
+                        ? { originExternalLiabilityId: o.externalLiabilityId }
+                        : { originDisbursementId: o.disbursementId! }),
                 debtorMemberId: o.debtorMemberId,
                 creditorMemberId: o.creditorMemberId,
                 originalAmountInCents: o.originalAmountInCents,

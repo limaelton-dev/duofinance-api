@@ -49,6 +49,7 @@ import {
     financialCorrections,
 } from '../queries/financial-correction-projection.js';
 import { FinancialCommitmentAdjustmentOrmEntity } from '../entities/financial-correction.orm-entity.js';
+import { assertFinancialClosureOriginOpen } from './assert-financial-closure-origin-open.js';
 
 @Injectable()
 export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommitmentRepository {
@@ -629,6 +630,13 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
         anticipation?: InstallmentAnticipation,
     ): Promise<void> {
         const m = this.manager();
+        await assertFinancialClosureOriginOpen(
+            m,
+            root.spaceId,
+            root.id,
+            occurrence.id,
+            occurrence.referenceDate,
+        );
         root.assertGlobalFulfillment(
             fact.amountInCents,
             anticipation?.adjustmentInCents ?? 0,
@@ -728,6 +736,14 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
         payoffId: string,
     ) {
         const m = this.manager();
+        for (const item of impact.items)
+            await assertFinancialClosureOriginOpen(
+                m,
+                root.spaceId,
+                root.id,
+                item.installmentId,
+                item.dueDate,
+            );
         await this.resolveState(root, impact.items);
         const sequence = await this.nextSequence(root);
         await m.insert(FinancialDisbursementOrmEntity, {
@@ -789,6 +805,14 @@ export class TypeOrmInstallmentCommitmentRepository implements InstallmentCommit
         now: string,
     ) {
         const m = this.manager();
+        for (const item of items)
+            await assertFinancialClosureOriginOpen(
+                m,
+                root.spaceId,
+                root.id,
+                item.installmentId,
+                item.dueDate,
+            );
         await this.resolveState(root, items);
         for (const item of items)
             await m.insert(FinancialInstallmentResolutionOrmEntity, {

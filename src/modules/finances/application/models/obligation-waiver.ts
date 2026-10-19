@@ -28,6 +28,7 @@ export interface ObligationWaiverResult {
         status: ObligationStatus;
         cycleId: string | null;
         remainingAmountInCents: number;
+        closureAgreementId?: string;
     };
     affectedCycleIds: string[];
     replayed: boolean;

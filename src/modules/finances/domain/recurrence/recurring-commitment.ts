@@ -62,7 +62,7 @@ export class RecurringCommitment {
             (terminatedOn !== null &&
                 !/^\d{4}-\d{2}-\d{2}$/.test(terminatedOn)) ||
             (participation.type === 'PERSONAL'
-                ? participation.ownerPersonId !== createdByPersonId
+                ? !participation.ownerPersonId
                 : (valueMode === 'FIXED'
                       ? participation.split === null ||
                         participation.split.total.amountInCents !==

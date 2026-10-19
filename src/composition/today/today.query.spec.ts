@@ -125,7 +125,7 @@ describe('today authorized composition', () => {
             finance: { status: 'AVAILABLE', data: f.financeData.legacy },
             routine: { status: 'AVAILABLE', data: f.routineData.legacy },
             shopping: { status: 'AVAILABLE', data: f.shoppingData },
-            capabilities: { spaceClosureAttention: 'NOT_SUPPORTED' },
+            capabilities: { spaceClosureAttention: 'SUPPORTED' },
         });
         expect(result.blocks.map((block) => block.kind)).toEqual([
             'ATTENTION',
@@ -325,7 +325,7 @@ describe('today authorized composition', () => {
         ).toBe(true);
     });
 
-    it('marks every affected block unavailable when all sources fail simultaneously', async () => {
+    it('preserves the available closure source when finance routine and shopping fail', async () => {
         const f = fixture();
         f.finance.read.mockRejectedValue(new FinanceTodayUnavailableError());
         f.routine.read.mockRejectedValue(
@@ -338,7 +338,10 @@ describe('today authorized composition', () => {
         expect(
             result.blocks.every(
                 (block) =>
-                    block.status === 'UNAVAILABLE' &&
+                    block.status ===
+                        (block.kind === 'ATTENTION'
+                            ? 'PARTIAL'
+                            : 'UNAVAILABLE') &&
                     block.totalCount === null &&
                     block.knownTotalCount === 0 &&
                     block.hasMore === null,

@@ -26,6 +26,7 @@ import { InvitationId } from '../dist/modules/spaces/domain/invitation/invitatio
 import { InvitationStatus } from '../dist/modules/spaces/domain/invitation/invitation.js';
 import { SpaceOrmEntity } from '../dist/modules/spaces/infrastructure/typeorm/entities/space.orm-entity.js';
 import { SpaceCommandReceiptOrmEntity } from '../dist/modules/spaces/infrastructure/typeorm/entities/space-command-receipt.orm-entity.js';
+import { SpaceClosureProcessOrmEntity } from '../dist/modules/spaces/infrastructure/typeorm/entities/space-closure-process.orm-entity.js';
 import { AuthCredentialOrmEntity } from '../dist/modules/identity/infrastructure/typeorm/entities/auth-credential.orm-entity.js';
 import { AuthSessionOrmEntity } from '../dist/modules/identity/infrastructure/typeorm/entities/auth-session.orm-entity.js';
 import { ConfigService } from '@nestjs/config';
@@ -107,6 +108,7 @@ describe('CARD-002 — persistência PostgreSQL', () => {
                 SpaceMemberOrmEntity,
                 SpaceInvitationOrmEntity,
                 SpaceCommandReceiptOrmEntity,
+                SpaceClosureProcessOrmEntity,
                 AuthCredentialOrmEntity,
                 AuthSessionOrmEntity,
             ],
@@ -152,6 +154,11 @@ describe('CARD-002 — persistência PostgreSQL', () => {
             'ShoppingPurchaseCorrections1792345722826',
             'ShoppingItemRemoval1792346026336',
             'TaskShoppingLinks1792346372566',
+            'SharedSpaceClosure1792408818846',
+            'ClosureFutureDestinations1792410123163',
+            'ClosurePlanConsensus1792410948212',
+            'ClosureFinancialResolution1792411805913',
+            'ClosureConclusion1792412755234',
         ]);
 
         const context = new TransactionContext();

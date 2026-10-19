@@ -259,7 +259,7 @@ describe('CARD-038 shopping lists HTTP/PostgreSQL', () => {
     });
 
     it.each(['CLOSING', 'CLOSED'])(
-        'keeps authorized reads but blocks commands and replay in %s',
+        'keeps authorized reads and replay but blocks new commands in %s',
         async (status) => {
             const f = await sharedFinance(app),
                 base = `/v2/spaces/${f.space}/shopping-lists`,
@@ -274,7 +274,9 @@ describe('CARD-038 shopping lists HTTP/PostgreSQL', () => {
             await f.b.agent.get(`${base}/${list.id}`).expect(200);
             await f.a.agent.get(`${base}/${list.id}/history`).expect(200);
             await f.a.post(base, {}).expect(409);
-            await f.a.post(base, {}, key).expect(409);
+            expect((await f.a.post(base, {}, key).expect(201)).body).toEqual(
+                list,
+            );
             await f.a
                 .post(`${base}/${list.id}/name`, {
                     expectedVersion: 1,

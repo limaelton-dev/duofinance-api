@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import {
     afterAll,
@@ -41,6 +41,7 @@ import { SpaceOrmEntity } from '../dist/modules/spaces/infrastructure/typeorm/en
 import { SpaceMemberOrmEntity } from '../dist/modules/spaces/infrastructure/typeorm/entities/space-member.orm-entity.js';
 import { SpaceInvitationOrmEntity } from '../dist/modules/spaces/infrastructure/typeorm/entities/space-invitation.orm-entity.js';
 import { SpaceCommandReceiptOrmEntity } from '../dist/modules/spaces/infrastructure/typeorm/entities/space-command-receipt.orm-entity.js';
+import { SpaceClosureProcessOrmEntity } from '../dist/modules/spaces/infrastructure/typeorm/entities/space-closure-process.orm-entity.js';
 import { AuthCredentialOrmEntity } from '../dist/modules/identity/infrastructure/typeorm/entities/auth-credential.orm-entity.js';
 import { AuthSessionOrmEntity } from '../dist/modules/identity/infrastructure/typeorm/entities/auth-session.orm-entity.js';
 
@@ -52,6 +53,7 @@ const entities = [
     SpaceMemberOrmEntity,
     SpaceInvitationOrmEntity,
     SpaceCommandReceiptOrmEntity,
+    SpaceClosureProcessOrmEntity,
     AuthCredentialOrmEntity,
     AuthSessionOrmEntity,
 ];
@@ -94,7 +96,7 @@ describe('CARD-003 — persistência e migration', () => {
 
         const previous = new DataSource({
             ...migrationDataSource.options,
-            entities,
+            entities: [],
             migrations: [
                 InitialCard0011789556956788,
                 Card002SharedSpaces1790597980318,
@@ -105,23 +107,59 @@ describe('CARD-003 — persistência e migration', () => {
         try {
             await previous.dropDatabase();
             await previous.runMigrations();
-            configure(previous);
-            db = previous;
-            const actor = await createPerson();
-            const legacy = await persist(actor);
+            const actor = PersonId.create();
+            const spaceId = SpaceId.create();
+            const memberId = MemberId.create();
+            const invitationId = InvitationId.create();
+            const generated = tokens.generate();
+            const expiresAt = new Date(now.getTime() + 72 * 60 * 60 * 1000);
             const command: SpaceCommand = {
                 operation: 'CREATE_SPACE',
                 actorId: actor,
                 key: randomUUID(),
                 name: 'Casa',
             };
-            await uow.execute(() =>
-                receipts.save(command, {
-                    resultSpaceId: legacy.space.id,
-                    resultInvitationId: legacy.invitationId,
-                    createdAt: now,
-                }),
-            );
+            await previous.transaction(async (manager) => {
+                await manager.query(
+                    `INSERT INTO persons (id,display_name,version,created_at) VALUES ($1,'Pessoa anterior',1,$2)`,
+                    [actor.value, now],
+                );
+                await manager.query(
+                    `INSERT INTO spaces (id,type,status,personal_owner_person_id,name,created_by_person_id,version,created_at,updated_at)
+                     VALUES ($1,'SHARED','ACTIVE',NULL,'Casa',$2,1,$3,$3)`,
+                    [spaceId.value, actor.value, now],
+                );
+                await manager.query(
+                    `INSERT INTO space_members (id,space_id,person_id,status,slot,joined_at) VALUES ($1,$2,$3,'ACTIVE',1,$4)`,
+                    [memberId.value, spaceId.value, actor.value, now],
+                );
+                await manager.query(
+                    `INSERT INTO space_invitations (id,space_id,invited_by_person_id,token_hash,status,issued_at,expires_at,resolved_at,cancellation_reason,replaced_by_invitation_id)
+                     VALUES ($1,$2,$3,$4,'PENDING',$5,$6,NULL,NULL,NULL)`,
+                    [
+                        invitationId.value,
+                        spaceId.value,
+                        actor.value,
+                        Buffer.from(generated.tokenHash),
+                        now,
+                        expiresAt,
+                    ],
+                );
+                await manager.query(
+                    `INSERT INTO space_command_receipts (actor_id,operation,key,request_hash,result_space_id,result_invitation_id,created_at)
+                     VALUES ($1,'CREATE_SPACE',$2,$3,$4,$5,$6)`,
+                    [
+                        actor.value,
+                        command.key,
+                        createHash('sha256')
+                            .update(JSON.stringify(['CREATE_SPACE', 'Casa']))
+                            .digest(),
+                        spaceId.value,
+                        invitationId.value,
+                        now,
+                    ],
+                );
+            });
 
             await previous.destroy();
             db = new DataSource({ ...migrationDataSource.options, entities });
@@ -163,15 +201,23 @@ describe('CARD-003 — persistência e migration', () => {
                 'ShoppingPurchaseCorrections1792345722826',
                 'ShoppingItemRemoval1792346026336',
                 'TaskShoppingLinks1792346372566',
+                'SharedSpaceClosure1792408818846',
+                'ClosureFutureDestinations1792410123163',
+                'ClosurePlanConsensus1792410948212',
+                'ClosureFinancialResolution1792411805913',
+                'ClosureConclusion1792412755234',
             ]);
             expect(await receipts.find(command)).not.toBeNull();
-            expect((await repository.findById(legacy.space.id))?.version).toBe(
-                1,
-            );
-            expect(await state(legacy.space.id)).toMatchObject({
+            const restored = await repository.findById(spaceId);
+            expect(restored?.version).toBe(1);
+            expect(restored?.members[0].id.value).toBe(memberId.value);
+            expect(restored?.invitations[0].id.value).toBe(invitationId.value);
+            expect(restored?.invitations[0].expiresAt).toEqual(expiresAt);
+            expect(await state(spaceId)).toMatchObject({
                 members: 1,
                 receipts: 1,
                 invitationStatus: 'PENDING',
+                hash: Buffer.from(generated.tokenHash),
             });
             upgradeVerified = true;
         } finally {

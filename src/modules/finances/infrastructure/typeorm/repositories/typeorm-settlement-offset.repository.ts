@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { QueryFailedError } from 'typeorm';
+import { ClosureResolutionAudit } from './closure-resolution-audit.js';
 import { EntityManagerProvider } from '../../../../../shared/technical/database/typeorm/entity-manager.provider.js';
 import { FinancesError } from '../../../domain/errors/finances.error.js';
 import type { SettlementOffset } from '../../../domain/settlement-offset/settlement-offset.js';
@@ -52,11 +53,14 @@ function hash(c: RecordSettlementOffsetCommand) {
         .digest();
 }
 const predicate = `(o.cycle_id=ANY($3::uuid[]) OR o.id=ANY($4::uuid[]))`;
-const origin = `jsonb_strip_nulls(jsonb_build_object('kind',CASE WHEN o.receipt_id IS NULL THEN 'EXPENSE' ELSE 'INCOME' END,'commitmentId',o.commitment_id,'disbursementId',o.disbursement_id,'receiptId',o.receipt_id,'externalLiabilityId',o.external_liability_id,'description',c.description))`;
+const origin = `jsonb_strip_nulls(jsonb_build_object('kind',CASE WHEN o.closure_agreement_id IS NOT NULL THEN 'CLOSURE_AGREEMENT' WHEN o.receipt_id IS NULL THEN 'EXPENSE' ELSE 'INCOME' END,'commitmentId',o.commitment_id,'disbursementId',o.disbursement_id,'receiptId',o.receipt_id,'closureAgreementId',o.closure_agreement_id,'externalLiabilityId',o.external_liability_id,'description',c.description))`;
 const obligation = `jsonb_build_object('id',o.id,'version',o.version,'status',o.status,'debtorMemberId',o.debtor_member_id,'creditorMemberId',o.creditor_member_id,'originalAmountInCents',o.original_amount_in_cents,'recognizedAmountInCents',o.recognized_amount_in_cents,'remainingAmountInCents',o.remaining_amount_in_cents,'factDate',to_char(o.fact_date,'YYYY-MM-DD'),'registeredAt',to_char(o.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),'origin',${origin},'settlementCycle',CASE WHEN s.id IS NULL THEN NULL ELSE jsonb_build_object('id',s.id,'targetDate',to_char(s.target_date,'YYYY-MM-DD'),'status',s.status) END)`;
 @Injectable()
 export class TypeOrmSettlementOffsetRepository implements SettlementOffsetRepository {
-    constructor(private readonly provider: EntityManagerProvider) {}
+    constructor(
+        private readonly provider: EntityManagerProvider,
+        private readonly closureAudit: ClosureResolutionAudit,
+    ) {}
     private transaction() {
         const m = this.provider.get();
         if (!m.queryRunner?.isTransactionActive)
@@ -168,6 +172,10 @@ export class TypeOrmSettlementOffsetRepository implements SettlementOffsetReposi
                 throw new SettlementOffsetReceiptRaceError();
             throw error;
         }
+        const closureAudit = await this.closureAudit.context(
+            c.actorId.value,
+            c.spaceId.value,
+        );
         await this.transaction().insert(SettlementOffsetAuditOrmEntity, {
             id: randomUUID(),
             actorId: c.actorId.value,
@@ -179,6 +187,14 @@ export class TypeOrmSettlementOffsetRepository implements SettlementOffsetReposi
                 amountInCents: result.offset.amountInCents,
                 allocationCount: result.allocations.length,
                 affectedCycleIds: result.affectedCycleIds,
+                ...closureAudit,
+                ...(closureAudit.closure
+                    ? {
+                          obligationIds: result.allocations.map(
+                              (allocation) => allocation.obligationId,
+                          ),
+                      }
+                    : {}),
             },
             registeredAt: new Date(result.offset.registeredAt),
         });

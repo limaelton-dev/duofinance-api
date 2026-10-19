@@ -28,6 +28,7 @@ export interface TaskRecurrence {
     createdAt: string;
     cancelledAt: string | null;
     cancelledOn: string | null;
+    closure?: { processId: string; planRevision: number; recordedAt: string };
 }
 export interface TaskOccurrence extends Omit<
     Task,
@@ -77,6 +78,7 @@ export function eligibleOccurrence(
     date: string,
 ): boolean {
     return (
+        !recurrence.closure &&
         date >= recurrence.startsOn &&
         (!recurrence.endsOn || date <= recurrence.endsOn) &&
         (!recurrence.cancelledOn || date <= recurrence.cancelledOn) &&

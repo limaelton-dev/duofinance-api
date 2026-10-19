@@ -1068,13 +1068,14 @@ describe('CARD-008 HTTP settlement cycles and authorized origins', () => {
             '#/components/schemas/InterMemberObligationOrigin',
         );
         const origin = doc.components.schemas.InterMemberObligationOrigin;
-        expect(origin.oneOf).toHaveLength(3);
+        expect(origin.oneOf).toHaveLength(4);
         for (const variant of origin.oneOf)
             expect(variant.properties.commitmentId.format).toBe('uuid');
         for (const factId of [
             'disbursementId',
             'receiptId',
             'externalLiabilityId',
+            'closureAgreementId',
         ])
             expect(
                 origin.oneOf.some(

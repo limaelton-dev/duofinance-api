@@ -39,6 +39,12 @@ import { TypeOrmSpaceAccessQueries } from './infrastructure/typeorm/queries/type
 import { TypeOrmSpaceFinancialContext } from './infrastructure/typeorm/queries/typeorm-space-financial-context.js';
 import { SPACE_FINANCIAL_CONTEXT_PORT } from './application/ports/public/space-financial-context.port.js';
 import { FinancialEntryContextController } from './http/controllers/financial-entry-context.controller.js';
+import { SPACE_CLOSURE_PORT } from './application/ports/public/space-closure.port.js';
+import { TypeOrmSpaceClosure } from './infrastructure/typeorm/repositories/typeorm-space-closure.js';
+import { SpaceClosureProcessOrmEntity } from './infrastructure/typeorm/entities/space-closure-process.orm-entity.js';
+import { SpaceClosureHistoryOrmEntity } from './infrastructure/typeorm/entities/space-closure-history.orm-entity.js';
+import { SpaceClosureCommandReceiptOrmEntity } from './infrastructure/typeorm/entities/space-closure-command-receipt.orm-entity.js';
+import { SpaceClosureAuditOrmEntity } from './infrastructure/typeorm/entities/space-closure-audit.orm-entity.js';
 @Module({
     imports: [
         DatabaseModule,
@@ -48,6 +54,10 @@ import { FinancialEntryContextController } from './http/controllers/financial-en
             SpaceMemberOrmEntity,
             SpaceInvitationOrmEntity,
             SpaceCommandReceiptOrmEntity,
+            SpaceClosureProcessOrmEntity,
+            SpaceClosureHistoryOrmEntity,
+            SpaceClosureCommandReceiptOrmEntity,
+            SpaceClosureAuditOrmEntity,
         ]),
     ],
 
@@ -68,6 +78,8 @@ import { FinancialEntryContextController } from './http/controllers/financial-en
         },
         TypeOrmPersonRepository,
         TypeOrmSpaceRepository,
+        TypeOrmSpaceClosure,
+        { provide: SPACE_CLOSURE_PORT, useExisting: TypeOrmSpaceClosure },
         ProvisionPersonalContextService,
         GetPersonalContextService,
         NodeInvitationTokenGenerator,
@@ -125,6 +137,7 @@ import { FinancialEntryContextController } from './http/controllers/financial-en
     exports: [
         SPACE_PARTICIPANTS_PORT,
         SPACE_FINANCIAL_CONTEXT_PORT,
+        SPACE_CLOSURE_PORT,
         PROVISION_PERSONAL_CONTEXT,
         GET_PERSONAL_CONTEXT,
         SPACE_ACCESS_PORT,

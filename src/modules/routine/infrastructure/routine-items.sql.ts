@@ -12,7 +12,7 @@ export const routineSourceSql = `WITH rules AS MATERIALIZED (
     SELECT r.*,r.snapshot->'rule' rule,r.snapshot->>'urgency' urgency,r.snapshot->'deadline' <> 'null'::jsonb has_deadline,r.snapshot->'deadline'->>'time' deadline_time,
     greatest(r.starts_on,coalesce($8::date,r.starts_on)) lo,
     least(coalesce(r.ends_on,'9999-12-31'::date),coalesce(r.cancelled_on,'9999-12-31'::date),coalesce($9::date,CASE WHEN r.snapshot->'deadline'='null'::jsonb THEN $3::date ELSE $3::date+365 END)) hi
-    FROM routine_task_recurrences r WHERE r.space_id=$1 AND ($6='ALL' OR r.snapshot->'assignee'->>'personId'=$2) AND $5 IN ('PENDING','ALL')
+    FROM routine_task_recurrences r WHERE r.space_id=$1 AND NOT (r.snapshot ? 'closure') AND ($6='ALL' OR r.snapshot->'assignee'->>'personId'=$2) AND $5 IN ('PENDING','ALL')
 ), ranges AS MATERIALIZED (
     SELECT r.*,
     greatest(lo,CASE WHEN $7='TODAY' THEN $3::date WHEN $7='UPCOMING' THEN $3::date+1 ELSE lo END) match_lo,

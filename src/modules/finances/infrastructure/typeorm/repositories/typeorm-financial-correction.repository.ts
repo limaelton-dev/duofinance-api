@@ -36,6 +36,7 @@ import {
     FinancialCommitmentCancellationOrmEntity,
 } from '../entities/financial-correction.orm-entity.js';
 import { financialCorrections } from '../queries/financial-correction-projection.js';
+import { assertFinancialClosureOriginOpen } from './assert-financial-closure-origin-open.js';
 
 @Injectable()
 export class TypeOrmFinancialCorrectionRepository implements FinancialCorrectionRepository {
@@ -364,6 +365,13 @@ export class TypeOrmFinancialCorrectionRepository implements FinancialCorrection
         state: FinancialCorrectionState,
         adjustment: FinancialAdjustment,
     ) {
+        await assertFinancialClosureOriginOpen(
+            this.managers.get(),
+            state.spaceId,
+            state.id,
+            state.targetId,
+            state.referenceDate,
+        );
         await this.bump(state);
         const manager = this.managers.get();
         if (state.modality !== 'ONE_TIME') {
@@ -412,6 +420,11 @@ export class TypeOrmFinancialCorrectionRepository implements FinancialCorrection
         state: FinancialCorrectionState,
         cancellation: FinancialCancellation,
     ) {
+        await assertFinancialClosureOriginOpen(
+            this.managers.get(),
+            state.spaceId,
+            state.id,
+        );
         await this.bump(state);
         await this.managers
             .get()

@@ -446,41 +446,54 @@ export const settlementCycleOpenApi: Pick<
                 }),
             }),
             SelectedSettlementCycleOrigin: {
-                type: 'object',
-                additionalProperties: false,
-                description:
-                    'Compromisso originador e distribuição econômica original. Estes valores não são novos totais do recorte e não devem ser somados por linha; uma origem pode gerar várias pendências.',
-                required: [
-                    'kind',
-                    'commitmentId',
-                    'description',
-                    'amountInCents',
-                    'distribution',
-                ],
-                properties: {
-                    commitmentId: uuid,
-                    occurrenceId: uuid,
-                    description: { type: 'string' },
-                    disbursementId: uuid,
-                    receiptId: uuid,
-                    externalLiabilityId: uuid,
-                    kind: { type: 'string', enum: ['EXPENSE', 'INCOME'] },
-                    amountInCents: { ...integer, minimum: 1 },
-                    distribution: object({
-                        kind: {
-                            type: 'string',
-                            enum: ['RESPONSIBILITY', 'PARTICIPATION'],
-                        },
-                        shares: {
-                            type: 'array',
-                            items: object({
-                                memberId: uuid,
-                                amountInCents: integer,
+                oneOf: [
+                    object({
+                        kind: { type: 'string', enum: ['CLOSURE_AGREEMENT'] },
+                        commitmentId: uuid,
+                        closureAgreementId: uuid,
+                        description: { type: 'string' },
+                    }),
+                    {
+                        type: 'object',
+                        additionalProperties: false,
+                        description:
+                            'Compromisso originador e distribuição econômica original. Estes valores não são novos totais do recorte e não devem ser somados por linha; uma origem pode gerar várias pendências.',
+                        required: [
+                            'kind',
+                            'commitmentId',
+                            'description',
+                            'amountInCents',
+                            'distribution',
+                        ],
+                        properties: {
+                            commitmentId: uuid,
+                            occurrenceId: uuid,
+                            description: { type: 'string' },
+                            disbursementId: uuid,
+                            receiptId: uuid,
+                            externalLiabilityId: uuid,
+                            kind: {
+                                type: 'string',
+                                enum: ['EXPENSE', 'INCOME'],
+                            },
+                            amountInCents: { ...integer, minimum: 1 },
+                            distribution: object({
+                                kind: {
+                                    type: 'string',
+                                    enum: ['RESPONSIBILITY', 'PARTICIPATION'],
+                                },
+                                shares: {
+                                    type: 'array',
+                                    items: object({
+                                        memberId: uuid,
+                                        amountInCents: integer,
+                                    }),
+                                },
+                                actorAmountInCents: integer,
                             }),
                         },
-                        actorAmountInCents: integer,
-                    }),
-                },
+                    },
+                ],
             },
             SelectedSettlementCyclesResponse: object({
                 ...context,

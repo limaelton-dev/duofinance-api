@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { SHOPPING_CLOSURE_PORT } from './application/ports/public/shopping-closure.port.js';
+import { TypeOrmShoppingClosure } from './infrastructure/typeorm-shopping-closure.js';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DatabaseModule } from '../../shared/technical/database/database.module.js';
 import { SpacesModule } from '../spaces/spaces.module.js';
@@ -43,6 +45,7 @@ import { ShoppingAttentionQuery } from './application/shopping-attention-query.j
         ]),
     ],
     providers: [
+        { provide: SHOPPING_CLOSURE_PORT, useClass: TypeOrmShoppingClosure },
         { provide: SHOPPING_STORE, useClass: TypeOrmShoppingStore },
         { provide: SHOPPING_CLOCK, useValue: { now: () => new Date() } },
         ShoppingCommands,
@@ -62,6 +65,10 @@ import { ShoppingAttentionQuery } from './application/shopping-attention-query.j
         ShoppingItemController,
         ShoppingPurchaseController,
     ],
-    exports: [SHOPPING_LISTS_PORT, SHOPPING_ATTENTION_QUERY_PORT],
+    exports: [
+        SHOPPING_LISTS_PORT,
+        SHOPPING_ATTENTION_QUERY_PORT,
+        SHOPPING_CLOSURE_PORT,
+    ],
 })
 export class ShoppingModule {}

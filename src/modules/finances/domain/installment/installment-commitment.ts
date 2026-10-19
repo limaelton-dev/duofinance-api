@@ -99,7 +99,7 @@ export class InstallmentCommitment {
         )
             throw new FinancesError('VALIDATION_ERROR');
         if (participation.type === 'PERSONAL') {
-            if (participation.ownerPersonId !== createdByPersonId)
+            if (!participation.ownerPersonId)
                 throw new FinancesError('VALIDATION_ERROR');
         } else {
             const members = participation.distribution.shares.map(

@@ -17,8 +17,9 @@ export type InvitationProps = {
     issuedAt: Date;
     expiresAt: Date;
     resolvedAt: Date | null;
-    cancellationReason: 'REPLACED' | null;
+    cancellationReason: 'REPLACED' | 'SPACE_CLOSURE' | null;
     replacedByInvitationId: InvitationId | null;
+    closureProcessId?: string | null;
 };
 
 const validityInMilliseconds = 72 * 60 * 60 * 1000;
@@ -32,6 +33,15 @@ export class Invitation {
         const answered =
             props.status === InvitationStatus.ACCEPTED ||
             props.status === InvitationStatus.REJECTED;
+        const closureProcessId = props.closureProcessId ?? null;
+        const validCancellation =
+            props.cancellationReason === 'REPLACED'
+                ? props.replacedByInvitationId !== null &&
+                  closureProcessId === null
+                : props.cancellationReason === 'SPACE_CLOSURE' &&
+                  props.replacedByInvitationId === null &&
+                  typeof closureProcessId === 'string' &&
+                  closureProcessId.length > 0;
 
         if (
             !props.id ||
@@ -49,10 +59,10 @@ export class Invitation {
                 props.resolvedAt !== null &&
                 props.resolvedAt >= props.expiresAt) ||
             (cancelled
-                ? props.cancellationReason !== 'REPLACED' ||
-                  props.replacedByInvitationId === null
+                ? !validCancellation
                 : props.cancellationReason !== null ||
-                  props.replacedByInvitationId !== null) ||
+                  props.replacedByInvitationId !== null ||
+                  closureProcessId !== null) ||
             props.replacedByInvitationId?.equals(props.id)
         ) {
             throw new Error('Invalid invitation state');
@@ -60,6 +70,7 @@ export class Invitation {
 
         this.props = {
             ...props,
+            closureProcessId,
             issuedAt: new Date(props.issuedAt),
             expiresAt: new Date(props.expiresAt),
             resolvedAt: props.resolvedAt ? new Date(props.resolvedAt) : null,
@@ -139,6 +150,22 @@ export class Invitation {
         return this.resolve(InvitationStatus.ACCEPTED, now);
     }
 
+    cancelForClosure(processId: string, now: Date): Invitation {
+        const current = this.expireIfDue(now);
+        if (current.status !== InvitationStatus.PENDING) return current;
+        if (!processId || now < this.props.issuedAt) {
+            throw new Error('Invalid invitation closure cancellation');
+        }
+        return new Invitation({
+            ...this.props,
+            status: InvitationStatus.CANCELLED,
+            resolvedAt: now,
+            cancellationReason: 'SPACE_CLOSURE',
+            replacedByInvitationId: null,
+            closureProcessId: processId,
+        });
+    }
+
     reject(now: Date): Invitation {
         return this.resolve(InvitationStatus.REJECTED, now);
     }
@@ -186,11 +213,15 @@ export class Invitation {
         return this.props.resolvedAt ? new Date(this.props.resolvedAt) : null;
     }
 
-    get cancellationReason(): 'REPLACED' | null {
+    get cancellationReason(): 'REPLACED' | 'SPACE_CLOSURE' | null {
         return this.props.cancellationReason;
     }
 
     get replacedByInvitationId(): InvitationId | null {
         return this.props.replacedByInvitationId;
+    }
+
+    get closureProcessId(): string | null {
+        return this.props.closureProcessId ?? null;
     }
 }

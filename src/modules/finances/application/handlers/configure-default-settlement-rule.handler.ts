@@ -8,6 +8,10 @@ import {
     type SpaceAccessPort,
 } from '../../../spaces/application/ports/public/space-access.port.js';
 import {
+    SPACE_FINANCIAL_CONTEXT_PORT,
+    type SpaceFinancialContextPort,
+} from '../../../spaces/application/ports/public/space-financial-context.port.js';
+import {
     DEFAULT_SETTLEMENT_RULE_REPOSITORY,
     type DefaultSettlementRuleRepository,
 } from '../ports/private/default-settlement-rule.repository.js';
@@ -33,6 +37,8 @@ export class ConfigureDefaultSettlementRuleHandler {
         private readonly repository: DefaultSettlementRuleRepository,
         @Inject(FINANCES_COMMAND_RECEIPTS)
         private readonly receipts: FinancesCommandReceipts,
+        @Inject(SPACE_FINANCIAL_CONTEXT_PORT)
+        private readonly contexts: SpaceFinancialContextPort,
     ) {}
     private async authorize(command: ConfigureDefaultSettlementRuleCommand) {
         const context = await this.access.assertCanRead(
@@ -57,6 +63,10 @@ export class ConfigureDefaultSettlementRuleHandler {
                 const receipt = await this.receipts.find(command);
                 if (receipt) return { ...receipt, replayed: true };
                 await this.access.assertCanWrite(
+                    command.actorId,
+                    command.spaceId,
+                );
+                await this.contexts.lockForWrite(
                     command.actorId,
                     command.spaceId,
                 );

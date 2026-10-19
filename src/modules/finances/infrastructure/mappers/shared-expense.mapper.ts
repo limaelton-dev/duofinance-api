@@ -95,11 +95,17 @@ export function obligationRow(o: InterMemberObligation) {
         commitmentId: o.originCommitmentId,
         occurrenceId: o.occurrenceId,
         disbursementId:
-            o.originKind === 'EXPENSE' && !o.originExternalLiabilityId
+            o.originKind === 'EXPENSE' &&
+            !o.originExternalLiabilityId &&
+            !o.originClosureAgreementId
                 ? o.originDisbursementId
                 : null,
         externalLiabilityId: o.originExternalLiabilityId,
-        receiptId: o.originKind === 'INCOME' ? o.originDisbursementId : null,
+        receiptId:
+            o.originKind === 'INCOME' && !o.originClosureAgreementId
+                ? o.originDisbursementId
+                : null,
+        closureAgreementId: o.originClosureAgreementId,
         debtorMemberId: o.debtorMemberId,
         creditorMemberId: o.creditorMemberId,
         originalAmountInCents: o.originalAmountInCents,
@@ -125,11 +131,16 @@ export function obligationChangeRow(o: InterMemberObligation) {
                 ? { causeFinancialCorrectionId: o.correctionCauseId }
                 : {}),
             ...(o.occurrenceId ? { occurrenceId: o.occurrenceId } : {}),
-            ...(o.originKind === 'EXPENSE'
-                ? o.originExternalLiabilityId
-                    ? { originExternalLiabilityId: o.originExternalLiabilityId }
-                    : { originDisbursementId: o.originDisbursementId }
-                : { originReceiptId: o.originDisbursementId }),
+            ...(o.originClosureAgreementId
+                ? { originClosureAgreementId: o.originClosureAgreementId }
+                : o.originKind === 'EXPENSE'
+                  ? o.originExternalLiabilityId
+                      ? {
+                            originExternalLiabilityId:
+                                o.originExternalLiabilityId,
+                        }
+                      : { originDisbursementId: o.originDisbursementId }
+                  : { originReceiptId: o.originDisbursementId }),
             debtorMemberId: o.debtorMemberId,
             creditorMemberId: o.creditorMemberId,
             originalAmountInCents: o.originalAmountInCents,

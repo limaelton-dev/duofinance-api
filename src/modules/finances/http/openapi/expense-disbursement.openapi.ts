@@ -278,11 +278,13 @@ export const expenseDisbursementOpenApi: Pick<
                     originDisbursementId: uuid,
                     originReceiptId: uuid,
                     originExternalLiabilityId: uuid,
+                    originClosureAgreementId: uuid,
                 },
                 oneOf: [
                     { required: ['originDisbursementId'] },
                     { required: ['originReceiptId'] },
                     { required: ['originExternalLiabilityId'] },
+                    { required: ['originClosureAgreementId'] },
                 ],
             },
             RecordExpenseDisbursementRequest: {
