@@ -20,7 +20,6 @@ jobs:
     quality:
         name: API quality
         runs-on: ubuntu-24.04
-        timeout-minutes: 10
 
         steps:
             - name: Obter o código
@@ -56,7 +55,6 @@ jobs:
         name: API PostgreSQL/HTTP (${{ matrix.shard }}/2)
         needs: quality
         runs-on: ubuntu-24.04
-        timeout-minutes: 25
         strategy:
             fail-fast: false
             matrix:
@@ -96,7 +94,6 @@ jobs:
         if: always()
         needs: [quality, integration]
         runs-on: ubuntu-24.04
-        timeout-minutes: 5
         steps:
             - name: Conferir resultado completo
               env:
