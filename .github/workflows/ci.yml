@@ -4,12 +4,10 @@ on:
     push:
         branches:
             - main
-            - 'card/**'
-            - card-001-account-session
-            - 'card-*'
     pull_request:
         branches:
             - main
+    workflow_dispatch:
 
 permissions:
     contents: read
@@ -19,10 +17,10 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
-    checks:
-        name: API checks
+    quality:
+        name: API quality
         runs-on: ubuntu-24.04
-        timeout-minutes: 15
+        timeout-minutes: 10
 
         steps:
             - name: Obter o código
@@ -45,18 +43,65 @@ jobs:
             - name: Formatação
               run: npm run format:check
 
-            - name: Testes unitários
-              run: npm test
-
-            - name: Iniciar PostgreSQL de teste
-              run: docker compose -f compose.test.yaml up -d --wait
-
-            - name: Build e testes PostgreSQL/HTTP
-              run: npm run test:e2e
+            - name: Build para os contratos importados pelos testes
+              run: npm run build
 
             - name: Tipos da aplicação e dos testes
               run: npm run typecheck
 
+            - name: Testes unitários
+              run: npm test
+
+    integration:
+        name: API PostgreSQL/HTTP (${{ matrix.shard }}/2)
+        needs: quality
+        runs-on: ubuntu-24.04
+        timeout-minutes: 25
+        strategy:
+            fail-fast: false
+            matrix:
+                shard: [1, 2]
+
+        steps:
+            - name: Obter o código
+              uses: actions/checkout@v7
+              with:
+                  persist-credentials: false
+
+            - name: Preparar Node
+              uses: actions/setup-node@v7
+              with:
+                  node-version-file: .nvmrc
+                  cache: npm
+
+            - name: Instalar dependências
+              run: npm ci
+
+            # Cada job tem seu próprio PostgreSQL; as suítes dentro dele
+            # continuam sequenciais porque recriam e limpam o mesmo banco.
+            - name: Iniciar PostgreSQL de teste
+              run: docker compose -f compose.test.yaml up -d --wait
+
+            - name: Build e testes PostgreSQL/HTTP
+              run: npm run test:e2e -- --shard=${{ matrix.shard }}/2
+
             - name: Encerrar PostgreSQL de teste
               if: always()
               run: docker compose -f compose.test.yaml down
+
+    # Preserva o nome do check usado para proteger o merge. Só aprova
+    # quando os checks rápidos e os dois grupos de integração aprovam.
+    checks:
+        name: API checks
+        if: always()
+        needs: [quality, integration]
+        runs-on: ubuntu-24.04
+        timeout-minutes: 5
+        steps:
+            - name: Conferir resultado completo
+              env:
+                  QUALITY_RESULT: ${{ needs.quality.result }}
+                  INTEGRATION_RESULT: ${{ needs.integration.result }}
+              run: |
+                  test "$QUALITY_RESULT" = success
+                  test "$INTEGRATION_RESULT" = success
