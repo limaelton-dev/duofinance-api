@@ -356,7 +356,8 @@ describe('final confirmation, cancellation and closed history HTTP/PostgreSQL', 
                 mode === 'solo' ? 1 : 2,
             );
             expect(
-                (await f.a.agent.get(f.path).expect(200)).body.planRevision,
+                (await f.a.agent.get(`${f.path}/diagnostic`).expect(200)).body
+                    .closure.planRevision,
             ).toBe(plan.planRevision);
         },
     );
@@ -884,7 +885,8 @@ describe('final confirmation, cancellation and closed history HTTP/PostgreSQL', 
             expect(winner.status).toBe(200);
             expect(loser.status).toBe(409);
             expect(
-                (await f.a.agent.get(f.path).expect(200)).body.spaceStatus,
+                (await f.a.agent.get(`${f.path}/diagnostic`).expect(200)).body
+                    .closure.spaceStatus,
             ).toBe(first === 'confirmation' ? 'CLOSED' : 'CLOSING');
             expect(plan.planStatus).toBe('APPROVED');
         },
@@ -991,7 +993,7 @@ describe('final confirmation, cancellation and closed history HTTP/PostgreSQL', 
         const before = await snapshot();
         for (const actor of [f.a, f.b!]) {
             for (const path of [
-                f.path,
+                `${f.path}/diagnostic`,
                 `${f.path}/history`,
                 `${f.path}/final-summary`,
                 `${r.base}/financial-commitments/${r.expense.commitment.id}`,
@@ -1011,7 +1013,7 @@ describe('final confirmation, cancellation and closed history HTTP/PostgreSQL', 
                 ]),
             );
         }
-        for (const suffix of ['', '/history', '/final-summary'])
+        for (const suffix of ['/diagnostic', '/history', '/final-summary'])
             await outsider.agent.get(f.path + suffix).expect(404);
         await outsider
             .post(`${f.path}/confirmation`, {
@@ -1035,7 +1037,7 @@ describe('final confirmation, cancellation and closed history HTTP/PostgreSQL', 
         await approve(f, await begin(f));
         await close(f);
         const before = await snapshot();
-        for (const suffix of ['', '/history', '/final-summary'])
+        for (const suffix of ['/diagnostic', '/history', '/final-summary'])
             await invited.agent.get(f.path + suffix).expect(404);
         await invited
             .post(`${f.path}/confirmation`, await confirmationInput(f))
@@ -1149,9 +1151,10 @@ describe('final confirmation, cancellation and closed history HTTP/PostgreSQL', 
         await f.a
             .post(`${personal}/shopping-lists`, { name: 'Compras pessoais' })
             .expect(201);
-        expect((await f.a.agent.get(f.path).expect(200)).body.spaceStatus).toBe(
-            'CLOSED',
-        );
+        expect(
+            (await f.a.agent.get(`${f.path}/diagnostic`).expect(200)).body
+                .closure.spaceStatus,
+        ).toBe('CLOSED');
         expect(
             (
                 await db.query(
@@ -1499,9 +1502,10 @@ describe('final confirmation, cancellation and closed history HTTP/PostgreSQL', 
             spaceStatus: 'CLOSED',
             processStatus: 'COMPLETED',
         });
-        expect((await f.a.agent.get(f.path).expect(200)).body.processId).toBe(
-            next.processId,
-        );
+        expect(
+            (await f.a.agent.get(`${f.path}/diagnostic`).expect(200)).body
+                .closure.processId,
+        ).toBe(next.processId);
         expect((await summary(f)).closure.processId).toBe(next.processId);
         expect(
             (await f.a.agent.get(`${f.path}/history`).expect(200)).body.items,

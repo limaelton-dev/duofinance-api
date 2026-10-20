@@ -32,10 +32,6 @@ export class ObligationWaiverParamsDto extends SettlementRuleParamsDto {
     @IsUUID('all', { message: 'Informe uma pendência válida.' })
     obligationId!: string;
 }
-export class WaiverDetailParamsDto extends ObligationWaiverParamsDto {
-    @IsUUID('all', { message: 'Informe uma dispensa válida.' })
-    waiverId!: string;
-}
 export class WaiverHistoryQueryDto {
     @IsOptional() @IsString() @MaxLength(512) cursor?: string;
 }

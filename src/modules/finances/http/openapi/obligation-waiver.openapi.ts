@@ -90,7 +90,7 @@ const errors = {
     ),
     404: response(
         'ErrorResponse',
-        'Espaço, pendência ou dispensa inexistente ou inacessível.',
+        'Espaço ou pendência inexistente ou inacessível.',
     ),
     409: response(
         'ErrorResponse',
@@ -133,17 +133,6 @@ history.parameters?.push({
     required: false,
     schema: { type: 'string', minLength: 1, maxLength: 512 },
     description: 'Cursor opaco vinculado ao ator, espaço e pendência.',
-});
-const detail = operation(
-    'getObligationWaiver',
-    'Consultar dispensa com autoria, data e motivo',
-    'ObligationWaiverDetail',
-);
-detail.parameters?.push({
-    name: 'waiverId',
-    in: 'path',
-    required: true,
-    schema: uuid,
 });
 const record = operation(
     'waiveInterMemberObligation',
@@ -195,16 +184,12 @@ export const obligationWaiverOpenApi: Pick<
                 post: record,
                 get: history,
             },
-        '/v2/spaces/{spaceId}/inter-member-obligations/{obligationId}/waivers/{waiverId}':
-            {
-                get: detail,
-            },
     },
     components: {
         schemas: {
             RecordObligationWaiverRequest: request,
             RecordObligationWaiverResponse: object(fact),
-            ObligationWaiverDetail: object(fact),
+            ObligationWaiverHistoryItem: object(fact),
             ObligationWaiverOptions: object({
                 spaceId: uuid,
                 spaceStatus: {
@@ -248,7 +233,7 @@ export const obligationWaiverOpenApi: Pick<
                 items: {
                     type: 'array',
                     maxItems: 20,
-                    items: ref('ObligationWaiverDetail'),
+                    items: ref('ObligationWaiverHistoryItem'),
                 },
                 page: object({
                     pageSize: { type: 'integer', enum: [20] },

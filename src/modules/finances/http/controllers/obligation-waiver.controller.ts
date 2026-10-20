@@ -22,7 +22,6 @@ import {
     WaiveObligationPipe,
     type WaiveObligationDto,
     ObligationWaiverParamsDto,
-    WaiverDetailParamsDto,
     WaiverHistoryQueryDto,
 } from '../dto/obligation-waiver.dto.js';
 @Controller('spaces/:spaceId/inter-member-obligations/:obligationId')
@@ -57,19 +56,6 @@ export class ObligationWaiverController {
             q.cursor,
         );
     }
-    @Get('waivers/:waiverId')
-    @Header('Cache-Control', 'no-store')
-    detail(
-        @CurrentActor() actor: RequestActor,
-        @Param() p: WaiverDetailParamsDto,
-    ) {
-        return this.queries.detail(
-            PersonId.from(actor.personId.value),
-            SpaceId.from(p.spaceId.toLowerCase()),
-            p.obligationId.toLowerCase(),
-            p.waiverId.toLowerCase(),
-        );
-    }
     @Post('waivers')
     @Header('Cache-Control', 'no-store')
     async create(
@@ -87,10 +73,6 @@ export class ObligationWaiverController {
             idempotencyKey,
         });
         if (result.replayed) response.status(200);
-        response.setHeader(
-            'Location',
-            `/v2/spaces/${result.spaceId}/inter-member-obligations/${result.obligation.id}/waivers/${result.waiver.id}`,
-        );
         return result;
     }
 }

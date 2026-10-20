@@ -134,39 +134,7 @@ export class FinancialChangeController {
         @Query(FinancialChangeListPipe) query: FinancialChangeListDto,
     ) {
         const ids = this.ids(actor, space);
-        return this.changes.list(ids.actorId, ids.spaceId, null, query);
-    }
-    @Get('financial-commitments/:commitmentId/change-proposals')
-    @Header('Cache-Control', 'no-store')
-    list(
-        @CurrentActor() actor: RequestActor,
-        @Param('spaceId') space: string,
-        @Param('commitmentId') id: string,
-        @Query(FinancialChangeListPipe) query: FinancialChangeListDto,
-    ) {
-        const ids = this.ids(actor, space);
-        return this.changes.list(
-            ids.actorId,
-            ids.spaceId,
-            this.id(id, 'commitmentId'),
-            query,
-        );
-    }
-    @Get('financial-commitments/:commitmentId/change-proposals/:proposalId')
-    @Header('Cache-Control', 'no-store')
-    detail(
-        @CurrentActor() actor: RequestActor,
-        @Param('spaceId') space: string,
-        @Param('commitmentId') id: string,
-        @Param('proposalId') proposalId: string,
-    ) {
-        const ids = this.ids(actor, space);
-        return this.changes.detail(
-            ids.actorId,
-            ids.spaceId,
-            this.id(id, 'commitmentId'),
-            this.id(proposalId, 'proposalId'),
-        );
+        return this.changes.list(ids.actorId, ids.spaceId, query);
     }
     @Post(
         'financial-commitments/:commitmentId/change-proposals/:proposalId/acceptance',

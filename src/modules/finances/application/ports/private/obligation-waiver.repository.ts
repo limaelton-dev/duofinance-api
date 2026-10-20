@@ -18,11 +18,6 @@ export interface ObligationWaiverRepository {
         spaceId: string,
         obligationId: string,
     ): Promise<ObligationWaiverOptions | null>;
-    detail(
-        spaceId: string,
-        obligationId: string,
-        waiverId: string,
-    ): Promise<ObligationWaiverResult | null>;
     history(
         spaceId: string,
         obligationId: string,

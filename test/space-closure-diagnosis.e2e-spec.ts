@@ -59,12 +59,12 @@ describe('shared space closure request and diagnosis HTTP/PostgreSQL', () => {
     it('reads an authorized active space before any closure without persisting an implicit process', async () => {
         const f = await formingSharedSpace(app),
             before = await snapshot(),
-            read = await f.a.agent.get(f.path).expect(200),
             history = await f.a.agent.get(`${f.path}/history`).expect(200),
             diagnostic = await f.a.agent
                 .get(`${f.path}/diagnostic`)
                 .expect(200);
-        expect(read.headers['cache-control']).toBe('no-store');
+        await f.a.agent.get(f.path).expect(404);
+        expect(diagnostic.headers['cache-control']).toBe('no-store');
         expect(history.body).toEqual({ items: [], nextCursor: null });
         expect(diagnostic.body).toMatchObject({
             spaceId: f.space,
@@ -163,9 +163,9 @@ describe('shared space closure request and diagnosis HTTP/PostgreSQL', () => {
             );
             for (const member of [f.a, f.b]) {
                 const read = await member.agent
-                    .get(closurePath(f.space))
+                    .get(`${closurePath(f.space)}/diagnostic`)
                     .expect(200);
-                expect(read.body.processId).toBe(result.body.processId);
+                expect(read.body.closure.processId).toBe(result.body.processId);
                 expect(read.headers['cache-control']).toBe('no-store');
             }
             expect(
@@ -189,7 +189,7 @@ describe('shared space closure request and diagnosis HTTP/PostgreSQL', () => {
         for (const space of [f.space, randomUUID()]) {
             const path = closurePath(space);
             await outsider.post(path, { expectedSpaceVersion: 1 }).expect(404);
-            for (const suffix of ['', '/diagnostic', '/history'])
+            for (const suffix of ['/diagnostic', '/history'])
                 await outsider.agent.get(path + suffix).expect(404);
         }
         expect(await snapshot()).toEqual(before);
@@ -794,7 +794,9 @@ describe('shared space closure request and diagnosis HTTP/PostgreSQL', () => {
     it('requires authentication and CSRF for closure commands', async () => {
         const f = await formingSharedSpace(app),
             before = await snapshot();
-        await request(app.getHttpServer()).get(f.path).expect(401);
+        await request(app.getHttpServer())
+            .get(`${f.path}/diagnostic`)
+            .expect(401);
         await f.a.agent
             .post(f.path)
             .set('Idempotency-Key', randomUUID())
@@ -854,7 +856,7 @@ describe('shared space closure request and diagnosis HTTP/PostgreSQL', () => {
         const paths = createApiOpenApiDocument(false).paths,
             base = '/v2/spaces/{spaceId}/closure';
         expect(paths[base]?.post).toBeDefined();
-        expect(paths[base]?.get).toBeDefined();
+        expect(paths[base]?.get).toBeUndefined();
         expect(paths[`${base}/diagnostic`]?.get).toBeDefined();
         expect(paths[`${base}/cutoff-date`]?.post).toBeDefined();
         expect(paths[`${base}/history`]?.get).toBeDefined();

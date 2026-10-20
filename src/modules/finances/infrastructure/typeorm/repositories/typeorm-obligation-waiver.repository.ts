@@ -88,37 +88,27 @@ export class TypeOrmObligationWaiverRepository implements ObligationWaiverReposi
     private async details(
         spaceId: string,
         obligationId: string,
-        waiverId: string | null,
         after: PositionKey | null,
     ) {
         const rows: { result: ObligationWaiverResult }[] = await this.provider
             .get()
             .query(
-                `WITH page AS MATERIALIZED (SELECT * FROM obligation_waivers WHERE space_id=$1 AND obligation_id=$2 AND ($3::uuid IS NULL OR id=$3) AND ($4::timestamptz IS NULL OR (registered_at,id)<($4::timestamptz,$5::uuid)) ORDER BY registered_at DESC,id DESC LIMIT 21)
+                `WITH page AS MATERIALIZED (SELECT * FROM obligation_waivers WHERE space_id=$1 AND obligation_id=$2 AND ($3::timestamptz IS NULL OR (registered_at,id)<($3::timestamptz,$4::uuid)) ORDER BY registered_at DESC,id DESC LIMIT 21)
             SELECT jsonb_build_object('spaceId',w.space_id,'waiver',jsonb_build_object('id',w.id,'obligationId',w.obligation_id,'creditorMemberId',w.creditor_member_id,'amountInCents',w.amount_in_cents,'factDate',to_char(w.fact_date,'YYYY-MM-DD'),'registeredAt',to_char(w.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),'createdByPersonId',w.created_by,'reason',w.reason),
             'obligation',jsonb_build_object('id',o.id,'version',o.version,'status',o.status,'cycleId',o.cycle_id,'remainingAmountInCents',o.remaining_amount_in_cents)||CASE WHEN o.closure_agreement_id IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('closureAgreementId',o.closure_agreement_id) END,'affectedCycleIds',CASE WHEN ch.snapshot->>'cycleId' IS NULL THEN '[]'::jsonb ELSE jsonb_build_array(ch.snapshot->>'cycleId') END,'replayed',false) AS result
             FROM page w JOIN inter_member_obligations o ON o.space_id=w.space_id AND o.id=w.obligation_id JOIN inter_member_obligation_changes ch ON ch.space_id=w.space_id AND ch.obligation_id=w.obligation_id AND ch.type='WAIVED' AND ch.snapshot->>'waiverId'=w.id::text ORDER BY w.registered_at DESC,w.id DESC`,
                 [
                     spaceId,
                     obligationId,
-                    waiverId,
                     after?.registeredAt ?? null,
                     after?.id ?? null,
                 ],
             );
         return rows.map((r) => r.result);
     }
-    detail(spaceId: string, obligationId: string, waiverId: string) {
-        return this.provider.readSnapshot(
-            async () =>
-                (
-                    await this.details(spaceId, obligationId, waiverId, null)
-                )[0] ?? null,
-        );
-    }
     history(spaceId: string, obligationId: string, after: PositionKey | null) {
         return this.provider.readSnapshot(() =>
-            this.details(spaceId, obligationId, null, after),
+            this.details(spaceId, obligationId, after),
         );
     }
 }

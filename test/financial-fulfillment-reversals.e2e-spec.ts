@@ -1476,10 +1476,19 @@ describe('compensating financial reversals preserve original facts', () => {
         expect(
             (
                 await f.a.agent
-                    .get(`${path}/change-proposals/${proposed.proposal.id}`)
+                    .get(
+                        `${financeBase(f.space)}/financial-change-proposals?status=ACCEPTED`,
+                    )
                     .expect(200)
-            ).body.proposal.status,
-        ).toBe('ACCEPTED');
+            ).body.items,
+        ).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: proposed.proposal.id,
+                    status: 'ACCEPTED',
+                }),
+            ]),
+        );
         expect(
             (
                 await db.query(

@@ -72,12 +72,7 @@ export class TypeOrmFinancialChangeRepository implements FinancialChangeReposito
         if (changed.affected !== 1)
             throw new FinancesError('CONCURRENT_MODIFICATION');
     }
-    async find(
-        spaceId: string,
-        commitmentId: string,
-        id: string,
-        lock = false,
-    ) {
+    async find(spaceId: string, commitmentId: string, id: string) {
         const q = this.managers
             .get()
             .createQueryBuilder(FinancialChangeProposalOrmEntity, 'p')
@@ -85,13 +80,12 @@ export class TypeOrmFinancialChangeRepository implements FinancialChangeReposito
                 'p.space_id=:spaceId AND p.commitment_id=:commitmentId AND p.id=:id',
                 { spaceId, commitmentId, id },
             );
-        if (lock) q.setLock('pessimistic_write');
+        q.setLock('pessimistic_write');
         const row = await q.getOne();
         return row ? this.hydrate(row) : null;
     }
     async list(
         spaceId: string,
-        commitmentId: string | null,
         recipientMemberId: string | null,
         status: string | null,
         after: string | null,
@@ -100,8 +94,6 @@ export class TypeOrmFinancialChangeRepository implements FinancialChangeReposito
             .get()
             .createQueryBuilder(FinancialChangeProposalOrmEntity, 'p')
             .where('p.space_id=:spaceId', { spaceId });
-        if (commitmentId)
-            q.andWhere('p.commitment_id=:commitmentId', { commitmentId });
         if (recipientMemberId)
             q.andWhere('p.recipient_member_id=:recipientMemberId', {
                 recipientMemberId,

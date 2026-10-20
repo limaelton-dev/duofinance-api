@@ -284,7 +284,9 @@ describe('closure proposal and consent HTTP/PostgreSQL', () => {
                 origin_id: root.id,
                 successor_commitment_id: expect.any(String),
             });
-            const state = (await f.a.agent.get(f.path).expect(200)).body;
+            const state = (
+                await f.a.agent.get(`${f.path}/diagnostic`).expect(200)
+            ).body.closure;
             expect(state).toMatchObject({
                 spaceStatus: 'CLOSING',
                 planStatus: 'APPROVED',
@@ -437,9 +439,10 @@ describe('closure proposal and consent HTTP/PostgreSQL', () => {
             proposedCutoffDate: future,
             planStatus: 'PROPOSED',
         });
-        expect((await f.b!.agent.get(f.path).expect(200)).body.cutoffDate).toBe(
-            day,
-        );
+        expect(
+            (await f.b!.agent.get(`${f.path}/diagnostic`).expect(200)).body
+                .closure.cutoffDate,
+        ).toBe(day);
         const approved = (
             await f
                 .b!.post(`${f.path}/approval`, approvalInput(proposed))
@@ -583,9 +586,10 @@ describe('closure proposal and consent HTTP/PostgreSQL', () => {
             .expect(409);
         expect(await snapshot()).toEqual(before);
         expect(await effects(started.processId)).toEqual([]);
-        expect((await f.a.agent.get(f.path).expect(200)).body.planStatus).toBe(
-            'PROPOSED',
-        );
+        expect(
+            (await f.a.agent.get(`${f.path}/diagnostic`).expect(200)).body
+                .closure.planStatus,
+        ).toBe('PROPOSED');
     });
 
     it.each(['approval', 'edit'] as const)(
@@ -617,7 +621,9 @@ describe('closure proposal and consent HTTP/PostgreSQL', () => {
                 );
             expect(winner.status).toBe(200);
             expect(loser.status).toBe(409);
-            const view = (await f.a.agent.get(f.path).expect(200)).body;
+            const view = (
+                await f.a.agent.get(`${f.path}/diagnostic`).expect(200)
+            ).body.closure;
             expect(view.planStatus).toBe(
                 first === 'approval' ? 'APPROVED' : 'DRAFT',
             );
@@ -653,7 +659,9 @@ describe('closure proposal and consent HTTP/PostgreSQL', () => {
                 );
             expect(winner.status).toBe(200);
             expect(loser.status).toBe(409);
-            const view = (await f.a.agent.get(f.path).expect(200)).body;
+            const view = (
+                await f.a.agent.get(`${f.path}/diagnostic`).expect(200)
+            ).body.closure;
             expect(view.planStatus).toBe(
                 first === 'approval' ? 'APPROVED' : 'REJECTED',
             );
@@ -821,7 +829,10 @@ describe('closure proposal and consent HTTP/PostgreSQL', () => {
                 .expect(409);
         expect(response.body.code).toBe('CLOSURE_PLAN_OBSOLETE');
         expect(await snapshot()).toEqual(before);
-        expect((await f.a.agent.get(f.path).expect(200)).body).toMatchObject({
+        expect(
+            (await f.a.agent.get(`${f.path}/diagnostic`).expect(200)).body
+                .closure,
+        ).toMatchObject({
             planStatus: 'PROPOSED',
             approvals: [{ memberId: f.ma }],
         });
@@ -896,7 +907,10 @@ describe('closure proposal and consent HTTP/PostgreSQL', () => {
                 .expect(409);
         expect(response.body.code).toBe('CLOSURE_PLAN_OBSOLETE');
         expect(await snapshot()).toEqual(before);
-        expect((await f.a.agent.get(f.path).expect(200)).body).toMatchObject({
+        expect(
+            (await f.a.agent.get(`${f.path}/diagnostic`).expect(200)).body
+                .closure,
+        ).toMatchObject({
             planStatus: 'DRAFT',
             approvals: [],
             proposalSnapshot: null,

@@ -100,9 +100,6 @@ export class ClosureService {
                 ).view,
         );
     }
-    read(actorId: string, spaceId: string) {
-        return this.spaces.read(actorId, spaceId);
-    }
     async reviewPlan(actorId: string, spaceId: string) {
         const actor = PersonId.from(actorId),
             space = SpaceId.from(spaceId);

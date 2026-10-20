@@ -258,7 +258,6 @@ export class FinancialCommitmentChangesHandler {
                     c.spaceId.value,
                     c.commitmentId,
                     c.proposalId,
-                    true,
                 );
                 if (!proposal)
                     throw new FinancesError(
@@ -319,25 +318,9 @@ export class FinancialCommitmentChangesHandler {
             'CORRECTION',
         );
     }
-    async detail(
-        actor: PersonId,
-        space: SpaceId,
-        id: string,
-        proposalId: string,
-    ) {
-        await this.access.assertCanRead(actor, space);
-        const proposal = await this.repository.snapshot(() =>
-            this.repository.find(space.value, id, proposalId),
-        );
-        if (!proposal)
-            throw new FinancesError('FINANCIAL_CHANGE_PROPOSAL_NOT_FOUND');
-        await this.access.assertCanRead(actor, space);
-        return { proposal: proposal.state };
-    }
     async list(
         actor: PersonId,
         space: SpaceId,
-        id: string | null,
         query: { status?: string; recipient?: string; cursor?: string },
     ) {
         const access = await this.access.assertCanRead(actor, space);
@@ -356,7 +339,7 @@ export class FinancialCommitmentChangesHandler {
         const scope = JSON.stringify([
             actor.value,
             space.value,
-            id,
+            null, // Inbox cursors have no commitment filter.
             query.status ?? null,
             query.recipient ?? null,
         ]);
@@ -384,17 +367,14 @@ export class FinancialCommitmentChangesHandler {
                 throw new FinancesError('VALIDATION_ERROR', ['cursor']);
             }
         }
-        const result = await this.repository.snapshot(async () => {
-            if (id && !(await this.repository.origin(space.value, id)))
-                throw new FinancesError('FINANCIAL_COMMITMENT_NOT_FOUND');
-            return this.repository.list(
+        const result = await this.repository.snapshot(() =>
+            this.repository.list(
                 space.value,
-                id,
                 query.recipient === 'ME' ? context.actorMemberId : null,
                 query.status ?? null,
                 after,
-            );
-        });
+            ),
+        );
         await this.access.assertCanRead(actor, space);
         const items = result.items
             .slice(0, 20)

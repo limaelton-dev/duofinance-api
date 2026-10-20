@@ -208,10 +208,6 @@ export const closureOpenApi: Pick<
         },
         '/v2/spaces/{spaceId}/closure': {
             post: command('startSharedSpaceClosure', 'StartClosure', 201),
-            get: query(
-                'getSharedSpaceClosure',
-                nullable(ref('SpaceClosureView')),
-            ),
         },
         '/v2/spaces/{spaceId}/closure/cutoff-date': {
             post: command('proposeClosureCutoff', 'ClosureCutoff'),
