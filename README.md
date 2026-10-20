@@ -1,6 +1,21 @@
-# Prospera Mais API
+# DuoFinance API
 
 API NestJS com PostgreSQL, contratos REST em `/v2`, sessões por cookie e proteção CSRF. As regras de produto e decisões ficam na [documentação oficial](../Docs/README.md); o [contexto atual](../Docs/Acompanhamentos/CONTEXTO-E-DECISOES.md) aponta para as evidências de entrega.
+
+Repositórios: [API](https://github.com/limaelton-dev/duofinance-api) e [Web](https://github.com/limaelton-dev/duofinance-web).
+
+## Renomeação para DuoFinance
+
+Em 20/10/2026, o projeto passou a se chamar **DuoFinance**. O pacote é `duofinance-api` e a documentação OpenAPI usa a nova marca. Os contratos `/v2`, cookies, variáveis de ambiente e dados existentes continuam compatíveis; a renomeação não exige migration nem alteração do banco configurado em `DATABASE_URL`.
+
+O ambiente descartável de testes usa o projeto Compose `duofinance-tests` e o banco `duofinance_test`. Caso o projeto de testes anterior ainda esteja usando a porta 55432, encerre-o antes de iniciar o novo:
+
+```sh
+docker compose -p prospera-mais-tests -f compose.test.yaml down
+docker compose -f compose.test.yaml up -d --wait
+```
+
+O banco de testes usa `tmpfs`: encerrar esse ambiente descarta seus dados. Esse procedimento não se aplica ao banco de desenvolvimento ou produção.
 
 ## Desenvolvimento local
 

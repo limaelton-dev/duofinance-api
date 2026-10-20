@@ -1,4 +1,4 @@
-name: prospera-mais-tests
+name: duofinance-tests
 
 services:
     postgres:
@@ -6,13 +6,13 @@ services:
         environment:
             POSTGRES_USER: test
             POSTGRES_PASSWORD: test
-            POSTGRES_DB: prospera_mais_test
+            POSTGRES_DB: duofinance_test
         ports:
             - '127.0.0.1:55432:5432'
         tmpfs:
             - /var/lib/postgresql
         healthcheck:
-            test: ['CMD-SHELL', 'pg_isready -U test -d prospera_mais_test']
+            test: ['CMD-SHELL', 'pg_isready -U test -d duofinance_test']
             interval: 2s
             timeout: 3s
             retries: 30
