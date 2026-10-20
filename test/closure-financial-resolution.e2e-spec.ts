@@ -207,7 +207,10 @@ describe('closure financial resolution and validation HTTP/PostgreSQL', () => {
             planRevision: approved.planRevision,
             spaceVersion: approved.spaceVersion,
         });
-        expect((await f.a.agent.get(f.path).expect(200)).body).toMatchObject({
+        expect(
+            (await f.a.agent.get(`${f.path}/diagnostic`).expect(200)).body
+                .closure,
+        ).toMatchObject({
             spaceStatus: 'CLOSING',
             confirmations: [],
         });
@@ -1168,7 +1171,8 @@ describe('closure financial resolution and validation HTTP/PostgreSQL', () => {
                     : [],
             );
             expect(
-                (await f.a.agent.get(f.path).expect(200)).body.spaceStatus,
+                (await f.a.agent.get(`${f.path}/diagnostic`).expect(200)).body
+                    .closure.spaceStatus,
             ).toBe('CLOSING');
         },
     );

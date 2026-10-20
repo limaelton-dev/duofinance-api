@@ -19,7 +19,6 @@ export type FinancesErrorCode =
     | 'INSTALLMENT_SELECTION_CHANGED'
     | 'SETTLEMENT_RESOLUTION_ALREADY_REVERSED'
     | 'REVERSAL_CORRECTION_CYCLE_REQUIRED'
-    | 'OBLIGATION_WAIVER_NOT_FOUND'
     | 'SETTLEMENT_OFFSET_NOT_FOUND'
     | 'EXTERNAL_LIABILITY_NOT_FOUND'
     | 'EXTERNAL_LIABILITY_ALREADY_SETTLED'
@@ -84,7 +83,6 @@ const messages: Record<FinancesErrorCode, string> = {
         'Este acerto já foi integralmente revertido.',
     REVERSAL_CORRECTION_CYCLE_REQUIRED:
         'Escolha um ciclo aberto para registrar a correção sem alterar o acerto finalizado.',
-    OBLIGATION_WAIVER_NOT_FOUND: 'Dispensa não encontrada.',
     SETTLEMENT_OFFSET_NOT_FOUND: 'Compensação não encontrada.',
     EXTERNAL_LIABILITY_NOT_FOUND:
         'Obriga\u00e7\u00e3o externa n\u00e3o encontrada.',

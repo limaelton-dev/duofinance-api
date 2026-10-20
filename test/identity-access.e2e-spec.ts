@@ -791,7 +791,7 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
             .expect(200);
 
         expect(response.body.openapi).toBe('3.1.0');
-        expect(Object.keys(response.body.paths)).toHaveLength(146);
+        expect(Object.keys(response.body.paths)).toHaveLength(144);
 
         const paths = response.body.paths as Record<
             string,
@@ -816,7 +816,29 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
             0,
         );
 
-        expect(operations).toBe(166);
+        expect(operations).toBe(162);
+        expect(
+            paths[
+                '/v2/spaces/{spaceId}/financial-commitments/{commitmentId}/change-proposals'
+            ],
+        ).not.toHaveProperty('get');
+        expect(
+            paths[
+                '/v2/spaces/{spaceId}/financial-commitments/{commitmentId}/change-proposals/{proposalId}'
+            ],
+        ).toBeUndefined();
+        expect(
+            paths[
+                '/v2/spaces/{spaceId}/inter-member-obligations/{obligationId}/waivers/{waiverId}'
+            ],
+        ).toBeUndefined();
+        const waiverCreation = paths[
+            '/v2/spaces/{spaceId}/inter-member-obligations/{obligationId}/waivers'
+        ].post as { responses: Record<string, { headers: object }> };
+        for (const status of ['200', '201'])
+            expect(waiverCreation.responses[status].headers).not.toHaveProperty(
+                'Location',
+            );
         expect(
             paths[
                 '/v2/spaces/{spaceId}/financial-commitments/{commitmentId}/reversal-preview'

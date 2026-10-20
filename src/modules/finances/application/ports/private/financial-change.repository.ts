@@ -34,11 +34,9 @@ export interface FinancialChangeRepository {
         spaceId: string,
         commitmentId: string,
         id: string,
-        lock?: boolean,
     ): Promise<CommitmentChangeProposal | null>;
     list(
         spaceId: string,
-        commitmentId: string | null,
         recipientMemberId: string | null,
         status: string | null,
         after: string | null,

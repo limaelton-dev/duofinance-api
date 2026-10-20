@@ -54,22 +54,6 @@ export class ObligationWaiverQueries {
             waiverBlockReason,
         };
     }
-    async detail(
-        actor: PersonId,
-        space: SpaceId,
-        obligationId: string,
-        waiverId: string,
-    ) {
-        await this.access.read(actor, space);
-        const data = await this.waivers.detail(
-            space.value,
-            obligationId,
-            waiverId,
-        );
-        await this.access.read(actor, space);
-        if (!data) throw new FinancesError('OBLIGATION_WAIVER_NOT_FOUND');
-        return data;
-    }
     async history(
         actor: PersonId,
         space: SpaceId,

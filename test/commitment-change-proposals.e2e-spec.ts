@@ -151,6 +151,10 @@ describe('prospective financial changes and recipient acceptance', () => {
             replayed: false,
             proposal: { version: 1, status: 'PROPOSED' },
         });
+        await f.a.agent.get(`${path}/change-proposals`).expect(404);
+        await f.a.agent
+            .get(`${path}/change-proposals/${proposed.proposal.id}`)
+            .expect(404);
         const afterProposal = await financeSnapshot(db);
         expect(
             (await f.a.post(`${path}/change-proposals`, input, key).expect(200))
@@ -320,11 +324,22 @@ describe('prospective financial changes and recipient acceptance', () => {
             .post(`${proposalPath}/acceptance`, decisionInput(f))
             .expect(409);
         expect(
-            (await f.a.agent.get(proposalPath).expect(200)).body.proposal,
+            (
+                await f.a.agent
+                    .get(
+                        `${financeBase(f.space)}/financial-change-proposals?status=REJECTED`,
+                    )
+                    .expect(200)
+            ).body.items.find(
+                (item: { id: string }) => item.id === proposal.id,
+            ),
         ).toMatchObject({ id: proposal.id, status: 'REJECTED' });
         expect(
-            (await f.b.agent.get(`${path}/change-proposals`).expect(200)).body
-                .items,
+            (
+                await f.b.agent
+                    .get(`${financeBase(f.space)}/financial-change-proposals`)
+                    .expect(200)
+            ).body.items,
         ).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
@@ -370,8 +385,14 @@ describe('prospective financial changes and recipient acceptance', () => {
         const winner = results.find((response) => response.status === 201)!.body
             .proposal;
         expect(
-            (await f.b.agent.get(proposalPath).expect(200)).body.proposal,
-        ).toMatchObject({ status: winner.status, version: 2 });
+            (
+                await f.b.agent
+                    .get(`${financeBase(f.space)}/financial-change-proposals`)
+                    .expect(200)
+            ).body.items,
+        ).toMatchObject([
+            { id: proposal.id, status: winner.status, version: 2 },
+        ]);
         expect(
             (
                 await db.query(
@@ -466,8 +487,11 @@ describe('prospective financial changes and recipient acceptance', () => {
         ).body;
         expect(value.occurrence).toMatchObject({ amountInCents: 200000 });
         expect(
-            (await f.b.agent.get(`${path}/change-proposals`).expect(200)).body
-                .items,
+            (
+                await f.b.agent
+                    .get(`${financeBase(f.space)}/financial-change-proposals`)
+                    .expect(200)
+            ).body.items,
         ).toEqual([]);
         const structural = {
             ...change,

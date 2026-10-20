@@ -407,13 +407,6 @@ export const financialChangeOpenApi: Pick<
                 'FinancialCommitmentChangeRequest',
                 'FinancialCommitmentProposalCommandResponse',
             ),
-            get: read(
-                'listFinancialCommitmentChangeProposals',
-                'Consultar propostas e decisões do compromisso',
-                'FinancialCommitmentChangeProposalList',
-                ['commitmentId'],
-                true,
-            ),
         },
         '/v2/spaces/{spaceId}/financial-change-proposals': {
             get: read(
@@ -422,14 +415,6 @@ export const financialChangeOpenApi: Pick<
                 'FinancialCommitmentChangeProposalList',
                 [],
                 true,
-            ),
-        },
-        [`${proposals}/{proposalId}`]: {
-            get: read(
-                'getFinancialCommitmentChangeProposal',
-                'Consultar configuração, impacto e decisão de uma proposta',
-                'FinancialCommitmentChangeProposalDetail',
-                ['commitmentId', 'proposalId'],
             ),
         },
         [`${proposals}/{proposalId}/acceptance`]: {
@@ -514,9 +499,6 @@ export const financialChangeOpenApi: Pick<
                 ],
             },
             FinancialCommitmentChangeProposal: proposal,
-            FinancialCommitmentChangeProposalDetail: object({
-                proposal: ref('FinancialCommitmentChangeProposal'),
-            }),
             FinancialCommitmentProposalCommandResponse: object({
                 proposal: ref('FinancialCommitmentChangeProposal'),
                 replayed: boolean,

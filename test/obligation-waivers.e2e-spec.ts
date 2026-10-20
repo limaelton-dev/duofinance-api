@@ -115,8 +115,10 @@ describe('creditor waivers HTTP/PostgreSQL', () => {
         expect(forbidden.body.code).toBe('OBLIGATION_CREDITOR_REQUIRED');
         const outsider = await financeBrowser(app, 'Terceiro');
         await outsider.agent.get(optionsPath).expect(404);
+        await outsider.agent.get(path(f, id)).expect(404);
         await outsider.post(path(f, id), body(f, 1, 1000)).expect(404);
         await request(app.getHttpServer()).get(optionsPath).expect(401);
+        await request(app.getHttpServer()).get(path(f, id)).expect(401);
         await f.b.agent
             .post(path(f, id))
             .set('Origin', 'http://localhost:3000')
@@ -344,6 +346,13 @@ describe('creditor waivers HTTP/PostgreSQL', () => {
         const first = duplicates.find(
             (response) => response.status === 201,
         )!.body;
+        for (const response of duplicates) {
+            expect(response.headers.location).toBeUndefined();
+            expect(response.body).toEqual({
+                ...first,
+                replayed: response.status === 200,
+            });
+        }
         const before = await financeSnapshot(db);
         await f.b
             .post(
@@ -515,7 +524,7 @@ describe('creditor waivers HTTP/PostgreSQL', () => {
         expect(await financeSnapshot(db)).toEqual(before);
     });
 
-    it('pages immutable waiver facts while each detail identifies the current obligation', async () => {
+    it('pages immutable waiver facts with the current obligation in every history item', async () => {
         const f = await sharedFinance(app);
         const initial = await record(f, 1000);
         const id = initial.obligation.id as string;
@@ -541,20 +550,19 @@ describe('creditor waivers HTTP/PostgreSQL', () => {
                 .map((item: { waiver: { id: string } }) => item.waiver.id)
                 .sort(),
         ).toEqual(ids.sort());
-        const historical = (
-            await f.a.agent.get(`${path(f, id)}/${ids[0]}`).expect(200)
-        ).body;
-        expect(historical).toMatchObject({
-            waiver: {
-                amountInCents: 1,
-                createdByPersonId: f.b.context.person.id,
-            },
-            obligation: {
-                version: 22,
-                remainingAmountInCents: 979,
-                status: 'PARTIALLY_SETTLED',
-            },
-        });
+        for (const historical of [...first.items, ...second.items])
+            expect(historical).toMatchObject({
+                waiver: {
+                    amountInCents: 1,
+                    createdByPersonId: f.b.context.person.id,
+                },
+                obligation: {
+                    version: 22,
+                    remainingAmountInCents: 979,
+                    status: 'PARTIALLY_SETTLED',
+                },
+            });
+        await f.a.agent.get(`${path(f, id)}/${ids[0]}`).expect(404);
         await f.b.agent
             .get(path(f, id))
             .query({ cursor: first.page.nextCursor })

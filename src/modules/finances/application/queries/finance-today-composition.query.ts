@@ -264,7 +264,6 @@ export class FinanceTodayCompositionQuery implements FinanceTodayCompositionQuer
             };
             const proposed = await this.changes.list(
                 space.value,
-                null,
                 result.actorMemberId,
                 'PROPOSED',
                 null,

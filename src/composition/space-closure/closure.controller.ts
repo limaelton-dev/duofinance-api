@@ -170,14 +170,6 @@ export class ClosureController {
             parseZodInput(cutoffDate, b),
         );
     }
-    @Get()
-    @Header('Cache-Control', 'no-store')
-    read(@CurrentActor() actor: RequestActor, @Param() p: unknown) {
-        return this.service.read(
-            actor.personId.value,
-            parseZodInput(closureParams, p).spaceId,
-        );
-    }
     @Post('future-destinations')
     @HttpCode(200)
     @Header('Cache-Control', 'no-store')
