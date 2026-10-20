@@ -215,10 +215,12 @@ describe('future financial destinations HTTP/PostgreSQL', () => {
                 planStatus: 'DRAFT',
                 planRevision: 2,
                 spaceVersion: plan.spaceVersion + 1,
-                requiredMemberIds: f.memberIds,
                 approvals: [],
                 confirmations: [],
             });
+            expect([...result.body.requiredMemberIds].sort()).toEqual(
+                [...f.memberIds].sort(),
+            );
             expect(result.body.futureDestinations).toHaveLength(1);
             expect(result.body.futureDestinations[0]).toMatchObject({
                 originType: 'RECURRING',
