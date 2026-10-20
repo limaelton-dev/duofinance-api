@@ -16,7 +16,7 @@ function pending() {
 }
 
 describe('Invitation cancellation for space closure', () => {
-    it('cancela sem substituir e permanece idempotente e inutilizável', () => {
+    it('cancels without replacement and remains idempotent and unusable', () => {
         const original = pending();
         const now = new Date(cancelledAt);
         const cancelled = original.cancelForClosure('process-1', now);
@@ -43,7 +43,7 @@ describe('Invitation cancellation for space closure', () => {
         expect(original.closureProcessId).toBeNull();
     });
 
-    it('preserva expiração na fronteira e não atribui seu histórico ao encerramento', () => {
+    it('preserves expiration at the boundary without attributing its history to closure', () => {
         const original = pending();
         const expired = original.cancelForClosure(
             'process-1',
@@ -59,7 +59,7 @@ describe('Invitation cancellation for space closure', () => {
         expect(original.status).toBe(InvitationStatus.PENDING);
     });
 
-    it('preserva substituições e respostas já concluídas', () => {
+    it('preserves completed replacements and responses', () => {
         const original = pending();
         const replacementId = InvitationId.from('invitation-2');
         const replaced = original.replaceWith(replacementId, cancelledAt);
@@ -79,7 +79,7 @@ describe('Invitation cancellation for space closure', () => {
         }
     });
 
-    it('não cancela convite com processo ausente, instante inválido ou anterior à emissão', () => {
+    it('does not cancel an invitation with a missing process or an invalid time or a time before issuance', () => {
         const original = pending();
         expect(() => original.cancelForClosure('', cancelledAt)).toThrow(
             'Invalid invitation closure cancellation',

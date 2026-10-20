@@ -104,7 +104,7 @@ describe('shopping item needs', () => {
         { unit: '' },
         { unit: ' kg ' },
         { unit: 'x'.repeat(31) },
-    ])('rejects invalid item fields %j', (invalid) => {
+    ])('rejects invalid item fields in case %#', (invalid) => {
         expect(() => validateItem({ ...item, ...invalid })).toThrow();
     });
 });

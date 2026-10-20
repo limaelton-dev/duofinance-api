@@ -85,7 +85,7 @@ function fixture() {
     };
 }
 describe('ConfigureDefaultSettlementRuleHandler / query', () => {
-    it('consulta ausência autorizada sem escrita e sem regra presumida', async () => {
+    it('returns an authorized absence without writing or assuming a rule', async () => {
         const f = fixture();
         expect(
             await f.query.execute(f.command.actorId, f.command.spaceId),
@@ -99,7 +99,7 @@ describe('ConfigureDefaultSettlementRuleHandler / query', () => {
         expect(f.receipts.save).not.toHaveBeenCalled();
         expect(f.access.assertCanWrite).not.toHaveBeenCalled();
     });
-    it('configuração inicial cria v1/histórico/recibo na UoW', async () => {
+    it('creates the initial version, history and receipt in one unit of work', async () => {
         const f = fixture();
         const result = await f.handler.execute(f.command);
         expect(result).toMatchObject({
@@ -122,7 +122,7 @@ describe('ConfigureDefaultSettlementRuleHandler / query', () => {
         expect(f.access.assertCanWrite).toHaveBeenCalledTimes(2);
         expect(f.uow.execute).toHaveBeenCalledTimes(1);
     });
-    it('outro membro altera com snapshot anterior independente', async () => {
+    it('allows another member to change the rule while preserving the previous snapshot', async () => {
         const f = fixture();
         const aggregate = DefaultSettlementRule.create(
             f.command.spaceId.value,
@@ -143,7 +143,7 @@ describe('ConfigureDefaultSettlementRuleHandler / query', () => {
             { kind: 'MONTHLY_DAY', dayOfMonth: 10 },
         );
     });
-    it('no-op exige escrita, persiste só recibo e mantém v1', async () => {
+    it('requires write access for a no-op, persists only the receipt and keeps version 1', async () => {
         const f = fixture();
         f.repository.find.mockResolvedValue(
             DefaultSettlementRule.create(
@@ -159,7 +159,7 @@ describe('ConfigureDefaultSettlementRuleHandler / query', () => {
         expect(f.receipts.save).toHaveBeenCalledTimes(1);
         expect(f.access.assertCanWrite).toHaveBeenCalledTimes(2);
     });
-    it('versão obsoleta conflita mesmo com mesmo valor', async () => {
+    it('rejects a stale version even when the value is unchanged', async () => {
         const f = fixture();
         f.repository.find.mockResolvedValue(
             DefaultSettlementRule.create(
@@ -173,7 +173,7 @@ describe('ConfigureDefaultSettlementRuleHandler / query', () => {
         });
         expect(f.receipts.save).not.toHaveBeenCalled();
     });
-    it('replay autorizado retorna histórico sem executar nova escrita', async () => {
+    it('returns the authorized historical replay without another write', async () => {
         const f = fixture();
         const original = {
             spaceId: f.command.spaceId.value,
@@ -193,7 +193,7 @@ describe('ConfigureDefaultSettlementRuleHandler / query', () => {
         expect(f.repository.save).not.toHaveBeenCalled();
     });
     it.each(['CLOSING', 'CLOSED'] as const)(
-        'replay em %s legível permitido; comando/no-op novo negado',
+        'allows authorized replay in readable %s and denies new commands and no-ops',
         async (status) => {
             const f = fixture();
             f.access.assertCanRead.mockResolvedValue({ ...f.context, status });
@@ -206,7 +206,7 @@ describe('ConfigureDefaultSettlementRuleHandler / query', () => {
             expect(f.repository.save).not.toHaveBeenCalled();
         },
     );
-    it('pessoal é inaplicável antes de consultar regra/recibo', async () => {
+    it('rejects personal spaces before reading a rule or receipt', async () => {
         const f = fixture();
         f.access.assertCanRead.mockResolvedValue({
             ...f.context,
@@ -222,7 +222,7 @@ describe('ConfigureDefaultSettlementRuleHandler / query', () => {
         expect(f.receipts.find).not.toHaveBeenCalled();
         expect(f.repository.find).not.toHaveBeenCalled();
     });
-    it('revogação bloqueia replay antes de expor resultado', async () => {
+    it('blocks replay after access revocation before exposing the result', async () => {
         const f = fixture();
         f.access.assertCanRead.mockRejectedValue(
             new SpacesDomainError('SPACE_NOT_FOUND'),
@@ -232,7 +232,7 @@ describe('ConfigureDefaultSettlementRuleHandler / query', () => {
         });
         expect(f.receipts.find).not.toHaveBeenCalled();
     });
-    it('revalida escrita antes da persistência e propaga perda de acesso', async () => {
+    it('revalidates write access before persistence and propagates access loss', async () => {
         const f = fixture();
         f.access.assertCanWrite
             .mockResolvedValueOnce(f.context)
@@ -243,7 +243,7 @@ describe('ConfigureDefaultSettlementRuleHandler / query', () => {
         expect(f.repository.save).not.toHaveBeenCalled();
         expect(f.receipts.save).not.toHaveBeenCalled();
     });
-    it('revalida estado antes de persistir', async () => {
+    it('revalidates state before persistence', async () => {
         const f = fixture();
         f.access.assertCanWrite
             .mockResolvedValueOnce(f.context)
@@ -257,7 +257,7 @@ describe('ConfigureDefaultSettlementRuleHandler / query', () => {
         new FinancesReceiptRaceError(),
         new FinancesError('CONCURRENT_MODIFICATION'),
     ])(
-        'recupera corrida somente após rollback e nova autorização',
+        'recovers a race only after rollback and renewed authorization',
         async (error) => {
             const f = fixture();
             const result = {
@@ -280,7 +280,7 @@ describe('ConfigureDefaultSettlementRuleHandler / query', () => {
             expect(f.access.assertCanRead).toHaveBeenCalledTimes(2);
         },
     );
-    it('corrida com chave diferente mantém conflito; nunca transforma em sucesso', async () => {
+    it('preserves the conflict for a race with a different key instead of reporting success', async () => {
         const f = fixture();
         f.repository.save.mockRejectedValue(
             new FinancesError('CONCURRENT_MODIFICATION'),
@@ -289,7 +289,7 @@ describe('ConfigureDefaultSettlementRuleHandler / query', () => {
             code: 'CONCURRENT_MODIFICATION',
         });
     });
-    it('recuperação da corrida nega replay após revogação', async () => {
+    it('denies replay during race recovery after access revocation', async () => {
         const f = fixture();
         f.repository.save.mockRejectedValue(new FinancesReceiptRaceError());
         f.access.assertCanRead
@@ -300,14 +300,14 @@ describe('ConfigureDefaultSettlementRuleHandler / query', () => {
         });
         expect(f.receipts.find).toHaveBeenCalledTimes(1);
     });
-    it('falha do recibo é propagada para rollback da UoW', async () => {
+    it('propagates receipt failure to roll back the unit of work', async () => {
         const f = fixture();
         f.receipts.save.mockRejectedValue(new Error('failure'));
         await expect(f.handler.execute(f.command)).rejects.toThrow('failure');
         expect(f.uow.execute).toHaveBeenCalledTimes(1);
     });
     it.each([-1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
-        'versão %s inválida antes de qualquer efeito',
+        'rejects invalid version %s before any side effect',
         async (expectedVersion) => {
             const f = fixture();
             await expect(

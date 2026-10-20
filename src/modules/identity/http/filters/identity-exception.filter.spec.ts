@@ -36,12 +36,24 @@ function execute(exception: unknown, headersSent = false) {
 
 afterEach(() => vi.restoreAllMocks());
 
-describe('Identity — integração com ApiExceptionFilter', () => {
+describe('Identity integration with ApiExceptionFilter', () => {
     it.each([
-        [new EmailAlreadyInUseError(), 409],
-        [new InvalidCredentialsError(), 401],
-        [new UnauthenticatedError(), 401],
-    ] as const)('mapeia %s para %i', (error, status) => {
+        {
+            label: 'duplicate email',
+            error: new EmailAlreadyInUseError(),
+            status: 409,
+        },
+        {
+            label: 'invalid credentials',
+            error: new InvalidCredentialsError(),
+            status: 401,
+        },
+        {
+            label: 'unauthenticated session',
+            error: new UnauthenticatedError(),
+            status: 401,
+        },
+    ] as const)('maps $label to HTTP $status', ({ error, status }) => {
         const { response, headers } = execute(error);
 
         expect(response.status).toHaveBeenCalledWith(status);
@@ -53,8 +65,8 @@ describe('Identity — integração com ApiExceptionFilter', () => {
         expect(headers.get('Cache-Control')).toBe('no-store');
     });
 
-    it('mapeia o erro de CSRF', () => {
-        const error = Object.assign(new Error('mensagem da biblioteca'), {
+    it('maps the CSRF error', () => {
+        const error = Object.assign(new Error('Library message'), {
             code: 'INVALID_CSRF_TOKEN',
             statusCode: 403,
         });
@@ -69,7 +81,7 @@ describe('Identity — integração com ApiExceptionFilter', () => {
         });
     });
 
-    it('preserva Retry-After ao mapear o limitador', () => {
+    it('preserves Retry-After when mapping the rate limiter', () => {
         const { response, headers } = execute(new ThrottlerException());
 
         expect(response.status).toHaveBeenCalledWith(429);
@@ -81,7 +93,7 @@ describe('Identity — integração com ApiExceptionFilter', () => {
         expect(headers.get('Retry-After')).toBe('60');
     });
 
-    it('preserva os detalhes seguros da validação', () => {
+    it('preserves safe validation details', () => {
         const error = createValidationException([
             {
                 property: 'email',
@@ -108,11 +120,31 @@ describe('Identity — integração com ApiExceptionFilter', () => {
     });
 
     it.each([
-        [new ForbiddenException('detalhe privado'), 403],
-        [new NotFoundException('rota interna'), 404],
-        [Object.assign(new Error('JSON inválido'), { statusCode: 400 }), 400],
-        [Object.assign(new Error('body privado'), { statusCode: 413 }), 413],
-    ] as const)('normaliza outros erros HTTP: %s', (error, status) => {
+        {
+            label: 'forbidden request',
+            error: new ForbiddenException('Private detail'),
+            status: 403,
+        },
+        {
+            label: 'missing route',
+            error: new NotFoundException('Internal route'),
+            status: 404,
+        },
+        {
+            label: 'invalid JSON',
+            error: Object.assign(new Error('Invalid JSON'), {
+                statusCode: 400,
+            }),
+            status: 400,
+        },
+        {
+            label: 'oversized body',
+            error: Object.assign(new Error('Private body'), {
+                statusCode: 413,
+            }),
+            status: 413,
+        },
+    ] as const)('normalizes other HTTP errors: $label', ({ error, status }) => {
         const { response, headers } = execute(error);
 
         expect(response.status).toHaveBeenCalledWith(status);
@@ -125,27 +157,44 @@ describe('Identity — integração com ApiExceptionFilter', () => {
     });
 
     it.each([
-        [new Error('senha do banco'), 500],
-        [null, 500],
-        [Object.assign(new Error('status inválido'), { statusCode: 200 }), 500],
-        [new HttpException('serviço privado', 503), 503],
-    ] as const)('oculta detalhes de falhas internas: %s', (error, status) => {
-        const log = vi
-            .spyOn(Logger.prototype, 'error')
-            .mockImplementation(() => {});
-        const { response, headers } = execute(error);
+        {
+            label: 'unexpected error',
+            error: new Error('Database password'),
+            status: 500,
+        },
+        { label: 'null error', error: null, status: 500 },
+        {
+            label: 'invalid HTTP status',
+            error: Object.assign(new Error('Invalid status'), {
+                statusCode: 200,
+            }),
+            status: 500,
+        },
+        {
+            label: 'unavailable service',
+            error: new HttpException('Private service', 503),
+            status: 503,
+        },
+    ] as const)(
+        'hides internal failure details: $label',
+        ({ error, status }) => {
+            const log = vi
+                .spyOn(Logger.prototype, 'error')
+                .mockImplementation(() => {});
+            const { response, headers } = execute(error);
 
-        expect(response.status).toHaveBeenCalledWith(status);
-        expect(response.json).toHaveBeenCalledWith({
-            code: 'INTERNAL_ERROR',
-            message: 'Ocorreu um erro interno. Tente novamente mais tarde.',
-            details: {},
-        });
-        expect(log).toHaveBeenCalledWith(error);
-        expect(headers.get('Cache-Control')).toBe('no-store');
-    });
+            expect(response.status).toHaveBeenCalledWith(status);
+            expect(response.json).toHaveBeenCalledWith({
+                code: 'INTERNAL_ERROR',
+                message: 'Ocorreu um erro interno. Tente novamente mais tarde.',
+                details: {},
+            });
+            expect(log).toHaveBeenCalledWith(error);
+            expect(headers.get('Cache-Control')).toBe('no-store');
+        },
+    );
 
-    it('não tenta escrever novamente após enviar os headers', () => {
+    it('does not write again after sending headers', () => {
         const { response } = execute(new NotFoundException(), true);
 
         expect(response.end).toHaveBeenCalledOnce();

@@ -34,9 +34,9 @@ const environments = [
     { environment: 'production', prefix: '__Host-', secure: true },
 ];
 
-describe('CsrfService: geração e cookies', () => {
+describe('CsrfService: generation and cookies', () => {
     it.each(environments)(
-        'emite os cookies corretos em $environment',
+        'issues the correct cookies in $environment',
         ({ environment, prefix, secure }) => {
             const context = createContext(environment);
 
@@ -66,7 +66,7 @@ describe('CsrfService: geração e cookies', () => {
         },
     );
 
-    it('reutiliza o contexto e o token válidos', () => {
+    it('reuses the valid context and token', () => {
         const first = createContext();
         const token = first.service.generateToken(
             first.request,
@@ -91,7 +91,7 @@ describe('CsrfService: geração e cookies', () => {
     });
 
     it.each(environments)(
-        'preserva a sessão e dispensa contexto anônimo em $environment',
+        'preserves the session without requiring an anonymous context in $environment',
         ({ environment, prefix }) => {
             const sessionCookie = `${prefix}session`;
 
@@ -116,10 +116,10 @@ describe('CsrfService: geração e cookies', () => {
     );
 
     it.each([
-        { label: 'texto inválido', value: 'invalid-token' },
-        { label: 'número', value: 123 },
-        { label: 'objeto', value: { unexpected: true } },
-    ])('substitui cookie CSRF com $label', ({ value }) => {
+        { label: 'invalid text', value: 'invalid-token' },
+        { label: 'a number', value: 123 },
+        { label: 'an object', value: { unexpected: true } },
+    ])('replaces a CSRF cookie containing $label', ({ value }) => {
         const context = createContext('test', {
             'csrf-context': 'existing-anonymous-context',
             csrf: value,
@@ -142,7 +142,7 @@ describe('CsrfService: geração e cookies', () => {
         expect(context.cookie.mock.calls[0]?.[1]).toBe(token);
     });
 
-    it('gera contextos e tokens diferentes para visitantes distintos', () => {
+    it('generates different contexts and tokens for distinct visitors', () => {
         const first = createContext();
         const second = createContext();
 
@@ -164,7 +164,7 @@ describe('CsrfService: geração e cookies', () => {
     });
 });
 
-describe('CsrfService: proteção das requisições', () => {
+describe('CsrfService: request protection', () => {
     function createProtectedContext(
         environment = 'test',
         initialCookies: Record<string, unknown> = {},
@@ -179,7 +179,7 @@ describe('CsrfService: proteção das requisições', () => {
         const cookieName =
             environment === 'production' ? '__Host-csrf' : 'csrf';
 
-        // Simula o navegador devolvendo o cookie e o header.
+        // Simulate the browser returning the cookie and header.
         context.cookies[cookieName] = token;
         context.request.method = 'POST';
         context.request.headers = { 'x-csrf-token': token };
@@ -202,16 +202,19 @@ describe('CsrfService: proteção das requisições', () => {
             'Não foi possível validar esta solicitação. Atualize a página e tente novamente.',
     });
 
-    it.each(['GET', 'HEAD', 'OPTIONS'])('libera %s sem token', (method) => {
-        const context = createContext();
-        context.request.method = method;
-        context.request.headers = {};
+    it.each(['GET', 'HEAD', 'OPTIONS'])(
+        'allows %s without a token',
+        (method) => {
+            const context = createContext();
+            context.request.method = method;
+            context.request.headers = {};
 
-        expect(protect(context)).toHaveBeenCalledExactlyOnceWith();
-    });
+            expect(protect(context)).toHaveBeenCalledExactlyOnceWith();
+        },
+    );
 
     it.each(['POST', 'PUT', 'PATCH', 'DELETE'])(
-        'rejeita %s sem o header CSRF',
+        'rejects %s without the CSRF header',
         (method) => {
             const context = createProtectedContext();
             context.request.method = method;
@@ -224,7 +227,7 @@ describe('CsrfService: proteção das requisições', () => {
     );
 
     it.each(environments)(
-        'aceita token anônimo válido em $environment',
+        'accepts a valid anonymous token in $environment',
         ({ environment }) => {
             const context = createProtectedContext(environment);
 
@@ -233,7 +236,7 @@ describe('CsrfService: proteção das requisições', () => {
     );
 
     it.each(environments)(
-        'aceita token vinculado à sessão em $environment',
+        'accepts a session-bound token in $environment',
         ({ environment, prefix }) => {
             const context = createProtectedContext(environment, {
                 [`${prefix}session`]: 'authenticated-session',
@@ -244,9 +247,9 @@ describe('CsrfService: proteção das requisições', () => {
     );
 
     it.each([
-        { label: 'incorreto', value: 'wrong-token' },
-        { label: 'com múltiplos valores', value: ['first', 'second'] },
-    ])('rejeita header $label', ({ value }) => {
+        { label: 'incorrect', value: 'wrong-token' },
+        { label: 'multi-value', value: ['first', 'second'] },
+    ])('rejects a $label header', ({ value }) => {
         const context = createProtectedContext();
 
         Object.assign(context.request.headers, {
@@ -256,7 +259,7 @@ describe('CsrfService: proteção das requisições', () => {
         expect(protect(context)).toHaveBeenCalledExactlyOnceWith(invalidCsrf);
     });
 
-    it('rejeita token no corpo ou na query sem o header', () => {
+    it('rejects a token in the body or query without the header', () => {
         const context = createProtectedContext();
         context.request.headers = {};
         context.request.body = { csrfToken: context.token };
@@ -265,14 +268,14 @@ describe('CsrfService: proteção das requisições', () => {
         expect(protect(context)).toHaveBeenCalledExactlyOnceWith(invalidCsrf);
     });
 
-    it('rejeita header válido sem o cookie CSRF', () => {
+    it('rejects a valid header without the CSRF cookie', () => {
         const context = createProtectedContext();
         delete context.cookies.csrf;
 
         expect(protect(context)).toHaveBeenCalledExactlyOnceWith(invalidCsrf);
     });
 
-    it('rejeita cookie e header iguais quando a assinatura foi adulterada', () => {
+    it('rejects matching cookie and header values when the signature was tampered with', () => {
         const context = createProtectedContext();
 
         const forgedToken =
@@ -285,14 +288,14 @@ describe('CsrfService: proteção das requisições', () => {
         expect(protect(context)).toHaveBeenCalledExactlyOnceWith(invalidCsrf);
     });
 
-    it('rejeita token emitido para outro contexto anônimo', () => {
+    it('rejects a token issued for another anonymous context', () => {
         const context = createProtectedContext();
         context.cookies['csrf-context'] = 'another-anonymous-context';
 
         expect(protect(context)).toHaveBeenCalledExactlyOnceWith(invalidCsrf);
     });
 
-    it('lança o erro CSRF quando o identificador anônimo desaparece', () => {
+    it('throws the CSRF error when the anonymous identifier disappears', () => {
         const context = createProtectedContext();
         delete context.cookies['csrf-context'];
 
@@ -306,7 +309,7 @@ describe('CsrfService: proteção das requisições', () => {
             after: 'session-b',
         },
         {
-            label: 'troca de sessão',
+            label: 'a session change',
             before: 'session-a',
             after: 'session-b',
         },
@@ -315,7 +318,7 @@ describe('CsrfService: proteção das requisições', () => {
             before: 'session-a',
             after: undefined,
         },
-    ])('exige novo token após $label', ({ before, after }) => {
+    ])('requires a new token after $label', ({ before, after }) => {
         const context = createProtectedContext('test', {
             'csrf-context': 'anonymous-context',
             session: before,

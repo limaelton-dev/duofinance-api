@@ -203,7 +203,7 @@ describe('income and receipt HTTP/PostgreSQL', () => {
             .expect(409);
     });
 
-    it('directs shared repass from actual receiver and settles it without another receipt', async () => {
+    it('directs the shared income transfer from the actual recipient and settles it without another receipt', async () => {
         const f = await shared();
         const path = `/v2/spaces/${f.space}/incomes`;
         const input = {

@@ -22,7 +22,7 @@ function fixture() {
 }
 
 describe('GetSpaceDetailsQuery', () => {
-    it('valida a porta e conserva o filtro do ator na consulta final', async () => {
+    it('checks the access port and preserves the actor filter in the final query', async () => {
         const f = fixture();
         const details = {
             space: {
@@ -52,7 +52,7 @@ describe('GetSpaceDetailsQuery', () => {
         );
     });
 
-    it('nega quando o acesso desaparece entre validação e leitura', async () => {
+    it('denies access when it is lost between validation and reading', async () => {
         const f = fixture();
         f.reads.findDetails.mockResolvedValue(null);
         await expect(
@@ -60,7 +60,7 @@ describe('GetSpaceDetailsQuery', () => {
         ).rejects.toMatchObject({ code: 'SPACE_NOT_FOUND' });
     });
 
-    it('não consulta dados após negação da porta', async () => {
+    it('does not query data after the access port denies authorization', async () => {
         const f = fixture();
         f.access.assertCanRead.mockRejectedValue(
             new SpacesDomainError('SPACE_NOT_FOUND'),

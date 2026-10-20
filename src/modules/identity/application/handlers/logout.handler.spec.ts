@@ -17,7 +17,7 @@ function createTestContext() {
 }
 
 describe('LogoutHandler', () => {
-    it('revoga somente a sessão informada', async () => {
+    it('revokes only the specified session', async () => {
         const context = createTestContext();
 
         await expect(
@@ -29,9 +29,9 @@ describe('LogoutHandler', () => {
         ).toHaveBeenCalledExactlyOnceWith('current-session-id');
     });
 
-    it('propaga a falha ao revogar a sessão', async () => {
+    it('propagates session revocation failures', async () => {
         const context = createTestContext();
-        const error = new Error('Falha ao excluir sessão');
+        const error = new Error('Session deletion failed');
 
         context.sessionRepository.deleteById.mockRejectedValue(error);
 

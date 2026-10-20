@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createValidationException } from './create-validation-exception.js';
 describe('createValidationException', () => {
-    it('preserva campos simples e achata filhos com caminhos e mensagens', () => {
+    it('preserves simple fields and flattens children with paths and messages', () => {
         const response = createValidationException([
             {
                 property: 'expectedVersion',
@@ -38,7 +38,7 @@ describe('createValidationException', () => {
             },
         });
     });
-    it('localiza rejeição de campos desconhecidos', () => {
+    it('localizes unknown field rejection', () => {
         expect(
             createValidationException([
                 {

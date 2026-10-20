@@ -56,7 +56,7 @@ describe('GetInvitationPreviewQuery', () => {
         vi.useRealTimers();
     });
 
-    it('retorna somente a identificação mínima a partir do hash exato', async () => {
+    it('returns only minimal identification for the exact hash', async () => {
         const f = fixture();
         const result = await f.query.execute(f.actor, 'a'.repeat(43));
         expect(f.hash).toHaveBeenCalledWith('a'.repeat(43));
@@ -71,7 +71,7 @@ describe('GetInvitationPreviewQuery', () => {
     });
 
     it.each(['actorIsCreator', 'actorIsMember'] as const)(
-        'não oferece resposta para %s',
+        'offers no response for %s',
         async (field) => {
             const f = fixture();
             f.data[field] = true;
@@ -81,7 +81,7 @@ describe('GetInvitationPreviewQuery', () => {
         },
     );
 
-    it('recusa um hash desconhecido', async () => {
+    it('rejects an unknown hash', async () => {
         const f = fixture();
         f.reads.findInvitationPreview.mockResolvedValue(null);
         await expect(
@@ -90,7 +90,7 @@ describe('GetInvitationPreviewQuery', () => {
     });
 
     it.each(['ACCEPTED', 'REJECTED', 'CANCELLED', 'EXPIRED'] as const)(
-        'não mostra identificação de convite %s',
+        'does not disclose identification for a %s invitation',
         async (status) => {
             const f = fixture();
             f.data.invitation.status = status;
@@ -101,7 +101,7 @@ describe('GetInvitationPreviewQuery', () => {
     );
 
     it.each([-1, 0, 1])(
-        'respeita a fronteira de expiração: %i',
+        'respects the expiration boundary: %i',
         async (offset) => {
             const f = fixture();
             vi.setSystemTime(
@@ -119,7 +119,7 @@ describe('GetInvitationPreviewQuery', () => {
     );
 
     it.each(['CLOSING', 'CLOSED'] as const)(
-        'bloqueia espaço %s',
+        'blocks a %s space',
         async (status) => {
             const f = fixture();
             f.data.space.status = status;
@@ -129,7 +129,7 @@ describe('GetInvitationPreviewQuery', () => {
         },
     );
 
-    it('não reserva vaga em espaço cheio', async () => {
+    it('does not reserve a slot in a full space', async () => {
         const f = fixture();
         f.data.activeMemberCount = 2;
         await expect(

@@ -46,11 +46,11 @@ describe('shopping list invariants', () => {
         ).toThrow();
     });
     it.each(['', ' ', ' com espaços ', 'x'.repeat(121)])(
-        'rejects invalid normalized names %j',
+        'rejects invalid normalized names in case %#',
         (name) => expect(() => validateListName(name)).toThrow(),
     );
     it.each([null, 'Feira', 'x'.repeat(120)])(
-        'accepts optional or bounded names %j',
+        'accepts optional or bounded names in case %#',
         (name) => expect(() => validateListName(name)).not.toThrow(),
     );
 });

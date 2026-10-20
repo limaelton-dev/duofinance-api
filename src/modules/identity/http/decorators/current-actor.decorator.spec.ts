@@ -39,7 +39,7 @@ function extractActor(request: Pick<AuthenticatedRequest, 'actor'>) {
 }
 
 describe('CurrentActor', () => {
-    it('retorna o ator colocado na requisição pelo guard', () => {
+    it('returns the actor attached to the request by the guard', () => {
         const actor: AuthenticatedActor = {
             personId: PersonId.create(),
             sessionId: 'current-session-id',
@@ -48,7 +48,7 @@ describe('CurrentActor', () => {
         expect(extractActor({ actor })).toBe(actor);
     });
 
-    it('rejeita a requisição quando não existe ator autenticado', () => {
+    it('rejects a request with no authenticated actor', () => {
         expect(() => extractActor({})).toThrow(UnauthorizedException);
     });
 });

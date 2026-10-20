@@ -70,7 +70,7 @@ function createTestContext(environment = 'test') {
     return { guard, request, actor, authenticate, executionContext };
 }
 
-describe('SessionAuthGuard e Public', () => {
+describe('SessionAuthGuard and Public', () => {
     afterEach(() => {
         vi.restoreAllMocks();
     });
@@ -80,7 +80,7 @@ describe('SessionAuthGuard e Public', () => {
         { environment: 'test', token: 'local-token' },
         { environment: 'production', token: 'production-token' },
     ])(
-        'autentica com o cookie correto em $environment',
+        'authenticates with the correct cookie in $environment',
         async ({ environment, token }) => {
             const context = createTestContext(environment);
 
@@ -93,7 +93,7 @@ describe('SessionAuthGuard e Public', () => {
         },
     );
 
-    it('libera um método público sem autenticar a sessão', async () => {
+    it('allows a public method without authenticating the session', async () => {
         const context = createTestContext();
         const executionContext = new ExecutionContextHost(
             [context.request],
@@ -109,7 +109,7 @@ describe('SessionAuthGuard e Public', () => {
         expect(context.request.actor).toBeUndefined();
     });
 
-    it('libera um controller público sem autenticar a sessão', async () => {
+    it('allows a public controller without authenticating the session', async () => {
         const context = createTestContext();
         const executionContext = new ExecutionContextHost(
             [context.request],
@@ -125,7 +125,7 @@ describe('SessionAuthGuard e Public', () => {
         expect(context.request.actor).toBeUndefined();
     });
 
-    it('delega ao serviço a rejeição de uma requisição sem cookies', async () => {
+    it('delegates rejection of a request without cookies to the service', async () => {
         const context = createTestContext();
         delete context.request.cookies;
 
@@ -140,7 +140,7 @@ describe('SessionAuthGuard e Public', () => {
         expect(context.request.actor).toBeUndefined();
     });
 
-    it('não usa o cookie local como alternativa em produção', async () => {
+    it('does not fall back to the local cookie in production', async () => {
         const context = createTestContext('production');
         context.request.cookies = { session: 'local-token' };
 
@@ -156,9 +156,12 @@ describe('SessionAuthGuard e Public', () => {
     });
 
     it.each([
-        { label: 'sessão inválida', error: new UnauthenticatedError() },
-        { label: 'falha técnica', error: new Error('Banco indisponível') },
-    ])('propaga $label sem atribuir um ator', async ({ error }) => {
+        { label: 'an invalid session', error: new UnauthenticatedError() },
+        {
+            label: 'a technical failure',
+            error: new Error('Database unavailable'),
+        },
+    ])('propagates $label without assigning an actor', async ({ error }) => {
         const context = createTestContext();
         context.authenticate.mockRejectedValue(error);
 

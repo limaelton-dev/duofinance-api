@@ -682,7 +682,7 @@ describe('installment resolutions', () => {
         ).toBe('COMPLETED');
     });
 
-    it('keeps the planned and recurring financial journey congruent across avulso, recurrence, maintenance, anticipation and resolution', async () => {
+    it('keeps the planned and recurring financial journey consistent across one-time commitments, recurrence, maintenance, anticipation and resolution', async () => {
         const browser = await financeBrowser(app);
         const space = browser.context.personalSpace.id as string;
         const base = financeBase(space);

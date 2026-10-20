@@ -17,6 +17,8 @@ O banco de desenvolvimento precisa existir. `compose.test.yaml` cria somente o b
 
 Os nomes descrevem capacidades atuais: `shared-cash-expenses`, `income-receipts`, `settlement-transfers`, `task-completion` e `closure-conclusion`. IDs de cards e waves pertencem ao histórico de entrega, não à identidade dos testes.
 
+Descrições de suítes e cenários, rótulos de casos parametrizados e mensagens técnicas dos testes são escritos em inglês. Mensagens e dados em português permanecem quando representam o contrato ou o conteúdo do produto que o teste verifica.
+
 - `src/**/*.spec.ts`: invariantes de domínio e decisões de aplicação com fakes, sem banco.
 - `test/**/*.e2e-spec.ts`: contratos HTTP e integração com PostgreSQL. Apesar do sufixo existente, não executam navegador.
 - `test/*-persistence.e2e-spec.ts`: constraints, consultas, locks e transações cuja proteção depende do banco real.

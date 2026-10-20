@@ -13,7 +13,7 @@ import { EmailAlreadyInUseError } from '../errors/email-already-in-use.error.js'
 import { SpaceId } from '../../../spaces/domain/space/space-id.js';
 
 describe('RegisterAccountHandler', () => {
-    it('rejeita e-mail já cadastrado sem iniciar o cadastro', async () => {
+    it('rejects an existing email without starting registration', async () => {
         const existingCredential: AuthCredential = {
             personId: PersonId.create(),
             email: 'elton@example.com',
@@ -92,7 +92,7 @@ describe('RegisterAccountHandler', () => {
         expect(sessionTokenGenerator.generate).not.toHaveBeenCalled();
     });
 
-    it('cria o contexto e salva credencial e sessão na unidade de trabalho', async () => {
+    it('creates the context and saves the credential and session within the unit of work', async () => {
         const password = 'correct-horse-battery-staple';
         const passwordHash = 'generated-password-hash';
         const sessionToken = 'generated-session-token';
@@ -193,7 +193,7 @@ describe('RegisterAccountHandler', () => {
 
         const result = await handler.execute({
             displayName: 'Elton',
-            email: '  ELTON@EXAMPLE.COM  ', //example no normalized to test
+            email: '  ELTON@EXAMPLE.COM  ', // Intentionally unnormalized to test normalization.
             password,
         });
 
@@ -204,7 +204,7 @@ describe('RegisterAccountHandler', () => {
 
         expect(credentialRepository.findByEmail).toHaveBeenCalledWith(
             'elton@example.com',
-        ); //expected normalized
+        ); // Expect the normalized email.
 
         expect(passwordHasher.hash).toHaveBeenCalledWith(password);
 
@@ -255,8 +255,8 @@ describe('RegisterAccountHandler', () => {
         expect(transactionActive).toBe(false);
     });
 
-    it('propaga falha no provisionamento e desfaz a criação parcial', async () => {
-        const provisionError = new Error('Falha ao criar espaço pessoal');
+    it('propagates provisioning failures and rolls back partial creation', async () => {
+        const provisionError = new Error('Personal space provisioning failed');
 
         const provisionedPersonIds: PersonId[] = [];
 
