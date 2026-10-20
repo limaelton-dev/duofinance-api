@@ -103,7 +103,7 @@ export function createAuthOpenApiDocument(
     return {
         openapi: '3.1.0',
         info: {
-            title: 'DuoFinance API — Identidade e acesso',
+            title: 'Junelo API — Identidade e acesso',
             version: '0.1.0',
             description:
                 'Cadastro, login, sessão e espaço pessoal. ' +

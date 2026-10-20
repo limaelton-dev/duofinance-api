@@ -18,7 +18,7 @@ export function createApiOpenApiDocument(isProduction: boolean): OpenAPIObject {
         ...auth,
         info: {
             ...auth.info,
-            title: 'DuoFinance API',
+            title: 'Junelo API',
             version: '0.5.0',
         },
         tags: [
