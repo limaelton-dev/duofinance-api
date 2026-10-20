@@ -57,7 +57,7 @@ function approved() {
 }
 
 describe('ClosurePlan decisions', () => {
-    it('permite proposta pelo outro membro e mantém solicitante e proponente independentes', () => {
+    it('allows the other member to propose while keeping requester and proposer independent', () => {
         const original = plan().proposeCutoff('2026-11-01');
         const input = snapshot();
         const proposal = original.decide({
@@ -104,7 +104,7 @@ describe('ClosurePlan decisions', () => {
         expect(original.snapshot().planStatus).toBe('DRAFT');
     });
 
-    it('aprova formação individual apenas com consentimento explícito e conserva confirmação final separada', () => {
+    it('approves individual closure only with explicit consent and keeps final confirmation separate', () => {
         const soloSnapshot = { ...snapshot(), outstandingAmounts: [] };
         const solo = plan(true).proposeCutoff('2026-11-01').decide({
             action: 'PROPOSE',
@@ -135,7 +135,7 @@ describe('ClosurePlan decisions', () => {
     });
 
     it.each(['APPROVE', 'REJECT'] as const)(
-        'não aceita segunda decisão %s do próprio proponente',
+        'rejects a second %s decision from the proposer',
         (action) => {
             const proposal = proposed();
             const before = proposal.snapshot();
@@ -153,7 +153,7 @@ describe('ClosurePlan decisions', () => {
         },
     );
 
-    it('preserva rejeição e permite nova proposta identificada por outra revisão', () => {
+    it('preserves rejection and allows a new proposal identified by another revision', () => {
         const proposal = proposed();
         const rejected = proposal.decide({
             action: 'REJECT',
@@ -182,7 +182,7 @@ describe('ClosurePlan decisions', () => {
         expect(proposal.snapshot().planStatus).toBe('PROPOSED');
     });
 
-    it('não aprova consequências financeiras diferentes e exige reproposta explícita', () => {
+    it('does not approve different financial consequences and requires an explicit new proposal', () => {
         const proposal = proposed();
         expect(() =>
             proposal.decide({
@@ -209,7 +209,7 @@ describe('ClosurePlan decisions', () => {
         expect(proposal.snapshot().approvals[0].memberId).toBe(second.memberId);
     });
 
-    it('não duplica proposta inalterada e preserva aprovação bilateral anterior após revisão material', () => {
+    it('does not duplicate an unchanged proposal and preserves prior bilateral approval after a material revision', () => {
         const agreed = approved();
         expect(() =>
             agreed.decide({
@@ -243,7 +243,7 @@ describe('ClosurePlan decisions', () => {
         });
     });
 
-    it('limpa snapshot ao editar destino sem perder memória de aprovação bilateral', () => {
+    it('clears the snapshot when editing a destination while retaining prior bilateral approval', () => {
         const destination: ClosureFutureDestination = {
             originType: 'RECURRING',
             originId: 'origin-1',
@@ -274,7 +274,7 @@ describe('ClosurePlan decisions', () => {
         });
     });
 
-    it('recusa decisão de terceiro, falta de proposta e snapshot inconsistente', () => {
+    it('rejects a third-party decision, a missing proposal and an inconsistent snapshot', () => {
         expect(() =>
             proposed().decide({
                 action: 'APPROVE',

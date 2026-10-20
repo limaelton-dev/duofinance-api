@@ -62,7 +62,7 @@ function confirmation(
 }
 
 describe('ClosurePlan confirmation and cancellation', () => {
-    it('exige duas confirmações distintas e atuais no bilateral sem modificar o plano anterior', () => {
+    it('requires two distinct current confirmations for bilateral closure without changing the previous plan', () => {
         const plan = approved();
         const firstConfirmation = plan.confirm(
             confirmation(first.memberId, { completionPrepared: false }),
@@ -86,7 +86,7 @@ describe('ClosurePlan confirmation and cancellation', () => {
         expect(plan.snapshot().confirmations).toEqual([]);
     });
 
-    it('substitui confirmações obsoletas quando muda o estado financeiro validado', () => {
+    it('replaces stale confirmations when the validated financial state changes', () => {
         const firstConfirmation = approved().confirm(
             confirmation(first.memberId),
         );
@@ -114,7 +114,7 @@ describe('ClosurePlan confirmation and cancellation', () => {
         ).toBe(true);
     });
 
-    it('recusa pendências, plano sem aprovação e fingerprint de resumo antigo', () => {
+    it('rejects pending obligations, an unapproved plan and a stale summary fingerprint', () => {
         expect(() => draft().confirm(confirmation(first.memberId))).toThrow(
             new SpacesDomainError('CLOSURE_CONFIRMATION_NOT_READY'),
         );
@@ -142,7 +142,7 @@ describe('ClosurePlan confirmation and cancellation', () => {
         expect(plan.snapshot().confirmations).toEqual([]);
     });
 
-    it('uma confirmação individual conclui somente quando os contextos foram preparados atomicamente', () => {
+    it('concludes individual closure with one confirmation only when contexts were prepared atomically', () => {
         const plan = approved(true);
         expect(() =>
             plan.confirm(
@@ -155,7 +155,7 @@ describe('ClosurePlan confirmation and cancellation', () => {
         expect(result.plan.snapshot().confirmations).toHaveLength(1);
     });
 
-    it('só o solicitante cancela unilateralmente antes do consentimento do outro', () => {
+    it('allows only the requester to cancel unilaterally before the other participant consents', () => {
         for (const plan of [
             draft(),
             draft().decide({
@@ -191,7 +191,7 @@ describe('ClosurePlan confirmation and cancellation', () => {
         ).toBe(true);
     });
 
-    it('o consentimento do outro como primeiro proponente também impede cancelamento unilateral', () => {
+    it('also blocks unilateral cancellation when the other participant consents as the first proposer', () => {
         const proposal = draft().decide({
             action: 'PROPOSE',
             actorMemberId: second.memberId,
@@ -222,7 +222,7 @@ describe('ClosurePlan confirmation and cancellation', () => {
         ).toBe(true);
     });
 
-    it('mantém exigência bilateral após invalidar a aprovação e vincula cancelamentos ao mesmo estado', () => {
+    it('keeps the bilateral requirement after invalidating approval and binds cancellations to the same state', () => {
         const reviewed = approved().proposeCutoff('2026-11-01');
         const firstCancellation = reviewed.cancel({
             actorMemberId: first.memberId,
@@ -270,7 +270,7 @@ describe('ClosurePlan confirmation and cancellation', () => {
         });
     });
 
-    it('pedido bilateral de cancelamento invalida confirmações e exige retomada explícita do plano', () => {
+    it('invalidates confirmations on a bilateral cancellation request and requires explicit plan resumption', () => {
         const confirmed = approved().confirm(confirmation(first.memberId)).plan;
         const cancellation = confirmed.cancel({
             actorMemberId: second.memberId,
@@ -295,7 +295,7 @@ describe('ClosurePlan confirmation and cancellation', () => {
         });
     });
 
-    it('recusa terceiro e preserva escolha financeira ao cancelar o processo', () => {
+    it('rejects a third party and preserves the financial choice when cancelling the process', () => {
         const plan = approved(true);
         expect(() => plan.confirm(confirmation('convidado'))).toThrow(
             new SpacesDomainError('SPACE_NOT_FOUND'),

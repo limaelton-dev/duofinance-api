@@ -48,12 +48,12 @@ function assertTestDatabase(source: DataSource): void {
         source.options.url !== TEST_DATABASE_URL
     ) {
         throw new Error(
-            'Operação permitida somente no PostgreSQL isolado de testes.',
+            'This operation is allowed only on the isolated PostgreSQL test database.',
         );
     }
 }
 
-describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
+describe('Registration, sessions and space creation HTTP/PostgreSQL', () => {
     let app: INestApplication<Server>;
     let db: DataSource;
 
@@ -162,7 +162,7 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
         };
     }
 
-    it('cria, consulta, substitui e faz replay sem devolver novamente o link', async () => {
+    it('creates, reads, replaces and replays without returning the link again', async () => {
         const browser = await spacesBrowser();
         const key = randomUUID();
 
@@ -258,7 +258,7 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
         expect(stale.body.code).toBe('CONCURRENT_MODIFICATION');
     });
 
-    it('consulta expiração sem escrever e permite nova emissão', async () => {
+    it('reads expiration without writes and allows a new invitation to be issued', async () => {
         const browser = await spacesBrowser();
         const created = await browser
             .post('/v2/spaces', { name: 'Casa' })
@@ -302,7 +302,7 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
         expect(issued.body).not.toHaveProperty('actorMembership');
     });
 
-    it('valida o transporte e preserva sessão e CSRF', async () => {
+    it('validates transport while preserving the session and CSRF protection', async () => {
         await request(app.getHttpServer()).get('/v2/spaces').expect(401);
 
         const browser = await spacesBrowser();
@@ -347,7 +347,7 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
         await browser.agent.get('/v2/auth/me').expect(200);
     });
 
-    it('oculta espaços de terceiros e diferencia membro de criador', async () => {
+    it('hides spaces belonging to other users and distinguishes members from creators', async () => {
         const creator = await spacesBrowser();
         const other = await spacesBrowser();
 
@@ -393,13 +393,13 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
         expect(full.body.code).toBe('SPACE_MEMBER_LIMIT_REACHED');
     });
 
-    it('traduz falha técnica sem encerrar a sessão', async () => {
+    it('maps a technical failure without ending the session', async () => {
         const browser = await spacesBrowser();
 
         vi.spyOn(
             app.get(TypeOrmSpaceRepository),
             'createShared',
-        ).mockRejectedValueOnce(new Error('falha interna de persistência'));
+        ).mockRejectedValueOnce(new Error('internal persistence failure'));
 
         const response = await browser
             .post('/v2/spaces', { name: 'Casa' })
@@ -408,7 +408,7 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
 
         expect(response.body.code).toBe('INTERNAL_ERROR');
         expect(JSON.stringify(response.body)).not.toContain(
-            'falha interna de persistência',
+            'internal persistence failure',
         );
 
         await browser.agent.get('/v2/auth/me').expect(200);
@@ -417,7 +417,7 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
         expect(list.body.items).toHaveLength(1);
     });
 
-    it('persiste pessoa, espaço, credencial e hash da sessão', async () => {
+    it('persists the person, space, credential and session hash', async () => {
         const result = await register('  ELTON@EXAMPLE.COM  ');
         const credentials = app.get(TypeOrmCredentialRepository);
         const credential = await credentials.findByEmail(account.email);
@@ -437,7 +437,7 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
         ).toBe(604800000);
     });
 
-    it('o banco impede e-mail duplicado e o repository traduz o conflito', async () => {
+    it('rejects duplicate emails in the database and maps the repository conflict', async () => {
         await register();
         const second = await register('outra@example.com');
         const repository = app.get(TypeOrmCredentialRepository);
@@ -451,7 +451,7 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
         ).rejects.toBeInstanceOf(EmailAlreadyInUseError);
     });
 
-    it('o banco impede dois espaços pessoais para o mesmo titular', async () => {
+    it('rejects two personal spaces for the same owner in the database', async () => {
         const result = await register();
         const repository = db.getRepository(SpaceOrmEntity);
         const space = await repository.findOneByOrFail({
@@ -468,7 +468,7 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
         });
     });
 
-    it('o banco impede hashes de sessão duplicados', async () => {
+    it('rejects duplicate session hashes in the database', async () => {
         const result = await register();
         const repository = db.getRepository(AuthSessionOrmEntity);
         const session = await repository.findOneByOrFail({
@@ -485,10 +485,12 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
         });
     });
 
-    it('desfaz os quatro registros quando o cadastro falha antes do commit', async () => {
+    it('rolls back all four records when registration fails before commit', async () => {
         const repository = app.get(TypeOrmSessionRepository);
         const save = repository.save.bind(repository);
-        const failure = new Error('Falha controlada após persistir a sessão');
+        const failure = new Error(
+            'Controlled failure after persisting the session',
+        );
 
         vi.spyOn(repository, 'save').mockImplementation(async (session) => {
             await save(session);
@@ -499,7 +501,7 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
         expect(await counts()).toEqual([0, 0, 0, 0]);
     });
 
-    it('o repository encontra sessão válida e ignora expirada ou inexistente', async () => {
+    it('finds valid sessions and ignores expired or missing sessions in the repository', async () => {
         const result = await register();
         const hash = createHash('sha256').update(result.sessionToken).digest();
         const repository = app.get(TypeOrmSessionRepository);
@@ -523,7 +525,7 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
             .expect(({ body }) => expect(body.code).toBe('UNAUTHENTICATED'));
     });
 
-    it('emite CSRF público com cookies e sem cache', async () => {
+    it('issues public CSRF tokens with cookies and no caching', async () => {
         const response = await request(app.getHttpServer())
             .get('/v2/auth/csrf')
             .expect(200)
@@ -546,7 +548,7 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
     });
 
     it.each(['register', 'login', 'logout'])(
-        'rejeita POST /auth/%s sem CSRF e mantém CORS',
+        'rejects POST /auth/%s without CSRF while preserving CORS',
         async (operation) => {
             const response = await request(app.getHttpServer())
                 .post(`/v2/auth/${operation}`)
@@ -562,7 +564,7 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
         },
     );
 
-    it('rejeita token CSRF pertencente a outro visitante', async () => {
+    it('rejects a CSRF token belonging to another visitor', async () => {
         const first = request.agent(app.getHttpServer());
         const second = request.agent(app.getHttpServer());
         const firstToken = await csrf(first);
@@ -575,22 +577,20 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
             .expect(403);
     });
 
-    it.each([undefined, 'session=invalida'])(
-        '/me exige uma sessão válida: %s',
-        async (cookie) => {
-            const call = request(app.getHttpServer()).get('/v2/auth/me');
-            if (cookie) call.set('Cookie', cookie);
+    it.each([
+        { label: 'missing cookie', cookie: undefined },
+        { label: 'invalid session', cookie: 'session=invalida' },
+    ])('requires a valid session for /me: $label', async ({ cookie }) => {
+        const call = request(app.getHttpServer()).get('/v2/auth/me');
+        if (cookie) call.set('Cookie', cookie);
 
-            await call
-                .expect(401)
-                .expect('Cache-Control', 'no-store')
-                .expect(({ body }) =>
-                    expect(body.code).toBe('UNAUTHENTICATED'),
-                );
-        },
-    );
+        await call
+            .expect(401)
+            .expect('Cache-Control', 'no-store')
+            .expect(({ body }) => expect(body.code).toBe('UNAUTHENTICATED'));
+    });
 
-    it('cadastra, restaura contexto, faz login e revoga só a sessão atual', async () => {
+    it('registers, restores context, signs in and revokes only the current session', async () => {
         const first = request.agent(app.getHttpServer());
         const anonymousToken = await csrf(first);
         const created = await first
@@ -668,9 +668,12 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
         expect(await counts()).toEqual([1, 1, 1, 1]);
     });
 
-    it.each([account.email, 'inexistente@example.com'])(
-        'login retorna o mesmo erro para credenciais inválidas: %s',
-        async (email) => {
+    it.each([
+        { label: 'incorrect password', email: account.email },
+        { label: 'unknown email', email: 'inexistente@example.com' },
+    ])(
+        'returns the same login error for invalid credentials: $label',
+        async ({ email }) => {
             await register();
             const agent = request.agent(app.getHttpServer());
             const token = await csrf(agent);
@@ -693,7 +696,7 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
         ['displayName', { ...account, displayName: '   ' }],
         ['password', { ...account, password: '12345' }],
         ['email', { ...account, email: 'invalido' }],
-    ])('rejeita payload inválido no campo %s', async (field, payload) => {
+    ])('rejects an invalid payload for field %s', async (field, payload) => {
         const agent = request.agent(app.getHttpServer());
         const token = await csrf(agent);
         const response = await agent
@@ -713,7 +716,7 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
         expect(await counts()).toEqual([0, 0, 0, 0]);
     });
 
-    it('dois cadastros concorrentes resultam em um sucesso e um conflito', async () => {
+    it('produces one success and one conflict for concurrent registrations', async () => {
         const agents = [
             request.agent(app.getHttpServer()),
             request.agent(app.getHttpServer()),
@@ -745,7 +748,7 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
         ['csrf', 60],
         ['register', 5],
         ['login', 10],
-    ] as const)('aplica rate limit em %s', async (operation, limit) => {
+    ] as const)('applies rate limiting to %s', async (operation, limit) => {
         const agent = request.agent(app.getHttpServer());
         const token = operation === 'csrf' ? '' : await csrf(agent);
 
@@ -767,7 +770,7 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
         expect(Number(blocked.get('Retry-After'))).toBeGreaterThan(0);
     });
 
-    it('atende preflight CORS antes de autenticação e CSRF', async () => {
+    it('handles CORS preflight before authentication and CSRF', async () => {
         await request(app.getHttpServer())
             .options('/v2/auth/register')
             .set('Origin', 'http://localhost:3000')
@@ -778,7 +781,7 @@ describe('Cadastro, sessão e criação de espaços HTTP/PostgreSQL', () => {
             .expect('Access-Control-Allow-Credentials', 'true');
     });
 
-    it('publica Swagger, JSON e YAML sem exigir sessão', async () => {
+    it('serves Swagger, JSON and YAML without requiring a session', async () => {
         await request(app.getHttpServer()).get('/v2/docs').expect(200);
 
         await request(app.getHttpServer())

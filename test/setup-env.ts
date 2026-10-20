@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 
-// Endereço exclusivo do PostgreSQL descartável de compose.test.yaml.
+// Dedicated address for the disposable PostgreSQL database in compose.test.yaml.
 export const TEST_DATABASE_URL =
     'postgresql://test:test@127.0.0.1:55432/prospera_mais_test';
 

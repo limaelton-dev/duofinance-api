@@ -129,7 +129,7 @@ describe('RespondToSharedSpaceInvitationHandler', () => {
     });
 
     it.each(['ACCEPT', 'REJECT'] as const)(
-        'orquestra %s e recibo na mesma transação',
+        'orchestrates %s and its receipt in the same transaction',
         async (decision) => {
             const f = fixture(decision);
             const result = await f.handler.execute(f.input);
@@ -171,7 +171,7 @@ describe('RespondToSharedSpaceInvitationHandler', () => {
     );
 
     it.each(['ACCEPT', 'REJECT'] as const)(
-        'replay de %s vem antes da validade e versão',
+        'replays %s before checking expiration and version',
         async (decision) => {
             const f = fixture(decision);
             f.receipts.find.mockResolvedValue(f.receipt);
@@ -188,7 +188,7 @@ describe('RespondToSharedSpaceInvitationHandler', () => {
         },
     );
 
-    it('bloqueia o criador sem consumir o convite', async () => {
+    it('blocks the creator without consuming the invitation', async () => {
         const f = fixture();
         await expect(
             f.handler.execute({ ...f.input, actorId: f.creator }),
@@ -197,7 +197,7 @@ describe('RespondToSharedSpaceInvitationHandler', () => {
         expect(f.repository.saveInvitationResponse).not.toHaveBeenCalled();
     });
 
-    it('recusa versão antiga sem repetir a decisão', async () => {
+    it('rejects a stale version without repeating the decision', async () => {
         const f = fixture();
         await expect(
             f.handler.execute({ ...f.input, expectedVersion: 99 }),
@@ -207,7 +207,7 @@ describe('RespondToSharedSpaceInvitationHandler', () => {
         expect(f.transaction).toHaveBeenCalledTimes(2);
     });
 
-    it('revalida o instante dentro da transação depois da leitura', async () => {
+    it('revalidates time inside the transaction after the read', async () => {
         const f = fixture();
         f.repository.findByInvitationTokenHash.mockImplementation(async () => {
             vi.setSystemTime(f.space.invitations[0].expiresAt);
@@ -219,7 +219,7 @@ describe('RespondToSharedSpaceInvitationHandler', () => {
         expect(f.repository.saveInvitationResponse).not.toHaveBeenCalled();
     });
 
-    it('convite desconhecido não revela dados', async () => {
+    it('does not disclose data for an unknown invitation', async () => {
         const f = fixture();
         f.repository.findByInvitationTokenHash.mockResolvedValue(null);
         await expect(f.handler.execute(f.input)).rejects.toMatchObject({
@@ -229,25 +229,36 @@ describe('RespondToSharedSpaceInvitationHandler', () => {
     });
 
     it.each([
-        new ConcurrentModificationError(),
-        new SpaceCommandReceiptConflictError(),
-    ])('recupera recibo em nova transação após %s', async (error) => {
-        const f = fixture();
-        f.receipts.find
-            .mockResolvedValueOnce(null)
-            .mockResolvedValueOnce(f.receipt);
-        f.repository.saveInvitationResponse.mockRejectedValueOnce(error);
-        f.reads.findInvitationResponseResult.mockResolvedValue(f.view);
-        expect(await f.handler.execute(f.input)).toEqual({
-            ...f.view,
-            replayed: true,
-        });
-        expect(f.transaction).toHaveBeenCalledTimes(2);
-        expect(f.repository.saveInvitationResponse).toHaveBeenCalledTimes(1);
-        expect(f.receipts.save).not.toHaveBeenCalled();
-    });
+        {
+            label: 'ConcurrentModificationError',
+            error: new ConcurrentModificationError(),
+        },
+        {
+            label: 'SpaceCommandReceiptConflictError',
+            error: new SpaceCommandReceiptConflictError(),
+        },
+    ])(
+        'recovers the receipt in a new transaction after $label',
+        async ({ error }) => {
+            const f = fixture();
+            f.receipts.find
+                .mockResolvedValueOnce(null)
+                .mockResolvedValueOnce(f.receipt);
+            f.repository.saveInvitationResponse.mockRejectedValueOnce(error);
+            f.reads.findInvitationResponseResult.mockResolvedValue(f.view);
+            expect(await f.handler.execute(f.input)).toEqual({
+                ...f.view,
+                replayed: true,
+            });
+            expect(f.transaction).toHaveBeenCalledTimes(2);
+            expect(f.repository.saveInvitationResponse).toHaveBeenCalledTimes(
+                1,
+            );
+            expect(f.receipts.save).not.toHaveBeenCalled();
+        },
+    );
 
-    it('recupera recibo confirmado entre as duas leituras', async () => {
+    it('recovers a receipt committed between the two reads', async () => {
         const f = fixture('REJECT');
         f.space.rejectInvitation(f.actorId, f.invitationId, now);
         f.receipts.find
@@ -261,7 +272,7 @@ describe('RespondToSharedSpaceInvitationHandler', () => {
         expect(f.repository.saveInvitationResponse).not.toHaveBeenCalled();
     });
 
-    it('replay não usa os resultados privados do criador', async () => {
+    it('does not use the private creator results for replay', async () => {
         const f = fixture('REJECT');
         f.receipts.find.mockResolvedValue(f.receipt);
         f.reads.findInvitationResponseResult.mockResolvedValue(null);
@@ -272,7 +283,7 @@ describe('RespondToSharedSpaceInvitationHandler', () => {
         expect(f.repository.findById).not.toHaveBeenCalled();
     });
 
-    it('chave reutilizada com entrada diferente não escreve', async () => {
+    it('does not write when a key is reused with different input', async () => {
         const f = fixture();
         f.receipts.find.mockRejectedValue(new IdempotencyKeyReusedError());
         await expect(f.handler.execute(f.input)).rejects.toBeInstanceOf(
@@ -282,7 +293,7 @@ describe('RespondToSharedSpaceInvitationHandler', () => {
         expect(f.transaction).toHaveBeenCalledTimes(1);
     });
 
-    it('falha de recibo não produz confirmação ou retry automático', async () => {
+    it('does not report success or retry automatically after receipt failure', async () => {
         const f = fixture();
         f.receipts.save.mockRejectedValue(new Error('Injected failure'));
         await expect(f.handler.execute(f.input)).rejects.toThrow(

@@ -21,7 +21,7 @@ function fixture() {
 
 describe('SpaceAccessService', () => {
     it.each(['PERSONAL', 'SHARED'] as const)(
-        'permite leitura e escrita ativa: %s',
+        'allows reads and active writes: %s',
         async (type) => {
             const f = fixture();
             const context: SpaceAccessContext = {
@@ -45,7 +45,7 @@ describe('SpaceAccessService', () => {
     );
 
     it.each(['CLOSING', 'CLOSED'] as const)(
-        'preserva leitura e nega nova escrita: %s',
+        'preserves reads and denies new writes: %s',
         async (status) => {
             const f = fixture();
             f.queries.findAccessible.mockResolvedValue({
@@ -64,7 +64,7 @@ describe('SpaceAccessService', () => {
     );
 
     it.each(['assertCanRead', 'assertCanWrite'] as const)(
-        'usa a mesma negação sem acesso e reconsulta em cada chamada: %s',
+        'uses the same denial without access and checks again on every call: %s',
         async (operation) => {
             const f = fixture();
             f.queries.findAccessible
@@ -83,7 +83,7 @@ describe('SpaceAccessService', () => {
         },
     );
 
-    it('propaga falha técnica sem autorizar', async () => {
+    it('propagates technical failure without authorizing access', async () => {
         const f = fixture();
         const failure = new Error('Database unavailable');
         f.queries.findAccessible.mockRejectedValue(failure);

@@ -158,7 +158,7 @@ describe('SpaceInvitationCommandService', () => {
         vi.useRealTimers();
     });
 
-    it('cria o agregado e o recibo, retornando o link somente na emissão', async () => {
+    it('creates the aggregate and receipt and returns the link only on issuance', async () => {
         const f = fixture();
         const result = await f.service.execute({
             operation: 'CREATE_SPACE',
@@ -189,7 +189,7 @@ describe('SpaceInvitationCommandService', () => {
         );
     });
 
-    it('rejeita nome inválido antes de gerar token ou persistir', async () => {
+    it('rejects an invalid name before generating a token or persisting', async () => {
         const f = fixture();
 
         await expect(
@@ -206,7 +206,7 @@ describe('SpaceInvitationCommandService', () => {
         expect(f.receipts.save).not.toHaveBeenCalled();
     });
 
-    it('emite após a expiração usando o instante atual', async () => {
+    it('issues an invitation after expiration using the current time', async () => {
         const f = fixture(new Date(now.getTime() - 72 * 60 * 60 * 1000));
 
         const result = await f.service.execute({
@@ -227,7 +227,7 @@ describe('SpaceInvitationCommandService', () => {
         );
     });
 
-    it('substitui pela raiz e grava o recibo do novo convite', async () => {
+    it('replaces through the root and saves the new invitation receipt', async () => {
         const f = fixture();
         const result = await f.service.execute(f.command);
 
@@ -245,7 +245,7 @@ describe('SpaceInvitationCommandService', () => {
         );
     });
 
-    it('consulta replay antes de rejeitar uma versão antiga', async () => {
+    it('checks replay before rejecting a stale version', async () => {
         const f = fixture();
         f.receipts.find.mockResolvedValue(f.receipt);
         f.readQueries.findInvitationResult.mockResolvedValue(f.replayView);
@@ -266,7 +266,7 @@ describe('SpaceInvitationCommandService', () => {
     });
 
     it.each(['missing', 'outsider', 'member'] as const)(
-        'valida acesso antes do recibo: %s',
+        'checks access before the receipt: %s',
         async (scenario) => {
             const f = fixture();
             const actor = PersonId.create();
@@ -307,7 +307,7 @@ describe('SpaceInvitationCommandService', () => {
         },
     );
 
-    it('revalida o acesso ao resultado de um replay de criação', async () => {
+    it('revalidates access to the result of a creation replay', async () => {
         const f = fixture();
         f.receipts.find.mockResolvedValue(f.receipt);
         f.readQueries.findInvitationResult.mockResolvedValue(null);
@@ -325,11 +325,17 @@ describe('SpaceInvitationCommandService', () => {
     });
 
     it.each([
-        new ConcurrentModificationError(),
-        new SpaceCommandReceiptConflictError(),
+        {
+            label: 'ConcurrentModificationError',
+            error: new ConcurrentModificationError(),
+        },
+        {
+            label: 'SpaceCommandReceiptConflictError',
+            error: new SpaceCommandReceiptConflictError(),
+        },
     ])(
-        'recupera um recibo vencedor sem repetir a escrita: %s',
-        async (error) => {
+        'recovers the winning receipt without repeating the write: $label',
+        async ({ error }) => {
             const f = fixture();
 
             f.receipts.find
@@ -348,7 +354,7 @@ describe('SpaceInvitationCommandService', () => {
         },
     );
 
-    it('mantém o conflito quando não há recibo para recuperar', async () => {
+    it('preserves the conflict when there is no receipt to recover', async () => {
         const f = fixture();
 
         await expect(
@@ -359,7 +365,7 @@ describe('SpaceInvitationCommandService', () => {
         expect(f.repository.saveInvitationChange).not.toHaveBeenCalled();
     });
 
-    it('preserva o erro de chave reutilizada com outra entrada', async () => {
+    it('preserves the error for a key reused with different input', async () => {
         const f = fixture();
         f.receipts.find.mockRejectedValue(new IdempotencyKeyReusedError());
 
@@ -371,7 +377,7 @@ describe('SpaceInvitationCommandService', () => {
         expect(f.tokens.generate).not.toHaveBeenCalled();
     });
 
-    it('não transforma falha técnica em retry ou replay', async () => {
+    it('does not turn technical failure into retry or replay', async () => {
         const f = fixture();
         const failure = new Error('Database unavailable');
         f.repository.saveInvitationChange.mockRejectedValue(failure);
@@ -383,7 +389,7 @@ describe('SpaceInvitationCommandService', () => {
         expect(f.receipts.save).not.toHaveBeenCalled();
     });
 
-    it('nega novo efeito pela porta dentro da transação antes de gerar segredo ou persistir', async () => {
+    it('denies new side effects through the access port inside the transaction before generating a secret or persisting', async () => {
         const f = fixture();
         let inTransaction = false;
         f.transaction.mockImplementation(async (work) => {
@@ -406,7 +412,7 @@ describe('SpaceInvitationCommandService', () => {
         expect(f.receipts.save).not.toHaveBeenCalled();
     });
 
-    it('mantém CAS antes da checagem de escrita', async () => {
+    it('keeps the compare-and-swap check before the write access check', async () => {
         const f = fixture();
         f.access.assertCanWrite.mockRejectedValue(
             new SpacesDomainError('SPACE_NOT_ACTIVE'),

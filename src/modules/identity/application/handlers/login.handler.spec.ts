@@ -108,7 +108,7 @@ function createTestContext() {
 }
 
 describe('LoginHandler', () => {
-    it('rejeita e-mail inexistente sem criar sessão', async () => {
+    it('rejects an unknown email without creating a session', async () => {
         const context = createTestContext();
 
         context.credentialRepository.findByEmail.mockResolvedValue(null);
@@ -132,7 +132,7 @@ describe('LoginHandler', () => {
         expect(context.sessionRepository.save).not.toHaveBeenCalled();
     });
 
-    it('rejeita senha incorreta com o mesmo erro de credenciais', async () => {
+    it('rejects an incorrect password with the same credentials error', async () => {
         const context = createTestContext();
 
         context.passwordHasher.verify.mockResolvedValue(false);
@@ -156,7 +156,7 @@ describe('LoginHandler', () => {
         expect(context.sessionRepository.save).not.toHaveBeenCalled();
     });
 
-    it('cria sessão e retorna o contexto para credenciais válidas', async () => {
+    it('creates a session and returns the context for valid credentials', async () => {
         const context = createTestContext();
 
         const result = await context.handler.execute(context.input);
@@ -212,7 +212,7 @@ describe('LoginHandler', () => {
         expect(context.sessionRepository.deleteById).not.toHaveBeenCalled();
     });
 
-    it('não cria sessão quando o contexto pessoal está ausente', async () => {
+    it('does not create a session when the personal context is missing', async () => {
         const context = createTestContext();
 
         context.getPersonalContext.get.mockResolvedValue(null);
@@ -225,9 +225,9 @@ describe('LoginHandler', () => {
         expect(context.sessionRepository.save).not.toHaveBeenCalled();
     });
 
-    it('propaga falha na consulta da credencial sem criar sessão', async () => {
+    it('propagates credential lookup failures without creating a session', async () => {
         const context = createTestContext();
-        const error = new Error('Falha ao consultar credencial');
+        const error = new Error('Credential lookup failed');
 
         context.credentialRepository.findByEmail.mockRejectedValue(error);
 
@@ -241,9 +241,9 @@ describe('LoginHandler', () => {
         expect(context.sessionRepository.save).not.toHaveBeenCalled();
     });
 
-    it('propaga falha na verificação da senha sem criar sessão', async () => {
+    it('propagates password verification failures without creating a session', async () => {
         const context = createTestContext();
-        const error = new Error('Falha ao verificar senha');
+        const error = new Error('Password verification failed');
 
         context.passwordHasher.verify.mockRejectedValue(error);
 
@@ -256,9 +256,9 @@ describe('LoginHandler', () => {
         expect(context.sessionRepository.save).not.toHaveBeenCalled();
     });
 
-    it('propaga falha na consulta do contexto sem criar sessão', async () => {
+    it('propagates context lookup failures without creating a session', async () => {
         const context = createTestContext();
-        const error = new Error('Falha ao consultar contexto pessoal');
+        const error = new Error('Personal context lookup failed');
 
         context.getPersonalContext.get.mockRejectedValue(error);
 
@@ -270,9 +270,9 @@ describe('LoginHandler', () => {
         expect(context.sessionRepository.save).not.toHaveBeenCalled();
     });
 
-    it('não retorna sucesso quando a gravação da sessão falha', async () => {
+    it('does not return success when saving the session fails', async () => {
         const context = createTestContext();
-        const error = new Error('Falha ao salvar sessão');
+        const error = new Error('Session save failed');
 
         context.sessionRepository.save.mockRejectedValue(error);
 

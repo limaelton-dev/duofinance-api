@@ -38,7 +38,7 @@ class AccessConsumer {
 @Module({ imports: [SpacesModule], providers: [AccessConsumer] })
 class ConsumerModule {}
 
-describe('Autorização e isolamento de espaços HTTP/PostgreSQL', () => {
+describe('Space authorization and isolation HTTP/PostgreSQL', () => {
     let app: INestApplication<Server>;
     let db: DataSource;
     let access: SpaceAccessPort;
@@ -169,7 +169,7 @@ describe('Autorização e isolamento de espaços HTTP/PostgreSQL', () => {
     const actor = (person: Awaited<ReturnType<typeof browser>>) =>
         PersonId.from(person.context.person.id);
 
-    it('aplica dono/membership real por sessão e exporta somente o contexto mínimo', async () => {
+    it('enforces session ownership and membership while exposing only minimal context', async () => {
         const f = await fixture();
         const personal = await access.assertCanWrite(
             actor(f.a),
@@ -247,7 +247,7 @@ describe('Autorização e isolamento de espaços HTTP/PostgreSQL', () => {
     });
 
     it.each(['CLOSING', 'CLOSED'] as const)(
-        'preserva leitura e nega novo efeito sem escrita em %s',
+        'preserves reads and rejects new effects without writes in %s',
         async (status) => {
             const f = await fixture();
             for (const space of [f.s1, f.s3])
@@ -294,7 +294,7 @@ describe('Autorização e isolamento de espaços HTTP/PostgreSQL', () => {
     );
 
     it.each(['CLOSING', 'CLOSED'] as const)(
-        'replay de criação/emissão/substituição continua autorizado em %s',
+        'preserves authorized creation, invitation issuance and replacement replay in %s',
         async (status) => {
             const a = await browser('Criador');
             const space = await shared(a, 'Replay');
@@ -342,7 +342,7 @@ describe('Autorização e isolamento de espaços HTTP/PostgreSQL', () => {
         },
     );
 
-    it('revalida leitura/escrita e replay após retirada controlada de membership', async () => {
+    it('revalidates reads, writes and replay after controlled membership removal', async () => {
         const f = await fixture();
         await access.assertCanRead(actor(f.b), SpaceId.from(f.s1.id));
         await access.assertCanWrite(actor(f.b), SpaceId.from(f.s1.id));
@@ -382,7 +382,7 @@ describe('Autorização e isolamento de espaços HTTP/PostgreSQL', () => {
         await f.a.post('/v2/spaces', { name: f.s3.name }, f.s3.key).expect(404);
     });
 
-    it('filtro real de detalhe fecha intervalo após a porta validar', async () => {
+    it('closes the detail access gap through the actual filter after port validation', async () => {
         const f = await fixture();
         const query = new GetSpaceDetailsQuery(
             app.get(TypeOrmSpaceReadQueries),
@@ -406,7 +406,7 @@ describe('Autorização e isolamento de espaços HTTP/PostgreSQL', () => {
         ).rejects.toMatchObject({ code: 'SPACE_NOT_FOUND' });
     });
 
-    it('adapter de acesso observa mudanças não confirmadas da UnitOfWork e rollback', async () => {
+    it('observes uncommitted UnitOfWork changes and rollback through the access adapter', async () => {
         const a = await browser('Criador');
         const space = await shared(a, 'Transação');
         const uow = app.get<UnitOfWork>(UNIT_OF_WORK);

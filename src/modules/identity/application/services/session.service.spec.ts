@@ -58,7 +58,7 @@ describe('SessionService', () => {
         vi.restoreAllMocks();
     });
 
-    it('autentica uma sessão válida sem renovar sua validade', async () => {
+    it('authenticates a valid session without extending its expiration', async () => {
         const context = createTestContext();
         const expiresAt = context.session.expiresAt.getTime();
 
@@ -83,14 +83,14 @@ describe('SessionService', () => {
     });
 
     it.each([
-        { label: 'ausente', token: undefined },
-        { label: 'nulo', token: null },
-        { label: 'vazio', token: '' },
-        { label: 'numérico', token: 123 },
-        { label: 'objeto', token: {} },
+        { label: 'missing', token: undefined },
+        { label: 'null', token: null },
+        { label: 'empty', token: '' },
+        { label: 'numeric', token: 123 },
+        { label: 'object', token: {} },
         { label: 'array', token: [] },
     ])(
-        'rejeita token $label antes de consultar o repositório',
+        'rejects $label tokens before querying the repository',
         async ({ token }) => {
             const context = createTestContext();
 
@@ -105,7 +105,7 @@ describe('SessionService', () => {
         },
     );
 
-    it('preserva o token exatamente como recebido', async () => {
+    it('preserves the token exactly as received', async () => {
         const context = createTestContext();
         const token = '  AbC-session-token_123  ';
 
@@ -114,7 +114,7 @@ describe('SessionService', () => {
         expect(context.sessionTokenGenerator.hash).toHaveBeenCalledWith(token);
     });
 
-    it('rejeita token sem sessão correspondente', async () => {
+    it('rejects a token with no matching session', async () => {
         const context = createTestContext();
         context.sessionRepository.findByTokenHash.mockResolvedValue(null);
 
@@ -128,9 +128,9 @@ describe('SessionService', () => {
     });
 
     it.each([
-        { label: 'antes do instante atual', offset: -1 },
-        { label: 'exatamente no instante atual', offset: 0 },
-    ])('rejeita sessão que expira $label', async ({ offset }) => {
+        { label: 'before the current instant', offset: -1 },
+        { label: 'exactly at the current instant', offset: 0 },
+    ])('rejects a session that expires $label', async ({ offset }) => {
         const context = createTestContext();
         context.session.expiresAt = new Date(now + offset);
 
@@ -139,9 +139,9 @@ describe('SessionService', () => {
         ).rejects.toBeInstanceOf(UnauthenticatedError);
     });
 
-    it('propaga falha ao calcular o hash sem consultar o repositório', async () => {
+    it('propagates hashing failures without querying the repository', async () => {
         const context = createTestContext();
-        const error = new Error('Falha ao calcular hash');
+        const error = new Error('Hash calculation failed');
 
         context.sessionTokenGenerator.hash.mockImplementation(() => {
             throw error;
@@ -156,9 +156,9 @@ describe('SessionService', () => {
         ).not.toHaveBeenCalled();
     });
 
-    it('propaga falha do repositório sem convertê-la em sessão inválida', async () => {
+    it('propagates repository failures without treating them as an invalid session', async () => {
         const context = createTestContext();
-        const error = new Error('Falha ao consultar sessão');
+        const error = new Error('Session lookup failed');
 
         context.sessionRepository.findByTokenHash.mockRejectedValue(error);
 

@@ -37,7 +37,7 @@ import { SpaceId } from '../dist/modules/spaces/domain/space/space-id.js';
 import type { AuthenticatedContext } from '../dist/modules/identity/application/models/authenticated-context.js';
 import { SettlementRule } from '../dist/modules/finances/domain/settlement-rule/settlement-rule.js';
 
-describe('Regra padrão de acerto HTTP/PostgreSQL', () => {
+describe('Default settlement rule HTTP/PostgreSQL', () => {
     let app: INestApplication<Server>;
     let db: DataSource;
     let repository: DefaultSettlementRuleRepository;
@@ -174,7 +174,7 @@ describe('Regra padrão de acerto HTTP/PostgreSQL', () => {
             ...input(day, version),
         };
     }
-    it('ausência é leitura sem INSERT; qualquer membro e criador sozinho configuram', async () => {
+    it('reads a missing rule without INSERT and allows any member or solo creator to configure it', async () => {
         const a = await browser('Criador');
         const b = await browser('Membro');
         const id = await shared(a, b);
@@ -202,7 +202,7 @@ describe('Regra padrão de acerto HTTP/PostgreSQL', () => {
             rule: input(20).rule,
         });
     });
-    it('histórico rastreável, snapshot preservado e nenhum fato financeiro criado', async () => {
+    it('keeps traceable history and the original snapshot without creating financial facts', async () => {
         const a = await browser('Criador');
         const id = await shared(a);
         const beforeSpaces = await db.query('SELECT * FROM spaces ORDER BY id');
@@ -247,7 +247,7 @@ describe('Regra padrão de acerto HTTP/PostgreSQL', () => {
             { commitments: 0, disbursements: 0, obligations: 0, cycles: 0 },
         ]);
     });
-    it('no-op não duplica histórico; versão obsoleta conflita; replay devolve versão histórica', async () => {
+    it('does not duplicate history for a no-op, rejects stale versions and replays the historical version', async () => {
         const a = await browser('Criador');
         const b = await browser('Membro');
         const id = await shared(a, b);
@@ -297,7 +297,7 @@ describe('Regra padrão de acerto HTTP/PostgreSQL', () => {
         expect((await state(id)).history).toHaveLength(3);
     });
     it.each(['CLOSING', 'CLOSED'])(
-        '%s mantém leitura/replay autorizado e bloqueia nova escrita/no-op',
+        '%s preserves authorized reads and replay while blocking new writes and no-ops',
         async (status) => {
             const a = await browser('Criador');
             const id = await shared(a);
@@ -321,7 +321,7 @@ describe('Regra padrão de acerto HTTP/PostgreSQL', () => {
             expect(await state(id)).toEqual(before);
         },
     );
-    it('pessoal, terceiro, inexistente, membership inativo e sessão ausente não expõem regra', async () => {
+    it('does not expose the rule for personal spaces, outsiders, missing spaces, inactive membership or missing sessions', async () => {
         const a = await browser('Criador');
         const b = await browser('Membro');
         const c = await browser('Terceiro');
@@ -367,7 +367,7 @@ describe('Regra padrão de acerto HTTP/PostgreSQL', () => {
             ).body.code,
         ).toBe('UNAUTHENTICATED');
     });
-    it('DTO fechado, limites, headers, UUID e OpenAPI coerentes', async () => {
+    it('keeps strict DTOs, limits, headers, UUIDs and OpenAPI consistent', async () => {
         const a = await browser('Criador');
         const id = await shared(a);
         const invalid = [
@@ -458,7 +458,7 @@ describe('Regra padrão de acerto HTTP/PostgreSQL', () => {
         ).toBe(false);
     });
     it.each([0, 1])(
-        'CAS simultâneo controlado com versão %s produz um sucesso e um conflito',
+        'produces one success and one conflict for controlled concurrent CAS at version %s',
         async (version) => {
             const a = await browser('Criador');
             const b = await browser('Membro');
@@ -490,7 +490,7 @@ describe('Regra padrão de acerto HTTP/PostgreSQL', () => {
             expect(saved.receipts).toHaveLength(version + 1);
         },
     );
-    it('mesma chave simultânea recupera recibo depois do rollback, sem efeito duplicado', async () => {
+    it('recovers the receipt after rollback for concurrent same-key requests without duplicate effects', async () => {
         const a = await browser('Criador');
         const id = await shared(a);
         const key = randomUUID();
@@ -521,7 +521,7 @@ describe('Regra padrão de acerto HTTP/PostgreSQL', () => {
         expect(saved.receipts).toHaveLength(1);
     });
     it.each([0, 1])(
-        'falha após salvar recibo reverte configuração, histórico e recibo (v%s)',
+        'rolls back the configuration, history and receipt after a post-receipt failure (v%s)',
         async (version) => {
             const a = await browser('Criador');
             const id = await shared(a);
@@ -541,7 +541,7 @@ describe('Regra padrão de acerto HTTP/PostgreSQL', () => {
         },
     );
     it.each(['state', 'membership'])(
-        'revalidação anterior à persistência detecta perda de %s',
+        'detects loss of %s when revalidating before persistence',
         async (reason) => {
             const a = await browser('Criador');
             const id = await shared(a);
@@ -580,7 +580,7 @@ describe('Regra padrão de acerto HTTP/PostgreSQL', () => {
             });
         },
     );
-    it('constraints SQL protegem configuração, histórico e referência do recibo', async () => {
+    it('protects the configuration, history and receipt reference with SQL constraints', async () => {
         const a = await browser('Criador');
         const id = await shared(a);
         await a.put(id).expect(200);
@@ -611,7 +611,7 @@ describe('Regra padrão de acerto HTTP/PostgreSQL', () => {
         ).rejects.toMatchObject({ driverError: { code: '23503' } });
         expect(await state(id)).toEqual(before);
     });
-    it('leitura reautoriza após carregar configuração sem expor resultado revogado', async () => {
+    it('reauthorizes after loading the configuration without exposing revoked results', async () => {
         const a = await browser('Criador');
         const id = await shared(a);
         await a.put(id).expect(200);
@@ -630,7 +630,7 @@ describe('Regra padrão de acerto HTTP/PostgreSQL', () => {
                 .execute(PersonId.from(a.context.person.id), SpaceId.from(id)),
         ).rejects.toMatchObject({ code: 'SPACE_NOT_FOUND' });
     });
-    it('corrida no-op da mesma chave recupera recibo após unique/rollback', async () => {
+    it('recovers the receipt after a unique violation and rollback in a same-key no-op race', async () => {
         const a = await browser('Criador');
         const id = await shared(a);
         await a.put(id).expect(200);

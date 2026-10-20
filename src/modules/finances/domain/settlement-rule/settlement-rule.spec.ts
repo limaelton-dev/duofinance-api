@@ -1,14 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { SettlementRule } from './settlement-rule.js';
 import { DefaultSettlementRule } from '../default-settlement-rule/default-settlement-rule.js';
-describe('SettlementRule — calendário civil e snapshot', () => {
-    it.each([1, 31])('aceita limite %s', (dayOfMonth) =>
+describe('SettlementRule — civil calendar and snapshot', () => {
+    it.each([1, 31])('accepts boundary %s', (dayOfMonth) =>
         expect(
             SettlementRule.from({ kind: 'MONTHLY_DAY', dayOfMonth }).dayOfMonth,
         ).toBe(dayOfMonth),
     );
     it.each([0, 32, 1.5, '10', null, undefined, NaN, Infinity])(
-        'rejeita dia %s',
+        'rejects day %s',
         (dayOfMonth) =>
             expect(() =>
                 SettlementRule.from({
@@ -17,7 +17,7 @@ describe('SettlementRule — calendário civil e snapshot', () => {
                 } as never),
             ).toThrow(),
     );
-    it('rejeita kind desconhecido e regra nula', () => {
+    it('rejects an unknown kind and a null rule', () => {
         expect(() =>
             SettlementRule.from({ kind: 'WEEKLY', dayOfMonth: 10 } as never),
         ).toThrow();
@@ -39,7 +39,7 @@ describe('SettlementRule — calendário civil e snapshot', () => {
         [31, '2000-02-01', '2000-02-29'],
         [10, '2026-12-11', '2027-01-10'],
         [1, '0001-01-01', '0001-01-01'],
-    ])('dia %s em %s sugere %s', (dayOfMonth, reference, target) =>
+    ])('day %s in %s suggests %s', (dayOfMonth, reference, target) =>
         expect(
             SettlementRule.from({
                 kind: 'MONTHLY_DAY',
@@ -59,7 +59,7 @@ describe('SettlementRule — calendário civil e snapshot', () => {
         '0000-01-01',
         'nope',
         '9999-12-31',
-    ])('rejeita data %s', (date) =>
+    ])('rejects date %s', (date) =>
         expect(() =>
             SettlementRule.from({
                 kind: 'MONTHLY_DAY',
@@ -67,7 +67,7 @@ describe('SettlementRule — calendário civil e snapshot', () => {
             }).suggestTargetDate(date),
         ).toThrow(),
     );
-    it('snapshot mantém o valor após mudar somente o padrão', () => {
+    it('preserves the snapshot value after changing only the default rule', () => {
         const original = SettlementRule.from({
             kind: 'MONTHLY_DAY',
             dayOfMonth: 10,
@@ -91,7 +91,7 @@ describe('SettlementRule — calendário civil e snapshot', () => {
         expect(Object.isFrozen(original)).toBe(true);
         expect(aggregate.version).toBe(2);
     });
-    it('no-op não muda versão/instante e versão obsoleta conflita mesmo com mesmo dia', () => {
+    it('keeps version and time unchanged for a no-op and rejects a stale version even with the same day', () => {
         const aggregate = DefaultSettlementRule.create(
             'space',
             SettlementRule.from({ kind: 'MONTHLY_DAY', dayOfMonth: 10 }),

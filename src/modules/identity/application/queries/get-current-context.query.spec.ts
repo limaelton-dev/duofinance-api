@@ -59,7 +59,7 @@ function createTestContext() {
 }
 
 describe('GetCurrentContextQuery', () => {
-    it('retorna o contexto autenticado sem expor o hash da senha', async () => {
+    it('returns the authenticated context without exposing the password hash', async () => {
         const context = createTestContext();
 
         await expect(context.query.execute(context.personId)).resolves.toEqual({
@@ -84,7 +84,7 @@ describe('GetCurrentContextQuery', () => {
         );
     });
 
-    it('rejeita quando a credencial da pessoa não existe', async () => {
+    it('rejects when the person has no credential', async () => {
         const context = createTestContext();
 
         context.credentialRepository.findByPersonId.mockResolvedValue(null);
@@ -98,7 +98,7 @@ describe('GetCurrentContextQuery', () => {
         expect(context.getPersonalContext.get).not.toHaveBeenCalled();
     });
 
-    it('rejeita quando o contexto pessoal não existe', async () => {
+    it('rejects when the personal context does not exist', async () => {
         const context = createTestContext();
 
         context.getPersonalContext.get.mockResolvedValue(null);
@@ -110,9 +110,9 @@ describe('GetCurrentContextQuery', () => {
         });
     });
 
-    it('propaga falha ao consultar a credencial', async () => {
+    it('propagates credential lookup failures', async () => {
         const context = createTestContext();
-        const error = new Error('Falha ao consultar credencial');
+        const error = new Error('Credential lookup failed');
 
         context.credentialRepository.findByPersonId.mockRejectedValue(error);
 
@@ -123,9 +123,9 @@ describe('GetCurrentContextQuery', () => {
         expect(context.getPersonalContext.get).not.toHaveBeenCalled();
     });
 
-    it('propaga falha ao consultar o contexto pessoal', async () => {
+    it('propagates personal context lookup failures', async () => {
         const context = createTestContext();
-        const error = new Error('Falha ao consultar contexto pessoal');
+        const error = new Error('Personal context lookup failed');
 
         context.getPersonalContext.get.mockRejectedValue(error);
 

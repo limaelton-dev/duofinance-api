@@ -177,7 +177,7 @@ describe('finance today public query', () => {
         ).rejects.toMatchObject({ code: 'SPACE_NOT_FOUND' });
     });
 
-    it('preserves exact aggregate centavos above the safe integer limit', async () => {
+    it('preserves exact aggregate cents above the safe integer limit', async () => {
         const f = fixture();
         f.reader.today.mockResolvedValue({
             nextCycle: cycle(referenceDate, '18014398509481982'),

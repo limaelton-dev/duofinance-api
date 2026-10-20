@@ -31,7 +31,7 @@ describe('Personal expense command hash', () => {
         { factDate: '2026-10-13' },
         { spaceId: SpaceId.create() },
         { disbursement: { method: 'DEBIT' } },
-    ])('hashes the full normalized personal input %j', (patch) =>
+    ])('hashes the full normalized personal input in case %#', (patch) =>
         expect(
             personalExpenseCommandHash(c).equals(
                 personalExpenseCommandHash({

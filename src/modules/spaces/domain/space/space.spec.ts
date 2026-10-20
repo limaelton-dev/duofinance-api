@@ -69,8 +69,8 @@ function resolvedInvitation(
     });
 }
 
-describe('Space: espaço pessoal', () => {
-    it('preserva criação, titular e versão inicial', () => {
+describe('Space: personal space', () => {
+    it('preserves creation time, owner and initial version', () => {
         const id = SpaceId.create();
         const owner = PersonId.create();
         const space = Space.createPersonal(id, owner);
@@ -87,7 +87,7 @@ describe('Space: espaço pessoal', () => {
         expect(space.createdByPersonId).toBeNull();
     });
 
-    it.each([null, undefined])('rejeita titular ausente: %s', (owner) => {
+    it.each([null, undefined])('rejects a missing owner: %s', (owner) => {
         expect(() =>
             Space.createPersonal(
                 SpaceId.create(),
@@ -96,7 +96,7 @@ describe('Space: espaço pessoal', () => {
         ).toThrow('Personal space requires an owner');
     });
 
-    it('não permite convite compartilhado no espaço pessoal', () => {
+    it('does not allow a shared invitation in a personal space', () => {
         const owner = PersonId.create();
         const space = Space.createPersonal(SpaceId.create(), owner);
 
@@ -106,8 +106,8 @@ describe('Space: espaço pessoal', () => {
     });
 });
 
-describe('Space: criação compartilhada', () => {
-    it('cria espaço, membro e convite juntos', () => {
+describe('Space: shared creation', () => {
+    it('creates the space, member and invitation together', () => {
         const { space, creatorId, memberId, invitationId } =
             fixture('  Casa  Lima  ');
 
@@ -137,20 +137,20 @@ describe('Space: criação compartilhada', () => {
         'Ca\u007fsa',
         'Ca\u0085sa',
         '😀'.repeat(41),
-    ])('rejeita nome inválido: %j', (name) => {
+    ])('rejects an invalid name: %j', (name) => {
         expect(() => fixture(name)).toThrow(
             new SpacesDomainError('VALIDATION_ERROR'),
         );
     });
 
     it.each(['A', 'A'.repeat(80), '😀'.repeat(40)])(
-        'aceita os limites UTF-16: %s',
+        'accepts UTF-16 boundaries: %s',
         (name) => {
             expect(fixture(name).space.name).toBe(name);
         },
     );
 
-    it('permite nomes repetidos e vários espaços da mesma pessoa', () => {
+    it('allows duplicate names and multiple spaces for the same person', () => {
         const first = fixture();
         const second = Space.createShared({
             id: SpaceId.create(),
@@ -165,7 +165,7 @@ describe('Space: criação compartilhada', () => {
         expect(second.id.equals(first.space.id)).toBe(false);
     });
 
-    it('rejeita pessoa ativa duplicada', () => {
+    it('rejects a duplicate active person', () => {
         const { space, creatorId } = fixture();
 
         expect(() =>
@@ -179,7 +179,7 @@ describe('Space: criação compartilhada', () => {
         ).toThrow('Inconsistent shared space children');
     });
 
-    it('rejeita identidade de membro duplicada', () => {
+    it('rejects a duplicate member identity', () => {
         const { space, memberId } = fixture();
 
         expect(() =>
@@ -193,7 +193,7 @@ describe('Space: criação compartilhada', () => {
         ).toThrow('Inconsistent shared space children');
     });
 
-    it('rejeita um terceiro membro ativo', () => {
+    it('rejects a third active member', () => {
         const { space } = fixture();
 
         expect(() =>
@@ -216,7 +216,7 @@ describe('Space: criação compartilhada', () => {
         ).toThrow(new SpacesDomainError('SPACE_MEMBER_LIMIT_REACHED'));
     });
 
-    it('rejeita dois convites persistidos como PENDING', () => {
+    it('rejects two invitations persisted as PENDING', () => {
         const { space, creatorId } = fixture();
 
         expect(() =>
@@ -235,12 +235,12 @@ describe('Space: criação compartilhada', () => {
     });
 });
 
-describe('Space: validade e emissão', () => {
+describe('Space: validity and issuance', () => {
     it.each([
         [-1, InvitationStatus.PENDING],
         [0, InvitationStatus.EXPIRED],
         [1, InvitationStatus.EXPIRED],
-    ])('avalia a fronteira de expiração: %i ms', (offset, status) => {
+    ])('evaluates the expiration boundary: %i ms', (offset, status) => {
         const { space } = fixture();
         const invitation = space.invitations[0];
 
@@ -252,7 +252,7 @@ describe('Space: validade e emissão', () => {
         expect(space.version).toBe(1);
     });
 
-    it('bloqueia emissão normal enquanto existe pendente válido', () => {
+    it('blocks normal issuance while a valid pending invitation exists', () => {
         const { space, creatorId } = fixture();
 
         expect(() =>
@@ -267,7 +267,7 @@ describe('Space: validade e emissão', () => {
         expect(space.invitations).toHaveLength(1);
     });
 
-    it('normaliza o vencido e emite outro no instante exato', () => {
+    it('normalizes the expired invitation and issues another at the exact instant', () => {
         const { space, creatorId, invitationId } = fixture();
         const next = space.issueInvitation(
             creatorId,
@@ -285,7 +285,7 @@ describe('Space: validade e emissão', () => {
         expect(space.updatedAt).toEqual(expiresAt);
     });
 
-    it('permite nova emissão após rejeição', () => {
+    it('allows a new invitation after rejection', () => {
         const { space, creatorId } = fixture();
         const restored = Space.restore({
             ...sharedProps(space),
@@ -308,7 +308,7 @@ describe('Space: validade e emissão', () => {
         expect(restored.version).toBe(2);
     });
 
-    it('não expira o anterior se a nova identidade for inválida', () => {
+    it('does not expire the previous invitation if the new identity is invalid', () => {
         const { space, creatorId, invitationId } = fixture();
 
         expect(() =>
@@ -320,8 +320,8 @@ describe('Space: validade e emissão', () => {
     });
 });
 
-describe('Space: substituição', () => {
-    it('cancela o anterior, vincula o novo e reinicia as 72 horas', () => {
+describe('Space: replacement', () => {
+    it('cancels the previous invitation, links the new one and restarts the 72 hours', () => {
         const { space, creatorId, invitationId } = fixture();
         const nextId = InvitationId.create();
         const now = new Date('2026-09-28T12:00:00.000Z');
@@ -344,7 +344,7 @@ describe('Space: substituição', () => {
         expect(space.updatedAt).toEqual(now);
     });
 
-    it('rejeita substituição no instante da expiração', () => {
+    it('rejects replacement at the expiration instant', () => {
         const { space, creatorId, invitationId } = fixture();
 
         expect(() =>
@@ -364,7 +364,7 @@ describe('Space: substituição', () => {
         InvitationStatus.REJECTED,
         InvitationStatus.CANCELLED,
         InvitationStatus.EXPIRED,
-    ] as const)('não substitui convite %s', (status) => {
+    ] as const)('does not replace a %s invitation', (status) => {
         const { space, creatorId, invitationId } = fixture();
         const restored = Space.restore({
             ...sharedProps(space),
@@ -381,7 +381,7 @@ describe('Space: substituição', () => {
         ).toThrow(new SpacesDomainError('INVITATION_NOT_REPLACEABLE'));
     });
 
-    it('rejeita identidade que não pertence ao agregado', () => {
+    it('rejects an identity outside the aggregate', () => {
         const { space, creatorId } = fixture();
 
         expect(() =>
@@ -394,7 +394,7 @@ describe('Space: substituição', () => {
         ).toThrow(new SpacesDomainError('INVITATION_NOT_REPLACEABLE'));
     });
 
-    it('preserva o anterior quando a substituição é inválida', () => {
+    it('preserves the previous invitation when replacement is invalid', () => {
         const { space, creatorId, invitationId } = fixture();
 
         expect(() =>
@@ -413,9 +413,9 @@ describe('Space: substituição', () => {
     });
 });
 
-describe('Space: autorização e disponibilidade', () => {
+describe('Space: authorization and availability', () => {
     it.each(['issue', 'replace'] as const)(
-        'protege emissão e substituição: %s',
+        'protects issuance and replacement: %s',
         (operation) => {
             const { space, creatorId, invitationId } = fixture();
 
@@ -484,8 +484,8 @@ describe('Space: autorização e disponibilidade', () => {
     );
 });
 
-describe('Space: proteção do estado interno', () => {
-    it('não expõe arrays nem datas mutáveis do agregado', () => {
+describe('Space: internal state protection', () => {
+    it('does not expose mutable arrays or dates from the aggregate', () => {
         const { space } = fixture();
         const props = sharedProps(space);
         const members = [...space.members];
@@ -502,7 +502,7 @@ describe('Space: proteção do estado interno', () => {
         expect(space.invitations[0].expiresAt).toEqual(expiresAt);
     });
 
-    it('copia os arrays recebidos na reconstituição', () => {
+    it('copies arrays received during restoration', () => {
         const { space } = fixture();
         const members = [...space.members];
         const invitations = [...space.invitations];
@@ -519,7 +519,7 @@ describe('Space: proteção do estado interno', () => {
         expect(restored.invitations).toHaveLength(1);
     });
 
-    it('uma transição isolada do filho não modifica a raiz', () => {
+    it('does not modify the root through an isolated child transition', () => {
         const { space } = fixture();
         const original = space.invitations[0];
         const cancelled = original.replaceWith(InvitationId.create(), issuedAt);
@@ -530,8 +530,8 @@ describe('Space: proteção do estado interno', () => {
     });
 });
 
-describe('Identidades internas', () => {
-    it('reconstitui e compara MemberId', () => {
+describe('Internal identities', () => {
+    it('restores and compares MemberId', () => {
         const id = MemberId.create();
 
         expect(MemberId.from(id.value).equals(id)).toBe(true);
@@ -539,7 +539,7 @@ describe('Identidades internas', () => {
         expect(() => MemberId.from('')).toThrow('MemberId cannot be empty');
     });
 
-    it('reconstitui e compara InvitationId', () => {
+    it('restores and compares InvitationId', () => {
         const id = InvitationId.create();
 
         expect(InvitationId.from(id.value).equals(id)).toBe(true);

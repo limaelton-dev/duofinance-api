@@ -31,7 +31,7 @@ const unavailable = {
 const unknownToken = 'a'.repeat(43);
 const endpoints = ['preview', 'respond'] as const;
 
-describe('Resposta a convites HTTP/PostgreSQL', () => {
+describe('Invitation responses HTTP/PostgreSQL', () => {
     let app: INestApplication<Server>;
     let db: DataSource;
 
@@ -171,7 +171,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
         expect(response.get('Cache-Control')).toBe('no-store');
     }
 
-    it('preview autenticado é mínimo, sem chave idempotente, escrita ou acesso geral', async () => {
+    it('returns a minimal authenticated preview without an idempotency key, writes or general access', async () => {
         const creator = await browser('Pessoa criadora');
         const invite = await invitation(creator);
         const recipient = await browser();
@@ -204,7 +204,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
     });
 
     it.each(['ACCEPT', 'REJECT'] as const)(
-        '%s mantém contrato, replay e autorização das consultas',
+        '%s preserves the contract, replay and read authorization',
         async (decision) => {
             const creator = await browser('Pessoa criadora');
             const invite = await invitation(creator);
@@ -301,7 +301,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
     );
 
     it.each(['ACCEPT', 'REJECT'] as const)(
-        'recupera %s após vencer a validade sem repetir escrita',
+        'recovers %s after expiration without repeating writes',
         async (decision) => {
             const creator = await browser();
             const invite = await invitation(creator);
@@ -336,7 +336,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
     );
 
     it.each(['ACCEPT', 'REJECT'] as const)(
-        'criador não pode %s nem cancelar por meio da recusa',
+        'prevents the creator from performing %s or cancelling through rejection',
         async (decision) => {
             const creator = await browser();
             const invite = await invitation(creator);
@@ -365,7 +365,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
         },
     );
 
-    it('recusa permite nova emissão sem reativar o link antigo', async () => {
+    it('allows a new invitation after rejection without reactivating the old link', async () => {
         const creator = await browser();
         const invite = await invitation(creator);
         const recipient = await browser();
@@ -396,7 +396,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
         ).toEqual(unavailable);
     });
 
-    it('convite substituído e token desconhecido retornam a mesma indisponibilidade', async () => {
+    it('returns the same unavailable response for replaced invitations and unknown tokens', async () => {
         const creator = await browser();
         const invite = await invitation(creator);
         const recipient = await browser();
@@ -430,7 +430,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
     });
 
     it.each([-1, 0, 1])(
-        'HTTP respeita a expiração em %i ms e não grava na prévia',
+        'respects expiration at %i ms over HTTP without writing during preview',
         async (offset) => {
             const creator = await browser();
             const invite = await invitation(creator);
@@ -457,7 +457,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
     );
 
     it.each(endpoints)(
-        '%s exige sessão mesmo com CSRF válido',
+        '%s requires a session even with valid CSRF',
         async (endpoint) => {
             const agent = request.agent(app.getHttpServer());
             const csrfToken = await csrf(agent);
@@ -478,7 +478,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
     );
 
     it.each(endpoints)(
-        '%s exige CSRF e não promete prioridade de 401 sem ele',
+        '%s requires CSRF without guaranteeing a 401 response takes precedence when CSRF is absent',
         async (endpoint) => {
             const recipient = await browser();
             const response = await recipient.agent
@@ -501,7 +501,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
         },
     );
 
-    it('sessão expirada não decide nem revela o convite', async () => {
+    it('does not decide or reveal the invitation for an expired session', async () => {
         const creator = await browser();
         const invite = await invitation(creator);
         const recipient = await browser();
@@ -537,7 +537,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
             ].map((token) => ({ endpoint, token })),
         ),
     )(
-        'valida token de $endpoint sem normalizar/ecoar',
+        'validates the $endpoint token without normalizing or echoing it',
         async ({ endpoint, token }) => {
             const recipient = await browser();
             const body =
@@ -555,7 +555,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
     );
 
     it.each([undefined, null, 0, -1, 1.5, '1', Number.MAX_SAFE_INTEGER + 1])(
-        'valida versão positiva segura sem coerção: %j',
+        'validates a positive safe version without coercion: %j',
         async (expectedVersion) => {
             const recipient = await browser();
             const response = await recipient
@@ -571,7 +571,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
     );
 
     it.each([undefined, null, 'accept', 'REJECTED', 1])(
-        'valida decisão exata: %j',
+        'validates the exact decision: %j',
         async (decision) => {
             const recipient = await browser();
             const response = await recipient
@@ -586,7 +586,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
     );
 
     it.each(endpoints)(
-        '%s rejeita IDs/ator/status/datas adicionais',
+        '%s rejects additional IDs, actor, status and dates',
         async (endpoint) => {
             const recipient = await browser();
             for (const field of [
@@ -612,18 +612,19 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
         },
     );
 
-    it.each([null, '', 'chave-invalida'])(
-        'resposta exige chave UUID: %j',
-        async (key) => {
-            const recipient = await browser();
-            const response = await recipient
-                .post('/v2/invitations/respond', input(unknownToken), key)
-                .expect(400);
-            expect(response.body.code).toBe('VALIDATION_ERROR');
-        },
-    );
+    it.each([
+        { label: 'missing key', key: null },
+        { label: 'empty key', key: '' },
+        { label: 'invalid UUID', key: 'chave-invalida' },
+    ])('requires a UUID key for the response: $label', async ({ key }) => {
+        const recipient = await browser();
+        const response = await recipient
+            .post('/v2/invitations/respond', input(unknownToken), key)
+            .expect(400);
+        expect(response.body.code).toBe('VALIDATION_ERROR');
+    });
 
-    it('versão antiga retorna conflito sem consumir a decisão', async () => {
+    it('returns a conflict for a stale version without consuming the decision', async () => {
         const creator = await browser();
         const invite = await invitation(creator);
         const recipient = await browser();
@@ -641,7 +642,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
     });
 
     it.each(['decision', 'token', 'expectedVersion'] as const)(
-        'mesma chave com mudança de %s retorna 409',
+        'returns 409 when %s changes for the same key',
         async (field) => {
             const creator = await browser();
             const invite = await invitation(creator);
@@ -668,7 +669,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
         },
     );
 
-    it('outro ator não recupera recibo nem recebe acesso pelo token consumido', async () => {
+    it('does not recover receipts or grant access to another actor through a consumed token', async () => {
         const creator = await browser();
         const invite = await invitation(creator);
         const first = await browser();
@@ -686,7 +687,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
     });
 
     it.each(['CLOSING', 'CLOSED'] as const)(
-        'estado %s bloqueia preview e decisão',
+        'blocks preview and decision in state %s',
         async (status) => {
             const creator = await browser();
             const invite = await invitation(creator);
@@ -715,7 +716,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
         },
     );
 
-    it('vaga indisponível impede terceiro; membro atual também não pode responder', async () => {
+    it('rejects a third participant when no slot is available and prevents current members from responding', async () => {
         const creator = await browser();
         const invite = await invitation(creator);
         const existing = await browser();
@@ -757,7 +758,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
         { endpoint: 'preview', limit: 30 },
         { endpoint: 'respond', limit: 10 },
     ])(
-        '$endpoint limita $limit chamadas por IP/rota com Retry-After',
+        '$endpoint limits requests to $limit per IP and route with Retry-After',
         async ({ endpoint, limit }) => {
             const recipient = await browser();
             for (let attempt = 0; attempt < limit; attempt++) {
@@ -796,7 +797,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
         },
     );
 
-    it('falha de recibo retorna 500 genérico e reverte aceite sem vazar token', async () => {
+    it('returns a generic 500 for receipt failure and rolls back acceptance without exposing the token', async () => {
         const creator = await browser();
         const invite = await invitation(creator);
         const recipient = await browser();
@@ -827,7 +828,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
         });
     });
 
-    it('mesma chave em duas requisições concorrentes confirma um único aceite', async () => {
+    it('confirms one acceptance for two concurrent requests with the same key', async () => {
         const creator = await browser();
         const invite = await invitation(creator);
         const recipient = await browser();
@@ -870,7 +871,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
     });
 
     it.each(['ACCEPT', 'REJECT'] as const)(
-        '%s compete com substituição do criador usando a mesma raiz',
+        '%s competes with creator replacement on the same root',
         async (decision) => {
             const creator = await browser();
             const invite = await invitation(creator);
@@ -940,7 +941,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
         },
     );
 
-    it('permite participação em mais de um compartilhado e preserva contexto pessoal', async () => {
+    it('allows participation in multiple shared spaces while preserving personal context', async () => {
         const creator = await browser();
         const first = await invitation(creator);
         const second = await invitation(creator);
@@ -959,7 +960,7 @@ describe('Resposta a convites HTTP/PostgreSQL', () => {
         ).toEqual(recipient.context.personalSpace);
     });
 
-    it('publica contrato composto sem referências quebradas ou exemplos de segredo', async () => {
+    it('publishes the composed contract without broken references or secret examples', async () => {
         const response = await request(app.getHttpServer())
             .get('/v2/openapi.json')
             .expect(200);

@@ -5,8 +5,8 @@ import { SpaceId } from '../../../spaces/domain/space/space-id.js';
 import { SpacesDomainError } from '../../../spaces/domain/errors/spaces-domain.error.js';
 import { DefaultSettlementRule } from '../../domain/default-settlement-rule/default-settlement-rule.js';
 import { SettlementRule } from '../../domain/settlement-rule/settlement-rule.js';
-describe('GetDefaultSettlementRuleQuery — acesso entre autorização e leitura', () => {
-    it('não revela regra quando acesso é perdido durante a leitura', async () => {
+describe('GetDefaultSettlementRuleQuery — access between authorization and reading', () => {
+    it('does not disclose the rule when access is lost during the read', async () => {
         const actor = PersonId.create(),
             space = SpaceId.create();
         const access = {

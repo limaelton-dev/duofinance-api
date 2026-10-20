@@ -52,7 +52,7 @@ const entities = [
     AuthSessionOrmEntity,
 ];
 
-describe('Resposta a convites — persistência transacional', () => {
+describe('Invitation responses — transactional persistence', () => {
     let db: DataSource;
     let repository: TypeOrmSpaceRepository;
     let receipts: TypeOrmSpaceCommandReceipts;
@@ -198,7 +198,7 @@ describe('Resposta a convites — persistência transacional', () => {
     }
 
     it.each(['ACCEPT', 'REJECT'] as const)(
-        'persiste %s e recibo atomicamente sem alterar hash',
+        'persists %s and its receipt atomically without changing the hash',
         async (decision) => {
             const f = await resolve(decision);
             await uow.execute(() => write(f));
@@ -229,7 +229,7 @@ describe('Resposta a convites — persistência transacional', () => {
         },
     );
 
-    it('não escreve resposta fora da transação', async () => {
+    it('does not write a response outside a transaction', async () => {
         const f = await resolve('ACCEPT');
         await expect(write(f)).rejects.toThrow(
             'Shared-space writes require a transaction',
@@ -243,7 +243,7 @@ describe('Resposta a convites — persistência transacional', () => {
     });
 
     it.each(['ACCEPT', 'REJECT'] as const)(
-        'reverte %s quando uma etapa posterior falha',
+        'rolls back %s when a later step fails',
         async (decision) => {
             const f = await resolve(decision);
             await expect(
@@ -262,7 +262,7 @@ describe('Resposta a convites — persistência transacional', () => {
         },
     );
 
-    it('reverte raiz e convite quando o insert do membro falha', async () => {
+    it('rolls back the root and invitation when member insertion fails', async () => {
         const input = await persist(await createPerson());
         const space = (await repository.findByInvitationTokenHash(
             input.tokenHash,
@@ -293,7 +293,7 @@ describe('Resposta a convites — persistência transacional', () => {
         });
     });
 
-    it('reverte raiz, convite e membro quando o recibo falha', async () => {
+    it('rolls back the root, invitation and member when receipt persistence fails', async () => {
         const f = await resolve('ACCEPT');
         f.command = { ...f.command, actorId: PersonId.create() };
         await expect(uow.execute(() => write(f))).rejects.toMatchObject({
@@ -307,7 +307,7 @@ describe('Resposta a convites — persistência transacional', () => {
         });
     });
 
-    it('reverte o CAS se o convite persistido já não está pendente', async () => {
+    it('rolls back CAS when the persisted invitation is no longer pending', async () => {
         const f = await resolve('REJECT');
         await db.query(
             "UPDATE space_invitations SET status = 'REJECTED', resolved_at = $1 WHERE id = $2",
@@ -324,7 +324,7 @@ describe('Resposta a convites — persistência transacional', () => {
         });
     });
 
-    it('resolve o convite exato, inclusive cancelado, sem trocar pelo mais recente', async () => {
+    it('resolves the exact invitation, including cancelled invitations, without substituting the newest one', async () => {
         const input = await persist(await createPerson());
         const creator = input.space.createdByPersonId!;
         const nextId = InvitationId.create();
@@ -356,7 +356,7 @@ describe('Resposta a convites — persistência transacional', () => {
     });
 
     it.each(['decision', 'tokenHash', 'expectedVersion'] as const)(
-        'hash do recibo detecta mudança de %s',
+        'detects changes to %s through the receipt hash',
         async (field) => {
             const f = await resolve('REJECT');
             await uow.execute(() => write(f));
@@ -382,7 +382,7 @@ describe('Resposta a convites — persistência transacional', () => {
         'accept-reject',
         'accept-replace',
         'reject-replace',
-    ] as const)('CAS arbitra a corrida %s', async (race) => {
+    ] as const)('arbitrates the %s race through CAS', async (race) => {
         const input = await persist(await createPerson());
         const first = (await repository.findByInvitationTokenHash(
             input.tokenHash,
@@ -495,7 +495,7 @@ describe('Resposta a convites — persistência transacional', () => {
         );
     }
 
-    it('preview é somente leitura e não concede acesso ao destinatário', async () => {
+    it('keeps preview read-only without granting access to the recipient', async () => {
         const input = await persist(await createPerson());
         const actor = await createPerson();
         const before = await state(input.space.id);
@@ -518,7 +518,7 @@ describe('Resposta a convites — persistência transacional', () => {
         ).toBe(false);
     });
 
-    it('preview não grava expiração e a decisão não reutiliza o instante da prévia', async () => {
+    it('does not persist expiration during preview or reuse its timestamp for the decision', async () => {
         const input = await persist(await createPerson());
         const actor = await createPerson();
         const expiry = input.space.invitations[0].expiresAt;
@@ -542,7 +542,7 @@ describe('Resposta a convites — persistência transacional', () => {
     });
 
     it.each(['ACCEPT', 'REJECT'] as const)(
-        'recupera resposta perdida de %s depois da expiração',
+        'recovers a lost %s response after expiration',
         async (decision) => {
             const input = await persist(await createPerson());
             const actor = await createPerson();
@@ -577,7 +577,7 @@ describe('Resposta a convites — persistência transacional', () => {
         },
     );
 
-    it('recusa recupera o convite exato mesmo depois de nova emissão', async () => {
+    it('recovers the exact rejected invitation even after issuing another one', async () => {
         const input = await persist(await createPerson());
         const command = responseInput(input, await createPerson(), 'REJECT');
         const first = await respond.execute(command);
@@ -603,7 +603,7 @@ describe('Resposta a convites — persistência transacional', () => {
     });
 
     it.each(['decision', 'token', 'expectedVersion'] as const)(
-        'handler detecta reutilização da chave mudando %s',
+        'detects key reuse when %s changes in the handler',
         async (field) => {
             const input = await persist(await createPerson());
             const command = responseInput(
@@ -627,7 +627,7 @@ describe('Resposta a convites — persistência transacional', () => {
         },
     );
 
-    it('duas execuções concorrentes da mesma chave recuperam um único resultado', async () => {
+    it('recovers one result from two concurrent executions with the same key', async () => {
         const input = await persist(await createPerson());
         const command = responseInput(input, await createPerson());
         holdBothReads();
@@ -649,7 +649,7 @@ describe('Resposta a convites — persistência transacional', () => {
     });
 
     it.each(['ACCEPT', 'REJECT'] as const)(
-        'handler arbitra aceite contra %s de outro ator',
+        'arbitrates acceptance against %s by another actor in the handler',
         async (decision) => {
             const input = await persist(await createPerson());
             const first = responseInput(input, await createPerson());
@@ -672,7 +672,7 @@ describe('Resposta a convites — persistência transacional', () => {
         },
     );
 
-    it('resultado recuperado exige ator, token, recibo e convite correspondentes', async () => {
+    it('requires matching actor, token, receipt and invitation for a recovered result', async () => {
         const input = await persist(await createPerson());
         const actorId = await createPerson();
         const request = responseInput(input, actorId, 'REJECT');
@@ -715,7 +715,7 @@ describe('Resposta a convites — persistência transacional', () => {
         ).toBeNull();
     });
 
-    it('replay de aceite revalida membership ativo', async () => {
+    it('revalidates active membership before replaying acceptance', async () => {
         const input = await persist(await createPerson());
         const command = responseInput(input, await createPerson());
         const first = await respond.execute(command);
@@ -732,7 +732,7 @@ describe('Resposta a convites — persistência transacional', () => {
         });
     });
 
-    it('handler não confirma a decisão se o recibo falhar; transação reverte tudo', async () => {
+    it('does not confirm the decision when receipt persistence fails and rolls back the entire transaction', async () => {
         const input = await persist(await createPerson());
         vi.spyOn(receipts, 'save').mockRejectedValueOnce(
             new Error('Injected receipt failure'),

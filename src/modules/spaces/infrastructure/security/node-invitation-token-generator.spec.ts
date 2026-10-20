@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { NodeInvitationTokenGenerator } from './node-invitation-token-generator.js';
 
 describe('NodeInvitationTokenGenerator', () => {
-    it('gera 32 bytes em base64url e o hash do token', () => {
+    it('generates 32 bytes encoded as base64url and the token hash', () => {
         const generator = new NodeInvitationTokenGenerator();
         const result = generator.generate();
 
@@ -15,7 +15,7 @@ describe('NodeInvitationTokenGenerator', () => {
         );
     });
 
-    it('gera valores independentes', () => {
+    it('generates independent values', () => {
         const generator = new NodeInvitationTokenGenerator();
         const first = generator.generate();
         const second = generator.generate();
@@ -24,7 +24,7 @@ describe('NodeInvitationTokenGenerator', () => {
         expect(first.tokenHash).not.toEqual(second.tokenHash);
     });
 
-    it('localiza tokens emitidos usando o mesmo hash dos bytes UTF-8', () => {
+    it('finds issued tokens using the same UTF-8 byte hash', () => {
         const generator = new NodeInvitationTokenGenerator();
         const generated = generator.generate();
 

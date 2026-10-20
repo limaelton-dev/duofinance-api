@@ -54,7 +54,7 @@ function destination(): ClosureFutureDestination {
 }
 
 describe('ClosurePlan', () => {
-    it('registra nova proposta sem tornar o corte futuro vigente e invalida consentimentos antigos', () => {
+    it('records a new proposal without activating the future cutoff and invalidates prior consents', () => {
         const approved = ClosurePlan.restore({
             ...draft().snapshot(),
             planStatus: 'APPROVED',
@@ -91,7 +91,7 @@ describe('ClosurePlan', () => {
         expect(approved.snapshot().approvals).toHaveLength(1);
     });
 
-    it('permite retirar uma extensão proposta conservando o corte efetivo', () => {
+    it('allows withdrawal of a proposed extension while preserving the effective cutoff', () => {
         const future = draft().proposeCutoff('2026-11-01');
         expect(future.proposeCutoff('2026-10-19').snapshot()).toMatchObject({
             cutoffDate: '2026-10-19',
@@ -104,7 +104,7 @@ describe('ClosurePlan', () => {
     });
 
     it.each(['2026-02-30', '2026-13-01', '19/10/2026', '2026-10-18', ''])(
-        'rejeita corte inválido ou retroativo: %s',
+        'rejects an invalid or retroactive cutoff: %s',
         (cutoffDate) => {
             const plan = draft();
             const before = plan.snapshot();
@@ -115,7 +115,7 @@ describe('ClosurePlan', () => {
         },
     );
 
-    it('protege participantes, aprovações e confirmações de mutação externa', () => {
+    it('protects participants, approvals and confirmations from external mutation', () => {
         const input: ClosurePlanProps = {
             ...draft().snapshot(),
             planStatus: 'APPROVED',
@@ -146,7 +146,7 @@ describe('ClosurePlan', () => {
         expect(plan.snapshot().confirmations[0].memberId).toBe('member-1');
     });
 
-    it('não restaura consentimento de outra pessoa ou de outra revisão', () => {
+    it('does not restore consent from another person or revision', () => {
         for (const consent of [
             {
                 memberId: 'member-2',
@@ -168,7 +168,7 @@ describe('ClosurePlan', () => {
         }
     });
 
-    it('registra escolha por origem e revisa materialmente sem preservar aceites antigos', () => {
+    it('records a choice for each origin and revises materially without preserving prior acceptance', () => {
         const consent = {
             memberId: 'member-1',
             planRevision: 1,
@@ -197,7 +197,7 @@ describe('ClosurePlan', () => {
         expect(approved.snapshot().planStatus).toBe('APPROVED');
     });
 
-    it('substitui a decisão da mesma origem e mantém outras origens', () => {
+    it('replaces the decision for the same origin and preserves other origins', () => {
         const first = draft().upsertDestination(destination());
         const second = first.upsertDestination({
             ...destination(),
@@ -223,7 +223,7 @@ describe('ClosurePlan', () => {
         );
     });
 
-    it('recusa membro convidado, versão de snapshot divergente e valor inadequado', () => {
+    it('rejects an invited member, a mismatched snapshot version and an invalid amount', () => {
         for (const invalid of [
             { ...destination(), assigneeMemberId: 'convidado' },
             { ...destination(), expectedOriginVersion: 2 },
@@ -250,7 +250,7 @@ describe('ClosurePlan', () => {
         }
     });
 
-    it('não cria revisão por diferença apenas na ordem das propriedades persistidas', () => {
+    it('does not create a revision for a change only in persisted property order', () => {
         const original = destination();
         const plan = draft().upsertDestination(original);
         const reordered = Object.fromEntries(
@@ -262,7 +262,7 @@ describe('ClosurePlan', () => {
         expect(plan.snapshot().planRevision).toBe(2);
     });
 
-    it('vincula acordo explícito somente a duas pessoas participantes reais', () => {
+    it('binds an explicit agreement only to two actual participants', () => {
         const plan = ClosurePlan.restore({
             ...draft().snapshot(),
             participants: [
@@ -294,7 +294,7 @@ describe('ClosurePlan', () => {
         );
     });
 
-    it('preserva escolha anterior ao revisar o corte, mas exige nova prévia do corte atual para editar destino', () => {
+    it('preserves the prior choice when revising the cutoff and requires a fresh current cutoff preview to edit the destination', () => {
         const previous = draft().upsertDestination(destination());
         const revised = previous.proposeCutoff('2026-11-01');
         expect(revised.snapshot().futureDestinations[0].cutoffDate).toBe(

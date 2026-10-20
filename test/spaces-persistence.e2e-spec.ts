@@ -41,7 +41,7 @@ import { SpaceAccessService } from '../dist/modules/spaces/application/services/
 
 const now = new Date('2026-09-28T12:00:00.000Z');
 
-describe('Espaços compartilhados — persistência PostgreSQL', () => {
+describe('Shared spaces — PostgreSQL persistence', () => {
     let db: DataSource;
     let repository: TypeOrmSpaceRepository;
     let receipts: TypeOrmSpaceCommandReceipts;
@@ -200,7 +200,7 @@ describe('Espaços compartilhados — persistência PostgreSQL', () => {
         ];
     }
 
-    it('persiste o agregado e somente o hash do token', async () => {
+    it('persists the aggregate and only the token hash', async () => {
         const actorId = await createPerson();
         const input = await persist(actorId);
         const restored = await repository.findById(input.space.id);
@@ -224,7 +224,7 @@ describe('Espaços compartilhados — persistência PostgreSQL', () => {
         expect(rows[0]).not.toHaveProperty('invite_url');
     });
 
-    it('recusa escrita compartilhada fora da transação', async () => {
+    it('rejects shared-space writes outside a transaction', async () => {
         const actorId = await createPerson();
         const input = aggregate(actorId);
 
@@ -235,7 +235,7 @@ describe('Espaços compartilhados — persistência PostgreSQL', () => {
         expect(await counts()).toEqual([0, 0, 0, 0]);
     });
 
-    it('reverte espaço, filhos e recibo quando a operação falha', async () => {
+    it('rolls back the space, children and receipt when the operation fails', async () => {
         const actorId = await createPerson();
         const input = aggregate(actorId);
         const command: SpaceCommand = {
@@ -262,7 +262,7 @@ describe('Espaços compartilhados — persistência PostgreSQL', () => {
         expect(await receipts.find(command)).toBeNull();
     });
 
-    it('substitui e conserva o histórico sem carregar tudo na leitura', async () => {
+    it('replaces invitations and preserves history without loading all records on reads', async () => {
         const actorId = await createPerson();
         const input = await persist(actorId);
         const space = await repository.findById(input.space.id);
@@ -305,7 +305,7 @@ describe('Espaços compartilhados — persistência PostgreSQL', () => {
         expect(await counts()).toEqual([1, 1, 2, 0]);
     });
 
-    it('reverte o cancelamento se a inserção do novo convite falhar', async () => {
+    it('rolls back cancellation when new invitation insertion fails', async () => {
         const actorId = await createPerson();
         const input = await persist(actorId);
         const space = await repository.findById(input.space.id);
@@ -340,7 +340,7 @@ describe('Espaços compartilhados — persistência PostgreSQL', () => {
         expect(await counts()).toEqual([1, 1, 1, 0]);
     });
 
-    it('permite somente uma alteração concorrente da mesma versão', async () => {
+    it('allows only one concurrent change to the same version', async () => {
         const actorId = await createPerson();
         const input = await persist(actorId);
         const first = await repository.findById(input.space.id);
@@ -384,7 +384,7 @@ describe('Espaços compartilhados — persistência PostgreSQL', () => {
         expect(restored?.version).toBe(2);
     });
 
-    it('o banco impede duplicidade de pessoa, slot inválido e terceiro membro', async () => {
+    it('rejects duplicate persons, invalid slots and a third member in the database', async () => {
         const actorId = await createPerson();
         const input = await persist(actorId);
         const memberRepository = db.getRepository(SpaceMemberOrmEntity);
@@ -441,7 +441,7 @@ describe('Espaços compartilhados — persistência PostgreSQL', () => {
         });
     });
 
-    it('o banco impede dois pendentes e hash de tamanho inválido', async () => {
+    it('rejects two pending invitations and invalid hash lengths in the database', async () => {
         const actorId = await createPerson();
         const input = await persist(actorId);
         const invitationRepository = db.getRepository(SpaceInvitationOrmEntity);
@@ -478,7 +478,7 @@ describe('Espaços compartilhados — persistência PostgreSQL', () => {
         });
     });
 
-    it('converge recibos concorrentes e rejeita outra entrada', async () => {
+    it('converges concurrent receipts and rejects different input', async () => {
         const actorId = await createPerson();
         const command: SpaceCommand = {
             actorId,
@@ -562,7 +562,7 @@ describe('Espaços compartilhados — persistência PostgreSQL', () => {
         expect(stored[0].request_hash).toHaveLength(32);
     });
 
-    it('os handlers convergem na criação concorrente e recuperam o convite original', async () => {
+    it('converges concurrent creation in the handlers and recovers the original invitation', async () => {
         const actorId = await createPerson();
         const input = {
             actorId,
@@ -606,7 +606,7 @@ describe('Espaços compartilhados — persistência PostgreSQL', () => {
         expect(await counts()).toEqual([1, 1, 2, 2]);
     });
 
-    it('a substituição concorrente com a mesma chave produz um único efeito', async () => {
+    it('produces one effect for concurrent replacement with the same key', async () => {
         const actorId = await createPerson();
         const created = await createSpace.execute({
             actorId,
@@ -642,7 +642,7 @@ describe('Espaços compartilhados — persistência PostgreSQL', () => {
         expect(await counts()).toEqual([1, 1, 2, 2]);
     });
 
-    it('o handler de emissão normaliza o convite expirado', async () => {
+    it('normalizes an expired invitation in the issuance handler', async () => {
         const actorId = await createPerson();
         const issuedAt = new Date(Date.now() - 73 * 60 * 60 * 1000);
         const invitationId = InvitationId.create();
@@ -682,7 +682,7 @@ describe('Espaços compartilhados — persistência PostgreSQL', () => {
         expect(await counts()).toEqual([1, 1, 2, 1]);
     });
 
-    it('o handler de criação reverte tudo se falhar após gravar o recibo', async () => {
+    it('rolls back creation when the handler fails after saving the receipt', async () => {
         const actorId = await createPerson();
         const originalSave = receipts.save.bind(receipts);
         const failure = new Error('Failure after receipt');
@@ -708,7 +708,7 @@ describe('Espaços compartilhados — persistência PostgreSQL', () => {
         expect(await counts()).toEqual([0, 0, 0, 0]);
     });
 
-    it('o handler de substituição preserva o anterior quando o recibo falha', async () => {
+    it('preserves the previous invitation when replacement receipt persistence fails', async () => {
         const actorId = await createPerson();
         const created = await createSpace.execute({
             actorId,
@@ -743,7 +743,7 @@ describe('Espaços compartilhados — persistência PostgreSQL', () => {
         expect(await counts()).toEqual([1, 1, 1, 1]);
     });
 
-    it('as consultas isolam pessoas, ordenam espaços e ocultam segredos', async () => {
+    it('isolates people, orders spaces and hides secrets in queries', async () => {
         const actorId = await createPerson();
         const otherActor = await createPerson();
         const personal = Space.createPersonal(SpaceId.create(), actorId);
@@ -839,7 +839,7 @@ describe('Espaços compartilhados — persistência PostgreSQL', () => {
         ).rejects.toMatchObject({ code: 'INVITATION_ISSUER_REQUIRED' });
     });
 
-    it('a consulta apresenta EXPIRED sem gravar a expiração', async () => {
+    it('returns EXPIRED without persisting expiration', async () => {
         const actorId = await createPerson();
         const input = await persist(actorId);
         const expiration = input.space.invitations[0].expiresAt;

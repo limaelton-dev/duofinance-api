@@ -54,7 +54,7 @@ function start(
 }
 
 describe('Space closure request', () => {
-    it('inicia formação individual com plano rascunho, sem consentimentos fictícios, e invalida ingresso', () => {
+    it('starts individual closure with a draft plan and no fabricated consents and invalidates admission', () => {
         const space = fixture();
         const pending = space.invitations[0];
         const participants = [{ ...first }];
@@ -89,7 +89,7 @@ describe('Space closure request', () => {
         ).toThrow(new SpacesDomainError('INVITATION_UNAVAILABLE'));
     });
 
-    it('permite ao segundo participante iniciar e conserva ambos como participantes exigidos', () => {
+    it('allows the second participant to start and keeps both as required participants', () => {
         const space = fixture();
         space.acceptInvitation(
             PersonId.from(second.personId),
@@ -110,7 +110,7 @@ describe('Space closure request', () => {
         expect(space.version).toBe(3);
     });
 
-    it('não reduz a exigência bilateral quando o histórico inclui segunda participação', () => {
+    it('does not reduce the bilateral requirement when history includes a second participant', () => {
         const space = fixture();
         expect(start(space, [first, second]).snapshot().participants).toEqual([
             first,
@@ -119,7 +119,7 @@ describe('Space closure request', () => {
         expect(space.activeMemberCount).toBe(1);
     });
 
-    it('rejeita histórico incompleto e preserva espaço e convite', () => {
+    it('rejects incomplete history and preserves the space and invitation', () => {
         const space = fixture();
         space.acceptInvitation(
             PersonId.from(second.personId),
@@ -134,7 +134,7 @@ describe('Space closure request', () => {
         expect(space.snapshot()).toEqual(before);
     });
 
-    it('recusa consentimento individual de membro que não criou o espaço', () => {
+    it('rejects individual consent from a member who did not create the space', () => {
         const props = fixture().snapshot();
         if (props.type !== SpaceType.SHARED)
             throw new Error('Expected shared fixture');
@@ -156,7 +156,7 @@ describe('Space closure request', () => {
     });
 
     it.each(['2026-02-30', '2026-13-01', '19/10/2026'])(
-        'recusa corte inválido antes de alterar o agregado: %s',
+        'rejects an invalid cutoff before changing the aggregate: %s',
         (cutoffDate) => {
             const space = fixture();
             const before = space.snapshot();
@@ -167,7 +167,7 @@ describe('Space closure request', () => {
         },
     );
 
-    it('recusa instante inválido e tentativa de segundo processo sem nova mutação', () => {
+    it('rejects an invalid time and a second process attempt without further mutation', () => {
         const space = fixture();
         expect(() =>
             start(space, [first], creator, '2026-10-19', new Date(Number.NaN)),
@@ -181,7 +181,7 @@ describe('Space closure request', () => {
         expect(space.snapshot()).toEqual(before);
     });
 
-    it('recusa solicitação por terceiro ou no espaço pessoal', () => {
+    it('rejects a request from a third party or for a personal space', () => {
         const space = fixture();
         expect(() => start(space, [first], PersonId.from('terceiro'))).toThrow(
             new SpacesDomainError('SPACE_NOT_FOUND'),
@@ -216,7 +216,7 @@ describe('Space closure conclusion', () => {
         completionPrepared: true,
     };
 
-    it('fecha espaço individual após confirmação explícita e preserva membros e convite invalidado', () => {
+    it('closes an individual space after explicit confirmation and preserves members and the invalidated invitation', () => {
         const space = fixture();
         const draft = start(space);
         const plan = space.decideClosurePlan(
@@ -257,7 +257,7 @@ describe('Space closure conclusion', () => {
         ).toThrow(new SpacesDomainError('SPACE_NOT_ACTIVE'));
     });
 
-    it('cancelar preserva link inválido e novo encerramento usa outra identidade e participação histórica atual', () => {
+    it('preserves the invalid link on cancellation and uses a new identity and current participation history for a new closure', () => {
         const space = fixture();
         const originalPlan = start(space);
         expect(
@@ -301,7 +301,7 @@ describe('Space closure conclusion', () => {
         expect(oldInvitation.closureProcessId).toBe('process-1');
     });
 
-    it('não conclui formação individual se houver segunda participação histórica na raiz atual', () => {
+    it('does not conclude individual closure when the current root contains a second historical participant', () => {
         const space = fixture();
         const plan = space.decideClosurePlan(
             creator,
