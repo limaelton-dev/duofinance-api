@@ -18,7 +18,7 @@ export function createApiOpenApiDocument(isProduction: boolean): OpenAPIObject {
         ...auth,
         info: {
             ...auth.info,
-            title: 'Prospera Mais API',
+            title: 'DuoFinance API',
             version: '0.5.0',
         },
         tags: [
