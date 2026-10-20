@@ -221,9 +221,10 @@ export class FinancialDisbursementOrmEntity {
 )
 @Unique('UQ_external_liabilities_origin', ['spaceId', 'commitmentId', 'id'])
 @Unique('UQ_external_liabilities_sequence', ['commitmentId', 'sequence'])
+@Index('IDX_external_liabilities_open_holder', { synchronize: false })
 @Check(
     'CHK_external_liabilities_values',
-    `${money('amount_in_cents', true)} AND remaining_amount_in_cents BETWEEN 0 AND amount_in_cents AND sequence > 0 AND version = 1 AND fact_date <= (registered_at AT TIME ZONE 'America/Sao_Paulo')::date AND ((holder_member_id IS NOT NULL AND holder_person_id IS NULL) OR (holder_member_id IS NULL AND holder_person_id IS NOT NULL))`,
+    `${money('amount_in_cents', true)} AND sequence > 0 AND version = 1 AND fact_date <= (registered_at AT TIME ZONE 'America/Sao_Paulo')::date AND num_nonnulls(holder_member_id, holder_person_id) = 1 AND remaining_amount_in_cents >= 0 AND remaining_amount_in_cents <= amount_in_cents`,
 )
 @ForeignKey(
     () => FinancialCommitmentOrmEntity,
@@ -425,6 +426,16 @@ export class InterMemberObligationOrmEntity {
     @Column({ name: 'registered_at', type: 'timestamptz' }) registeredAt!: Date;
 }
 @Entity('inter_member_obligation_changes')
+@Unique('UQ_obligation_changes_allocation', ['allocationId'])
+@ForeignKey(
+    'settlement_allocations',
+    ['spaceId', 'allocationId'],
+    ['spaceId', 'id'],
+    {
+        name: 'FK_obligation_changes_allocation',
+        onDelete: 'RESTRICT',
+    },
+)
 @Check(
     'CHK_obligation_changes_type',
     `(version = 1 AND type = 'CREATED' AND allocation_id IS NULL) OR (version > 1 AND type = 'SETTLEMENT_APPLIED' AND allocation_id IS NOT NULL) OR (version > 1 AND type IN ('RECONCILED','ASSIGNMENT_CHANGED','OFFSET_APPLIED','WAIVED','REVERSED') AND allocation_id IS NULL)`,

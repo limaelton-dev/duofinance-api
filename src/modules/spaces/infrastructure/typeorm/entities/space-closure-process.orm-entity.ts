@@ -121,7 +121,7 @@ export class SpaceClosureProcessOrmEntity {
     @Column({
         name: 'future_destinations',
         type: 'jsonb',
-        default: () => "'[]'::jsonb",
+        default: [],
     })
     futureDestinations!: ClosureFutureDestination[];
 
@@ -134,7 +134,7 @@ export class SpaceClosureProcessOrmEntity {
     @Column({
         name: 'cancellation_consents',
         type: 'jsonb',
-        default: () => "'[]'::jsonb",
+        default: [],
     })
     cancellationConsents!: ClosureCancellationConsent[];
 }

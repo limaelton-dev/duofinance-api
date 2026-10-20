@@ -24,8 +24,8 @@ const command: RecordSharedCashExpenseCommand = {
     disbursement: { payerMemberId: id(3), method: 'DEBIT' },
     settlement: { mode: 'NONE' },
 };
-describe('expense receipt historical hash compatibility', () => {
-    it('keeps the literal pre-optional SHA256 for an informed payer', () => {
+describe('shared expense idempotency hashing', () => {
+    it('hashes an informed payer deterministically', () => {
         expect(expenseCommandHash(command).toString('hex')).toBe(
             'a47e4f8722ca73d26a9b01612d72bb04b3cc73e3462ff2b5edf1b9b9dbadf298',
         );

@@ -11,11 +11,7 @@ import { safeBigInt } from './shared-expense.orm-entity.js';
 
 @Entity('settlement_transfers')
 @Unique('UQ_settlement_transfers_space_id', ['spaceId', 'id'])
-@Index('IDX_settlement_transfers_space_registered', [
-    'spaceId',
-    'registeredAt',
-    'id',
-])
+@Index('IDX_settlement_transfers_space_registered', { synchronize: false })
 @Check(
     'CHK_settlement_transfers_values',
     `payer_member_id <> recipient_member_id AND amount_in_cents BETWEEN 1 AND 9007199254740991 AND mode = 'MANUAL' AND fact_date <= (registered_at AT TIME ZONE 'America/Sao_Paulo')::date`,
