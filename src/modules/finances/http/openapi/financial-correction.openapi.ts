@@ -244,7 +244,7 @@ function operation(
               ? 'Simular cancelamento de compromisso sem realização'
               : 'Cancelar compromisso avulso sem realização',
         description: adjustment
-            ? 'Preserva valor original e trilha dos ajustes. Altera somente o compromisso avulso, ocorrência ou parcela indicada; não reescreve as demais ocorrências ou parcelas. Redução abaixo do valor realizado conflita. Ônus a outro membro cria proposta pendente e mantém a economia anterior até aceite pela rota de propostas do CARD-030. A decisão e a aplicação são atômicas.'
+            ? 'Preserva valor original e trilha dos ajustes. Altera somente o compromisso avulso, ocorrência ou parcela indicada; não reescreve as demais ocorrências ou parcelas. Redução abaixo do valor realizado conflita. Ônus a outro membro cria proposta pendente e mantém a economia anterior até aceite pela rota de propostas de alteração do compromisso. A decisão e a aplicação são atômicas.'
             : 'Requer ausência de pagamento, recebimento e obrigação externa. Conserva o histórico e bloqueia novas realizações. A disputa com uma realização é serializada para impedir efeitos parciais.',
         security: [{ sessionCookie: [] }],
         parameters: [

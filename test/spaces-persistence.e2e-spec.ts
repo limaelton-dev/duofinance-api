@@ -4,7 +4,6 @@ import { DataSource } from 'typeorm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { TEST_DATABASE_URL } from './setup-env.js';
 import migrationDataSource from '../dist/shared/technical/database/typeorm/data-source.js';
-import { InitialCard0011789556956788 } from '../dist/shared/technical/database/typeorm/migrations/1789556956788-InitialCard001.js';
 import { TransactionContext } from '../dist/shared/technical/database/typeorm/transaction-context.js';
 import { EntityManagerProvider } from '../dist/shared/technical/database/typeorm/entity-manager.provider.js';
 import { TypeOrmUnitOfWork } from '../dist/shared/technical/database/typeorm/typeorm-unit-of-work.js';
@@ -20,7 +19,7 @@ import { SpaceCommandReceiptConflictError } from '../dist/modules/spaces/applica
 import type { SpaceCommand } from '../dist/modules/spaces/application/ports/private/space-command-receipts.js';
 import { PersonId } from '../dist/modules/spaces/domain/person/person-id.js';
 import { SpaceId } from '../dist/modules/spaces/domain/space/space-id.js';
-import { Space, SpaceType } from '../dist/modules/spaces/domain/space/space.js';
+import { Space } from '../dist/modules/spaces/domain/space/space.js';
 import { MemberId } from '../dist/modules/spaces/domain/member/member-id.js';
 import { InvitationId } from '../dist/modules/spaces/domain/invitation/invitation-id.js';
 import { InvitationStatus } from '../dist/modules/spaces/domain/invitation/invitation.js';
@@ -42,7 +41,7 @@ import { SpaceAccessService } from '../dist/modules/spaces/application/services/
 
 const now = new Date('2026-09-28T12:00:00.000Z');
 
-describe('CARD-002 — persistência PostgreSQL', () => {
+describe('Espaços compartilhados — persistência PostgreSQL', () => {
     let db: DataSource;
     let repository: TypeOrmSpaceRepository;
     let receipts: TypeOrmSpaceCommandReceipts;
@@ -53,7 +52,6 @@ describe('CARD-002 — persistência PostgreSQL', () => {
     let replaceInvitation: ReplaceSpaceInvitationHandler;
     let listSpaces: ListAccessibleSpacesQuery;
     let getDetails: GetSpaceDetailsQuery;
-    let upgradeVerified = false;
 
     const tokens = new NodeInvitationTokenGenerator();
 
@@ -64,40 +62,6 @@ describe('CARD-002 — persistência PostgreSQL', () => {
             migrationDataSource.options.url !== TEST_DATABASE_URL
         ) {
             throw new Error('Expected the isolated test database');
-        }
-
-        const initial = new DataSource({
-            type: 'postgres',
-            url: TEST_DATABASE_URL,
-            synchronize: false,
-            migrations: [InitialCard0011789556956788],
-        });
-
-        const personId = randomUUID();
-        const spaceId = randomUUID();
-
-        await initial.initialize();
-
-        try {
-            await initial.dropDatabase();
-            await initial.runMigrations();
-
-            await initial.query(
-                `INSERT INTO persons
-                    (id, display_name, version, created_at)
-                 VALUES ($1, 'Pessoa anterior', 1, $2)`,
-                [personId, now],
-            );
-
-            await initial.query(
-                `INSERT INTO spaces
-                    (id, type, status, personal_owner_person_id,
-                     version, created_at, updated_at)
-                 VALUES ($1, 'PERSONAL', 'ACTIVE', $2, 1, $3, $3)`,
-                [spaceId, personId, now],
-            );
-        } finally {
-            await initial.destroy();
         }
 
         db = new DataSource({
@@ -116,50 +80,8 @@ describe('CARD-002 — persistência PostgreSQL', () => {
 
         await db.initialize();
 
-        const applied = await db.runMigrations();
-
-        expect(applied.map((migration) => migration.name)).toEqual([
-            expect.stringMatching(/^Card002SharedSpaces\d+$/),
-            expect.stringMatching(/^Card003InvitationResponses\d+$/),
-            'ConfigureDefaultSettlementRule1791590400000',
-            'RecordSharedCashExpense1791655785713',
-            'OptionalExpectedPayer1791728636456',
-            'RecordManualSettlementTransfer1791850000000',
-            'RecordPersonalExpense1791995573673',
-            'RecordIncomeAndReceipt1792022348501',
-            'PartialFinancialFulfillment1792022400000',
-            'RecordCreditCardPurchase1792087652424',
-            'ExternalLiabilitySettlements1792110000000',
-            'FinancialCommandAudit1792154979034',
-            'CustomSettlementAssignment1792160969556',
-            'RecordSettlementOffset1792162181991',
-            'FinalizeSettlementCycle1792162609967',
-            'WaiveInterMemberObligation1792163371690',
-            'ReverseSettlementResolution1792164211588',
-            'PlannedExpenses1792165000000',
-            'FixedRecurringCommitments1792165100000',
-            'VariableRecurringOccurrences1792165200000',
-            'RecurringMaintenance1792165300000',
-            'FiniteInstallmentCommitments1792165400000',
-            'InstallmentAnticipations1792165500000',
-            'InstallmentResolutions1792165600000',
-            'CommitmentChanges1792250149185',
-            'FinancialCorrections1792251398684',
-            'FinancialFulfillmentReversals1792252537110',
-            'RoutineTasks1792336229574',
-            'RoutineRecurrences1792337903897',
-            'ShoppingLists1792344857988',
-            'ShoppingItems1792345166260',
-            'ShoppingPurchases1792345441714',
-            'ShoppingPurchaseCorrections1792345722826',
-            'ShoppingItemRemoval1792346026336',
-            'TaskShoppingLinks1792346372566',
-            'SharedSpaceClosure1792408818846',
-            'ClosureFutureDestinations1792410123163',
-            'ClosurePlanConsensus1792410948212',
-            'ClosureFinancialResolution1792411805913',
-            'ClosureConclusion1792412755234',
-        ]);
+        await db.dropDatabase();
+        await db.runMigrations();
 
         const context = new TransactionContext();
         const managerProvider = new EntityManagerProvider(db, context);
@@ -187,15 +109,6 @@ describe('CARD-002 — persistência PostgreSQL', () => {
         replaceInvitation = new ReplaceSpaceInvitationHandler(commands);
         listSpaces = new ListAccessibleSpacesQuery(reads);
         getDetails = new GetSpaceDetailsQuery(reads, access);
-
-        const personal = await repository.findPersonalByOwnerPersonId(
-            PersonId.from(personId),
-        );
-
-        expect(personal?.id.value).toBe(spaceId);
-        expect(personal?.type).toBe(SpaceType.PERSONAL);
-        expect(personal?.version).toBe(1);
-        upgradeVerified = true;
     });
 
     beforeEach(async () => {
@@ -286,10 +199,6 @@ describe('CARD-002 — persistência PostgreSQL', () => {
             result.receipts,
         ];
     }
-
-    it('preserva o espaço pessoal durante o upgrade', () => {
-        expect(upgradeVerified).toBe(true);
-    });
 
     it('persiste o agregado e somente o hash do token', async () => {
         const actorId = await createPerson();

@@ -3,6 +3,34 @@ import type { Server } from 'node:http';
 import type { DataSource } from 'typeorm';
 import { expect, vi } from 'vitest';
 import { financeBrowser, sharedFinance } from './settlement-fixture.js';
+import { shoppingApp } from './shopping-fixture.js';
+import {
+    FINANCES_CLOCK,
+    type FinancesClock,
+} from '../dist/modules/finances/application/ports/private/shared-expense.repositories.js';
+import {
+    CLOSURE_CLOCK,
+    type ClosureClock,
+} from '../dist/composition/space-closure/closure.clock.js';
+import { todayReferenceDate } from '../dist/composition/today/today.clock.js';
+
+export async function closureApp() {
+    const instant = new Date('2026-10-19T14:00:00.000Z');
+    // Invitation and session services also read Date directly. Keep their
+    // timestamps aligned with closure while leaving real I/O timers running.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(instant);
+    const result = await shoppingApp(() => new Date(instant));
+    const day = todayReferenceDate(instant);
+    const clock = result.app.get<FinancesClock>(FINANCES_CLOCK);
+    vi.spyOn(clock, 'today').mockReturnValue(day);
+    vi.spyOn(clock, 'now').mockImplementation(() => new Date(instant));
+    vi.spyOn(
+        result.app.get<ClosureClock>(CLOSURE_CLOCK),
+        'now',
+    ).mockImplementation(() => new Date(instant));
+    return { ...result, day };
+}
 
 export const closurePath = (spaceId: string) => `/v2/spaces/${spaceId}/closure`;
 

@@ -8,6 +8,6 @@ Object.assign(process.env, {
     NODE_ENV: 'test',
     DATABASE_URL: TEST_DATABASE_URL,
     WEB_ORIGIN: 'http://localhost:3000',
-    CSRF_SECRET: 'csrf-secret-exclusivo-dos-testes-card-001',
+    CSRF_SECRET: 'csrf-secret-exclusivo-dos-testes-api',
     SESSION_TTL_SECONDS: '604800',
 });

@@ -103,7 +103,7 @@ export function createAuthOpenApiDocument(
     return {
         openapi: '3.1.0',
         info: {
-            title: 'Prospera Mais API — CARD-001',
+            title: 'Prospera Mais API — Identidade e acesso',
             version: '0.1.0',
             description:
                 'Cadastro, login, sessão e espaço pessoal. ' +
